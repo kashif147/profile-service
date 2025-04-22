@@ -50,7 +50,7 @@ app.use(
 );
 
 app.get("/", (req, res) => {
-  res.render("index", { title: "User Service" });
+  res.render("index", { title: "Profile Service" });
 });
 
 app.use("/api/v1", require("./routes/index"));
