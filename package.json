@@ -12,7 +12,7 @@
     "url": "https://github.com/kashif147/profile-service.git"
   },
   "dependencies": {
-    "axios": "^1.8.4",
+    "axios": "^1.6.7",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",

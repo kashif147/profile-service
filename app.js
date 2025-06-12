@@ -53,7 +53,10 @@ app.get("/", (req, res) => {
   res.render("index", { title: "Profile Service" });
 });
 
-app.use("/api/v1", require("./routes/index"));
+app.use("/api", require("./routes/index"));
+
+// require("./listeners/lookupTypeListener");
+// require("./listeners/lookupListener");
 
 app.use(function (req, res, next) {
   next(createError(404));
