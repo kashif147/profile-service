@@ -6,6 +6,7 @@ import { mongooseConnection } from "./config/db.js";
 import responseMiddleware from "./middlewares/response.mw.js";
 import logger from "./middlewares/logger.mw.js";
 import applicationsRouter from "./routes/applications.routes.js";
+import profileRouter from "./routes/profile.routes.js";
 import { errorMiddleware } from "./middlewares/error.js";
 
 const app = express();
@@ -33,6 +34,7 @@ app.use(logger);
 
 // routes
 app.use("/applications", applicationsRouter);
+app.use("/profiles", profileRouter);
 
 // 404
 app.use((req, _res, next) =>

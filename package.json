@@ -7,6 +7,7 @@
     "dev": "nodemon bin/profile-service.js"
   },
   "dependencies": {
+    "@membership/shared-constants": "github:kashif147/membership-shared-constants#v1.0.0",
     "amqplib": "^0.10.3",
     "cors": "^2.8.5",
     "debug": "^4.3.6",
