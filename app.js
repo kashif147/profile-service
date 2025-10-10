@@ -1,7 +1,12 @@
 var path = require("path");
-const envFile =
-  process.env.NODE_ENV === "staging" ? ".env.staging" : ".env.development";
-require("dotenv").config({ path: envFile });
+// Load .env file only if in development/local environment
+// Azure uses Application Settings instead of .env files
+if (
+  process.env.NODE_ENV !== "staging" &&
+  process.env.NODE_ENV !== "production"
+) {
+  require("dotenv").config({ path: ".env.development" });
+}
 
 var createError = require("http-errors");
 var express = require("express");
@@ -21,7 +26,9 @@ var app = express();
 
 app.use(responseMiddleware);
 
-mongooseConnection();
+mongooseConnection()
+  .then(() => console.log("✅ MongoDB connected successfully"))
+  .catch((err) => console.error("❌ MongoDB connection failed:", err.message));
 
 // Initialize RabbitMQ event system
 const { initEventSystem, setupConsumers } = require("./rabbitMQ");
@@ -100,7 +107,11 @@ app.use(authenticate);
 app.use("/api", require("./routes/index"));
 
 app.use(function (req, res, next) {
-  next(createError(404));
+  res.status(404).json({
+    error: "NOT_FOUND",
+    message: "Not found",
+    path: req.originalUrl,
+  });
 });
 
 app.use(corsErrorHandler);
