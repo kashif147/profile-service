@@ -89,9 +89,8 @@ jobs:
       - name: Create deployment package
         run: |
           mkdir -p deploy
-          cp -r . deploy/
+          rsync -av --exclude=deploy --exclude=node_modules --exclude=.git --exclude=.env* . deploy/
           cd deploy
-          rm -rf node_modules .git .env*
           tar -czf ../profile-service.tar.gz .
           cd ..
 
