@@ -8,7 +8,7 @@ yarn-error.log*
 .env.*
 .env.local
 .env.development
-.env.staging
+!.env.staging
 # .env.staging (commented out to allow staging config)
 
 # Logs

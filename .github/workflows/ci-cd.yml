@@ -116,14 +116,16 @@ jobs:
         with:
           name: profile-service-build
 
-      - name: Deploy to staging
-        run: |
-          echo "🚀 Deploying Profile Service to Staging"
-          echo "Environment: staging"
-          echo "Port: 4001"
-          echo "Database: MongoDB"
-          echo "Message Queue: RabbitMQ"
-          echo "Build artifact downloaded successfully"
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: profileserviceshell-aqf6f0b8fqgmagch
+          package: profile-service.tar.gz
 
   deploy-production:
     needs: deploy-staging
@@ -140,12 +142,13 @@ jobs:
         with:
           name: profile-service-build
 
-      - name: Deploy to production
-        run: |
-          echo "🚀 Deploying Profile Service to Production"
-          echo "Environment: production"
-          echo "Port: 4001"
-          echo "Database: MongoDB"
-          echo "Message Queue: RabbitMQ"
-          echo "⚠️ Manual approval required for production deployment"
-          echo "Build artifact downloaded successfully"
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure Production
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: profileserviceshell-aqf6f0b8fqgmagch
+          package: profile-service.tar.gz

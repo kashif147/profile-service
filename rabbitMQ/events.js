@@ -6,12 +6,9 @@ const {
   stopAllConsumers,
 } = require("./consumer.js");
 
-// Import event types and handlers from separate event files
 const {
-  APPLICATION_EVENTS,
-  APPLICATION_QUEUES,
-  handleApplicationEvent,
-} = require("./events/index.js");
+  handleProfileApplicationCreate,
+} = require("./listeners/eventHandler.js");
 
 // Initialize event system
 async function initEventSystem() {
@@ -32,7 +29,7 @@ async function publishDomainEvent(eventType, data, metadata = {}) {
     timestamp: new Date().toISOString(),
     data,
     metadata: {
-      service: "portal-service",
+      service: "profile-service",
       version: "1.0",
       ...metadata,
     },
@@ -56,18 +53,25 @@ async function publishDomainEvent(eventType, data, metadata = {}) {
 // Set up consumers for different event types
 async function setupConsumers() {
   try {
-    // Application processing queue
-    await createQueue(APPLICATION_QUEUES.APPLICATION_PROCESSING, [
-      "application.*",
+    console.log("🔧 Setting up RabbitMQ consumers...");
+
+    // Portal service events queue (portal.events exchange)
+    const PORTAL_QUEUE = "profile.portal.events";
+    console.log("🔧 [SETUP] Creating portal queue...");
+    console.log("   Queue:", PORTAL_QUEUE);
+    console.log("   Exchange: portal.events");
+    console.log("   Routing Key: profile.application.create");
+
+    await createQueue(PORTAL_QUEUE, "portal.events", [
+      "profile.application.create",
     ]);
-    await consumeQueue(
-      APPLICATION_QUEUES.APPLICATION_PROCESSING,
-      handleApplicationEvent
-    );
+    await consumeQueue(PORTAL_QUEUE, handleProfileApplicationCreate);
+    console.log("✅ Portal service events consumer ready:", PORTAL_QUEUE);
 
     console.log("✅ All consumers set up successfully");
   } catch (error) {
     console.error("❌ Failed to set up consumers:", error.message);
+    console.error("❌ Stack trace:", error.stack);
     throw error;
   }
 }
@@ -88,8 +92,6 @@ async function shutdownEventSystem() {
 }
 
 module.exports = {
-  EVENT_TYPES: APPLICATION_EVENTS,
-  QUEUES: APPLICATION_QUEUES,
   initEventSystem,
   publishDomainEvent,
   setupConsumers,
