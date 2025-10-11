@@ -25,7 +25,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@projectShell/rabbitmq-middleware": "github:kashif147/rabbitmq-middleware#cc21d00e38b035942fc6ea9e501e3cc952b3a8c8",
+    "@projectShell/rabbitmq-middleware": "github:kashif147/rabbitmq-middleware#e23841fddb3ef861767dfb89ae6301438a5660b3",
     "amqplib": "^0.10.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
