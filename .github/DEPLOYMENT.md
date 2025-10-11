@@ -13,23 +13,22 @@ This repository is configured to automatically deploy to Azure App Service on ev
 
 ## Required GitHub Secrets
 
-The following secret must be configured in your GitHub repository:
+The following secrets must be configured in your GitHub repository:
 
-### AZURE_CREDENTIALS
+### AZURE_CLIENT_ID
 
-This secret contains the Azure service principal credentials in JSON format. It should have been created automatically when you set up Azure's GitHub Actions integration.
+Value: `ad25f823-e2d3-43e2-bea5-a9e6c9b0dbae`
 
-If you need to recreate it, run this command in Azure CLI:
+### AZURE_TENANT_ID
 
-```bash
-az ad sp create-for-rbac \
-  --name "profileserviceShell-github-actions" \
-  --role contributor \
-  --scopes /subscriptions/5594b6b1-65e0-4b4d-a0fd-bf61c91df834/resourceGroups/profileserviceShell_group/providers/Microsoft.Web/sites/profileserviceShell \
-  --sdk-auth
-```
+Value: `39866a06-30bc-4a89-80c6-9dd9357dd453`
 
-The output should be added as a GitHub secret named `AZURE_CREDENTIALS`.
+### AZURE_SUBSCRIPTION_ID
+
+Value: `5594b6b1-65e0-4b4d-a0fd-bf61c91df834`
+
+These secrets are provided by Azure and should be configured in:
+**GitHub Repository → Settings → Secrets and variables → Actions → Repository secrets**
 
 ## Workflow Features
 
@@ -72,9 +71,13 @@ After deployment completes:
 
 ### Deployment fails with authentication error
 
-- Verify `AZURE_CREDENTIALS` secret exists in GitHub repository settings
+- Verify all three secrets exist in GitHub repository settings:
+  - `AZURE_CLIENT_ID`
+  - `AZURE_TENANT_ID`
+  - `AZURE_SUBSCRIPTION_ID`
 - Check the service principal has contributor access to the App Service
 - Ensure the subscription ID matches your Azure subscription
+- Verify Federated Credentials are configured in Azure for GitHub Actions
 
 ### Deployment succeeds but app doesn't work
 
