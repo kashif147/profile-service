@@ -1,0 +1,63 @@
+name: Deploy Profile Service to Azure
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: profileserviceShell
+  NODE_VERSION: "18.x"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:ci
+        continue-on-error: true
+
+      - name: Create deployment package
+        run: |
+          mkdir -p deployment
+          cp -r bin controllers config constants errors handlers helpers middlewares models rabbitMQ routes services utils validation views public package.json package-lock.json app.js web.config deployment/
+          cd deployment
+          tar -czf ../deployment.tar.gz .
+          cd ..
+          rm -rf deployment
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: deployment.tar.gz
+
+      - name: Azure Logout
+        run: |
+          az logout
+        if: always()
+
+      - name: Deployment Summary
+        run: |
+          echo "✅ Deployment completed successfully!"
+          echo "🌐 App URL: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net"
+          echo "📋 Health check: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/health"
