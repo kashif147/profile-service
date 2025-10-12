@@ -28,37 +28,51 @@ class ProfileApplicationCreateListener {
         subscriptionDetails,
       } = data;
 
-      // 1. Create Personal Details
-      console.log("📝 [PROFILE_CREATE_LISTENER] Creating personal details...");
-      const newPersonalDetails = await PersonalDetails.create({
-        ApplicationId: applicationId,
-        userId: personalDetails.userId,
-        personalInfo: personalDetails.personalInfo,
-        contactInfo: personalDetails.contactInfo,
-        applicationStatus: personalDetails.applicationStatus || status,
-        approvalDetails: personalDetails.approvalDetails,
-        meta: personalDetails.meta,
-      });
+      // 1. Create/Update Personal Details (Idempotent)
+      console.log(
+        "📝 [PROFILE_CREATE_LISTENER] Creating/updating personal details..."
+      );
+      const newPersonalDetails = await PersonalDetails.findOneAndUpdate(
+        { ApplicationId: applicationId },
+        {
+          ApplicationId: applicationId,
+          userId: personalDetails.userId,
+          personalInfo: personalDetails.personalInfo,
+          contactInfo: personalDetails.contactInfo,
+          applicationStatus: personalDetails.applicationStatus || status,
+          approvalDetails: personalDetails.approvalDetails,
+          meta: personalDetails.meta,
+        },
+        { upsert: true, new: true, runValidators: true }
+      );
 
-      console.log("✅ [PROFILE_CREATE_LISTENER] Personal details created:", {
-        id: newPersonalDetails._id,
-        applicationId: newPersonalDetails.ApplicationId,
-      });
+      console.log(
+        "✅ [PROFILE_CREATE_LISTENER] Personal details created/updated:",
+        {
+          id: newPersonalDetails._id,
+          applicationId: newPersonalDetails.ApplicationId,
+        }
+      );
 
-      // 2. Create Professional Details
+      // 2. Create/Update Professional Details (Idempotent)
       if (professionalDetails) {
         console.log(
-          "📝 [PROFILE_CREATE_LISTENER] Creating professional details..."
+          "📝 [PROFILE_CREATE_LISTENER] Creating/updating professional details..."
         );
-        const newProfessionalDetails = await ProfessionalDetails.create({
-          ApplicationId: applicationId,
-          userId: professionalDetails.userId,
-          professionalDetails: professionalDetails.professionalDetails,
-          meta: professionalDetails.meta,
-        });
+        const newProfessionalDetails =
+          await ProfessionalDetails.findOneAndUpdate(
+            { ApplicationId: applicationId },
+            {
+              ApplicationId: applicationId,
+              userId: professionalDetails.userId,
+              professionalDetails: professionalDetails.professionalDetails,
+              meta: professionalDetails.meta,
+            },
+            { upsert: true, new: true, runValidators: true }
+          );
 
         console.log(
-          "✅ [PROFILE_CREATE_LISTENER] Professional details created:",
+          "✅ [PROFILE_CREATE_LISTENER] Professional details created/updated:",
           {
             id: newProfessionalDetails._id,
             applicationId: newProfessionalDetails.ApplicationId,
@@ -70,22 +84,27 @@ class ProfileApplicationCreateListener {
         );
       }
 
-      // 3. Create Subscription Details
+      // 3. Create/Update Subscription Details (Idempotent)
       if (subscriptionDetails) {
         console.log(
-          "📝 [PROFILE_CREATE_LISTENER] Creating subscription details..."
+          "📝 [PROFILE_CREATE_LISTENER] Creating/updating subscription details..."
         );
-        const newSubscriptionDetails = await SubscriptionDetails.create({
-          ApplicationId: applicationId,
-          userId: subscriptionDetails.userId,
-          membershipNumber: subscriptionDetails.membershipNumber,
-          subscriptionDetails: subscriptionDetails.subscriptionDetails,
-          paymentDetails: subscriptionDetails.paymentDetails,
-          meta: subscriptionDetails.meta,
-        });
+        const newSubscriptionDetails =
+          await SubscriptionDetails.findOneAndUpdate(
+            { ApplicationId: applicationId },
+            {
+              ApplicationId: applicationId,
+              userId: subscriptionDetails.userId,
+              membershipNumber: subscriptionDetails.membershipNumber,
+              subscriptionDetails: subscriptionDetails.subscriptionDetails,
+              paymentDetails: subscriptionDetails.paymentDetails,
+              meta: subscriptionDetails.meta,
+            },
+            { upsert: true, new: true, runValidators: true }
+          );
 
         console.log(
-          "✅ [PROFILE_CREATE_LISTENER] Subscription details created:",
+          "✅ [PROFILE_CREATE_LISTENER] Subscription details created/updated:",
           {
             id: newSubscriptionDetails._id,
             applicationId: newSubscriptionDetails.ApplicationId,
