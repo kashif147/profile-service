@@ -89,17 +89,25 @@ class ProfileApplicationCreateListener {
         console.log(
           "📝 [PROFILE_CREATE_LISTENER] Creating/updating subscription details..."
         );
+
+        // Build update object - only include membershipNumber if application is approved
+        const updateData = {
+          ApplicationId: applicationId,
+          userId: subscriptionDetails.userId,
+          subscriptionDetails: subscriptionDetails.subscriptionDetails,
+          paymentDetails: subscriptionDetails.paymentDetails,
+          meta: subscriptionDetails.meta,
+        };
+
+        // Only copy membershipNumber if application status is approved
+        if (status === "approved" && subscriptionDetails.membershipNumber) {
+          updateData.membershipNumber = subscriptionDetails.membershipNumber;
+        }
+
         const newSubscriptionDetails =
           await SubscriptionDetails.findOneAndUpdate(
             { ApplicationId: applicationId },
-            {
-              ApplicationId: applicationId,
-              userId: subscriptionDetails.userId,
-              membershipNumber: subscriptionDetails.membershipNumber,
-              subscriptionDetails: subscriptionDetails.subscriptionDetails,
-              paymentDetails: subscriptionDetails.paymentDetails,
-              meta: subscriptionDetails.meta,
-            },
+            updateData,
             { upsert: true, new: true, runValidators: true }
           );
 
@@ -109,6 +117,7 @@ class ProfileApplicationCreateListener {
             id: newSubscriptionDetails._id,
             applicationId: newSubscriptionDetails.ApplicationId,
             membershipNumber: newSubscriptionDetails.membershipNumber,
+            status: status,
           }
         );
       } else {
