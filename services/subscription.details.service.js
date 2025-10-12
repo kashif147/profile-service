@@ -127,8 +127,26 @@ class SubscriptionDetailsService {
         throw AppError.badRequest("Update data is required");
       }
 
+      // Preserve protected fields - don't allow API updates to overwrite them
+      // - paymentDetails: only updated by payment webhook events (synced from portal-service)
+      // - membershipNumber: only set during approval process
+      const { paymentDetails, membershipNumber, ...safeUpdateData } =
+        updateData;
+
+      if (paymentDetails) {
+        console.warn(
+          "⚠️ [SUBSCRIPTION_SERVICE] Ignoring paymentDetails in update - payment info is synced from portal-service"
+        );
+      }
+
+      if (membershipNumber) {
+        console.warn(
+          "⚠️ [SUBSCRIPTION_SERVICE] Ignoring membershipNumber in update - membership numbers are generated during approval"
+        );
+      }
+
       const updatePayload = {
-        ...updateData,
+        ...safeUpdateData,
         meta: { updatedBy: userId, userType },
       };
 
