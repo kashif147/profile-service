@@ -7,6 +7,13 @@ const {
   shutdown,
 } = require("@projectShell/rabbitmq-middleware");
 
+// Import local event definitions
+const {
+  APPLICATION_REVIEW_EVENTS,
+  APPLICATION_REVIEW_REJECTED_EVENTS,
+  MEMBERSHIP_EVENTS,
+} = require("./events/index.js");
+
 // Import event handlers
 const {
   handleProfileApplicationCreate,
@@ -114,8 +121,13 @@ function generateEventId() {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-// Export event types
-const EVENT_TYPES = MIDDLEWARE_EVENT_TYPES;
+// Export event types (merge middleware and local events)
+const EVENT_TYPES = {
+  ...MIDDLEWARE_EVENT_TYPES,
+  ...APPLICATION_REVIEW_EVENTS,
+  ...APPLICATION_REVIEW_REJECTED_EVENTS,
+  ...MEMBERSHIP_EVENTS,
+};
 
 const QUEUES = {
   PORTAL_EVENTS: "profile.portal.events",
@@ -131,6 +143,9 @@ module.exports = {
   // Service functions
   EVENT_TYPES,
   QUEUES,
+  APPLICATION_REVIEW_EVENTS,
+  APPLICATION_REVIEW_REJECTED_EVENTS,
+  MEMBERSHIP_EVENTS,
   initEventSystem,
   publishDomainEvent,
   setupConsumers,
