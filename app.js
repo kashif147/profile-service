@@ -17,7 +17,6 @@ const session = require("express-session");
 
 const loggerMiddleware = require("./middlewares/logger.mw");
 const responseMiddleware = require("./middlewares/response.mw");
-const { authenticate } = require("./middlewares/auth");
 const { defaultPolicyMiddleware } = require("./middlewares/policy.middleware");
 
 // require("message-bus/src/index");
@@ -131,9 +130,7 @@ app.get("/api", (req, res) => {
   });
 });
 
-// Initialize authentication middleware for protected routes
-app.use(authenticate);
-
+// API routes (authentication handled by policy middleware in individual routes)
 app.use("/api", require("./routes/index"));
 
 app.use(function (req, res, next) {
