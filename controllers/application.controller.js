@@ -1,7 +1,6 @@
 const applicationService = require("../services/application.service");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 const joischemas = require("../validation/index.js");
-const policyClient = require("../utils/policyClient");
 const { AppError } = require("../errors/AppError");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
 

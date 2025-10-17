@@ -4,7 +4,6 @@ const personalDetailsHandler = require("../handlers/personal.details.handler");
 const joischemas = require("../validation/index.js");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 const { APPLICATION_STATUS } = require("../constants/enums");
-const policyClient = require("../utils/policyClient");
 const { AppError } = require("../errors/AppError");
 
 // Function to extract professional details for subscription

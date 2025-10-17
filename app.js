@@ -1,12 +1,11 @@
 var path = require("path");
-// Load .env file only if in development/local environment
-// Azure uses Application Settings instead of .env files
-if (
-  process.env.NODE_ENV !== "staging" &&
-  process.env.NODE_ENV !== "production"
-) {
+// Load .env file based on environment
+if (process.env.NODE_ENV === "staging") {
+  require("dotenv").config({ path: ".env.staging" });
+} else if (process.env.NODE_ENV !== "production") {
   require("dotenv").config({ path: ".env.development" });
 }
+// Production uses Azure Application Settings
 
 var createError = require("http-errors");
 var express = require("express");
@@ -17,6 +16,7 @@ const session = require("express-session");
 
 const loggerMiddleware = require("./middlewares/logger.mw");
 const responseMiddleware = require("./middlewares/response.mw");
+const { authenticate } = require("./middlewares/auth");
 const { defaultPolicyMiddleware } = require("./middlewares/policy.middleware");
 
 // require("message-bus/src/index");
@@ -130,7 +130,9 @@ app.get("/api", (req, res) => {
   });
 });
 
-// API routes (authentication handled by policy middleware in individual routes)
+// Initialize authentication middleware for protected routes
+app.use(authenticate);
+
 app.use("/api", require("./routes/index"));
 
 app.use(function (req, res, next) {
