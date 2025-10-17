@@ -17,7 +17,7 @@ const ProfileSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "users",
-      required: true,
+      required: false,
       default: null,
     }, // Azure B2C ID
     personalInfo: {
