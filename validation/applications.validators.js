@@ -39,15 +39,40 @@ const ProposedPatch = z
   .array(PatchOp)
   .nonempty({ message: "proposedPatch cannot be empty" });
 
+// Optional version for approve endpoint (can be undefined or non-empty array)
+const ProposedPatchOptional = z
+  .array(PatchOp)
+  .nonempty({ message: "proposedPatch cannot be empty" })
+  .optional();
+
 // Minimal submission object (flexible, but must be an object)
 const Submission = z.record(z.any());
 
-// Review draft: client submits immutable submission + JSON Patch
-const ReviewDraftBody = z.object({
-  submission: Submission,
-  proposedPatch: ProposedPatch,
-  notes: z.string().max(2000).optional(),
-});
+// Review draft: client submits immutable submission + JSON Patch OR effectiveDocument
+const ReviewDraftBody = z
+  .object({
+    submission: Submission,
+    proposedPatch: ProposedPatch.optional(),
+    effectiveDocument: Submission.optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasPatch = !!data.proposedPatch;
+    const hasEffective = !!data.effectiveDocument;
+
+    if (!hasPatch && !hasEffective) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide either proposedPatch OR effectiveDocument",
+      });
+    }
+    if (hasPatch && hasEffective) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide either proposedPatch OR effectiveDocument, not both",
+      });
+    }
+  });
 
 // Approve:
 // Path A: overlayId + overlayVersion
@@ -57,7 +82,7 @@ const ApproveBody = z
     overlayId: z.string().min(1).optional(),
     overlayVersion: z.number().int().nonnegative().optional(),
     submission: Submission.optional(),
-    proposedPatch: ProposedPatch.optional(),
+    proposedPatch: ProposedPatchOptional,
   })
   .superRefine((data, ctx) => {
     const hasOverlay =

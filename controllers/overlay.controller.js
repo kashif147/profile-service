@@ -37,50 +37,76 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 
 async function saveOverlayDraft(req, res, next) {
   const { applicationId } = req.params;
-  const { submission, proposedPatch, notes } = req.body;
+  const { submission, proposedPatch, effectiveDocument, notes } = req.body;
   const tenantId = req.tenantId;
   const reviewerId = req.user?.id;
 
   try {
-    validatePatchPaths(proposedPatch);
-
     // Load authoritative submission from portal-service
     const { submission: serverSubmission } = await loadSubmission(
       applicationId
     );
 
-    // Validate patch paths exist on the authoritative submission for replace/remove
-    const missingPaths = (proposedPatch || [])
-      .filter(
-        (op) =>
-          (op.op === "replace" || op.op === "remove") &&
-          !pathExists(serverSubmission, op.path)
-      )
-      .map((op) => op.path);
-    if (missingPaths.length) {
-      const err = new Error(
-        `Patch path(s) not found on latest submission: ${missingPaths.join(
-          ", "
-        )}`
-      );
-      err.status = 409;
-      throw err;
-    }
-
-    // Try to apply the client-provided patch to the authoritative submission
     let effective;
-    try {
-      effective = applyPatch(
-        clone(serverSubmission),
-        proposedPatch,
-        true
-      ).newDocument;
-    } catch (e) {
-      // If it doesn't apply, the client likely used a stale submission → ask them to refresh
+    let patchToUse;
+
+    if (effectiveDocument) {
+      // Client provided effectiveDocument directly
+      effective = effectiveDocument;
+
+      // Generate patch from server submission to effective document
+      try {
+        patchToUse = jsonPatch.compare(serverSubmission, effective);
+      } catch (e) {
+        const err = new Error(
+          "Failed to generate patch from effectiveDocument"
+        );
+        err.status = 400;
+        throw err;
+      }
+    } else if (proposedPatch) {
+      // Client provided proposedPatch
+      validatePatchPaths(proposedPatch);
+
+      // Validate patch paths exist on the authoritative submission for replace/remove
+      const missingPaths = (proposedPatch || [])
+        .filter(
+          (op) =>
+            (op.op === "replace" || op.op === "remove") &&
+            !pathExists(serverSubmission, op.path)
+        )
+        .map((op) => op.path);
+      if (missingPaths.length) {
+        const err = new Error(
+          `Patch path(s) not found on latest submission: ${missingPaths.join(
+            ", "
+          )}`
+        );
+        err.status = 409;
+        throw err;
+      }
+
+      // Try to apply the client-provided patch to the authoritative submission
+      try {
+        effective = applyPatch(
+          clone(serverSubmission),
+          proposedPatch,
+          true
+        ).newDocument;
+        patchToUse = proposedPatch;
+      } catch (e) {
+        // If it doesn't apply, the client likely used a stale submission → ask them to refresh
+        const err = new Error(
+          "Submission has changed. Please refresh and rebase your patch against the latest server submission."
+        );
+        err.status = 409;
+        throw err;
+      }
+    } else {
       const err = new Error(
-        "Submission has changed. Please refresh and rebase your patch against the latest server submission."
+        "Either proposedPatch or effectiveDocument is required"
       );
-      err.status = 409;
+      err.status = 400;
       throw err;
     }
 
@@ -95,11 +121,11 @@ async function saveOverlayDraft(req, res, next) {
         applicationId,
         tenantId,
         reviewerId,
-        proposedPatch,
+        proposedPatch: patchToUse,
         notes,
       });
     } else {
-      overlay.proposedPatch = proposedPatch;
+      overlay.proposedPatch = patchToUse;
       overlay.notes = notes ?? overlay.notes;
       overlay.overlayVersion += 1;
     }
@@ -109,8 +135,8 @@ async function saveOverlayDraft(req, res, next) {
       overlayId: overlay.overlayId,
       overlayVersion: overlay.overlayVersion,
       effective,
-      changedPaths: proposedPatch.map((p) => p.path),
-      proposedPatch,
+      changedPaths: patchToUse.map((p) => p.path),
+      proposedPatch: patchToUse,
     });
   } catch (e) {
     next(e);
