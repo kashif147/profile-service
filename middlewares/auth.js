@@ -12,7 +12,43 @@ const authenticate = async (req, res, next) => {
   try {
     console.log("=== AUTH MIDDLEWARE START ===");
     console.log("JWT_SECRET exists:", !!process.env.JWT_SECRET);
+    console.log("AUTH_BYPASS_ENABLED:", process.env.AUTH_BYPASS_ENABLED);
     console.log("Request headers:", req.headers);
+
+    // Check if auth bypass is enabled
+    if (process.env.AUTH_BYPASS_ENABLED === 'true') {
+      console.log("=== AUTH BYPASS ENABLED - SKIPPING JWT VERIFICATION ===");
+      
+      // Set default bypass context
+      req.ctx = {
+        tenantId: 'bypass-tenant',
+        userId: 'bypass-user',
+        roles: ['SU'], // Super User role for bypass
+        permissions: ['*'], // All permissions for bypass
+      };
+
+      // Attach user info for backward compatibility
+      req.user = {
+        sub: 'bypass-user',
+        id: 'bypass-user',
+        tenantId: 'bypass-tenant',
+        userType: 'CRM', // Default to CRM for bypass
+        roles: ['SU'],
+        permissions: ['*']
+      };
+      req.userId = 'bypass-user';
+      req.tenantId = 'bypass-tenant';
+      req.roles = ['SU'];
+      req.permissions = ['*'];
+
+      console.log("=== AUTH BYPASS SUCCESS ===");
+      console.log("Bypass context set:", {
+        userId: req.userId,
+        tenantId: req.tenantId,
+        userType: req.user?.userType,
+      });
+      return next();
+    }
 
     const authHeader = req.headers.authorization || req.headers.Authorization;
 
