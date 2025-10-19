@@ -47,6 +47,15 @@ async function saveOverlayDraft(req, res, next) {
       applicationId
     );
 
+    // Check if submission exists, use client submission as fallback
+    let baseSubmission = serverSubmission;
+    if (!serverSubmission || Object.keys(serverSubmission).length === 0) {
+      console.warn(
+        `No submission found for application ${applicationId}, using client submission as base`
+      );
+      baseSubmission = submission;
+    }
+
     let effective;
     let patchToUse;
 
@@ -54,9 +63,9 @@ async function saveOverlayDraft(req, res, next) {
       // Client provided effectiveDocument directly
       effective = effectiveDocument;
 
-      // Generate patch from server submission to effective document
+      // Generate patch from base submission to effective document
       try {
-        patchToUse = jsonPatch.compare(serverSubmission, effective);
+        patchToUse = jsonPatch.compare(baseSubmission, effective);
       } catch (e) {
         const err = new Error(
           "Failed to generate patch from effectiveDocument"
@@ -66,14 +75,20 @@ async function saveOverlayDraft(req, res, next) {
       }
     } else if (proposedPatch) {
       // Client provided proposedPatch
-      validatePatchPaths(proposedPatch);
+      try {
+        validatePatchPaths(proposedPatch);
+      } catch (e) {
+        const err = new Error(`Invalid patch paths: ${e.message}`);
+        err.status = 400;
+        throw err;
+      }
 
-      // Validate patch paths exist on the authoritative submission for replace/remove
+      // Validate patch paths exist on the base submission for replace/remove
       const missingPaths = (proposedPatch || [])
         .filter(
           (op) =>
             (op.op === "replace" || op.op === "remove") &&
-            !pathExists(serverSubmission, op.path)
+            !pathExists(baseSubmission, op.path)
         )
         .map((op) => op.path);
       if (missingPaths.length) {
@@ -86,10 +101,10 @@ async function saveOverlayDraft(req, res, next) {
         throw err;
       }
 
-      // Try to apply the client-provided patch to the authoritative submission
+      // Try to apply the client-provided patch to the base submission
       try {
         effective = applyPatch(
-          clone(serverSubmission),
+          clone(baseSubmission),
           proposedPatch,
           true
         ).newDocument;

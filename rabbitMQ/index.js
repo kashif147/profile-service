@@ -19,6 +19,12 @@ const {
   handleProfileApplicationCreate,
 } = require("./listeners/eventHandler.js");
 
+// Import publishers
+const ApplicationApprovalEventPublisher = require("./publishers/application.approval.publisher.js");
+
+// Import listeners
+const ApplicationApprovalEventListener = require("./listeners/application.approval.listener.js");
+
 // Initialize event system
 async function initEventSystem() {
   try {
@@ -64,25 +70,22 @@ async function setupConsumers() {
   try {
     console.log("🔧 Setting up RabbitMQ consumers...");
 
-    // Portal service events queue (portal.events exchange)
+    // 1. Portal service events queue (portal.events exchange)
     const PORTAL_QUEUE = "profile.portal.events";
     console.log("🔧 [SETUP] Creating portal queue...");
     console.log("   Queue:", PORTAL_QUEUE);
     console.log("   Exchange: portal.events");
     console.log("   Routing Key: profile.application.create");
 
-    // Create queue with DLQ support
     await consumer.createQueue(PORTAL_QUEUE, {
       durable: true,
       messageTtl: 3600000, // 1 hour
     });
 
-    // Bind to exchange
     await consumer.bindQueue(PORTAL_QUEUE, "portal.events", [
       "profile.application.create",
     ]);
 
-    // Register handler
     consumer.registerHandler(
       "profile.application.create",
       async (payload, context) => {
@@ -94,9 +97,64 @@ async function setupConsumers() {
       }
     );
 
-    // Start consuming
     await consumer.consume(PORTAL_QUEUE, { prefetch: 10 });
     console.log("✅ Portal service events consumer ready:", PORTAL_QUEUE);
+
+    // 2. Application events queue (application.events exchange) - for approval events
+    const APPLICATION_QUEUE = "profile.application.events";
+    console.log("🔧 [SETUP] Creating application queue...");
+    console.log("   Queue:", APPLICATION_QUEUE);
+    console.log("   Exchange: application.events");
+    console.log("   Routing Key: applications.review.approved.v1");
+
+    await consumer.createQueue(APPLICATION_QUEUE, {
+      durable: true,
+      messageTtl: 3600000, // 1 hour
+    });
+
+    await consumer.bindQueue(APPLICATION_QUEUE, "application.events", [
+      "applications.review.approved.v1",
+    ]);
+
+    consumer.registerHandler(
+      "applications.review.approved.v1",
+      async (payload, context) => {
+        await ApplicationApprovalEventListener.handleApplicationApproved(
+          payload.data
+        );
+      }
+    );
+
+    await consumer.consume(APPLICATION_QUEUE, { prefetch: 10 });
+    console.log("✅ Application events consumer ready:", APPLICATION_QUEUE);
+
+    // 3. Membership events queue (membership.events exchange) - for membership events
+    const MEMBERSHIP_QUEUE = "profile.membership.events";
+    console.log("🔧 [SETUP] Creating membership queue...");
+    console.log("   Queue:", MEMBERSHIP_QUEUE);
+    console.log("   Exchange: membership.events");
+    console.log("   Routing Key: members.member.created.requested.v1");
+
+    await consumer.createQueue(MEMBERSHIP_QUEUE, {
+      durable: true,
+      messageTtl: 3600000, // 1 hour
+    });
+
+    await consumer.bindQueue(MEMBERSHIP_QUEUE, "membership.events", [
+      "members.member.created.requested.v1",
+    ]);
+
+    consumer.registerHandler(
+      "members.member.created.requested.v1",
+      async (payload, context) => {
+        await ApplicationApprovalEventListener.handleMemberCreatedRequested(
+          payload.data
+        );
+      }
+    );
+
+    await consumer.consume(MEMBERSHIP_QUEUE, { prefetch: 10 });
+    console.log("✅ Membership events consumer ready:", MEMBERSHIP_QUEUE);
 
     console.log("✅ All consumers set up successfully");
   } catch (error) {
@@ -131,6 +189,8 @@ const EVENT_TYPES = {
 
 const QUEUES = {
   PORTAL_EVENTS: "profile.portal.events",
+  APPLICATION_EVENTS: "profile.application.events",
+  MEMBERSHIP_EVENTS: "profile.membership.events",
 };
 
 module.exports = {
@@ -150,4 +210,10 @@ module.exports = {
   publishDomainEvent,
   setupConsumers,
   shutdownEventSystem,
+
+  // Publishers
+  ApplicationApprovalEventPublisher,
+
+  // Listeners
+  ApplicationApprovalEventListener,
 };

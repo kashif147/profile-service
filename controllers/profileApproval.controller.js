@@ -4,12 +4,12 @@ const jsonPatch = require("fast-json-patch");
 const { applyPatch } = jsonPatch;
 
 const ReviewOverlay = require("../models/reviewOverlay.model.js");
-const Professional = require("../models/professional.model.js");
+const PersonalDetails = require("../models/personal.details.model.js");
+const ProfessionalDetails = require("../models/professional.details.model.js");
+const SubscriptionDetails = require("../models/subscription.model.js");
+const Profile = require("../models/profile.model.js");
 const { loadSubmission } = require("../services/submission.service.js");
-const {
-  publishDomainEvent,
-  APPLICATION_REVIEW_EVENTS,
-} = require("../rabbitMQ/index.js");
+const { ApplicationApprovalEventPublisher } = require("../rabbitMQ/index.js");
 const {
   findOrCreateProfileByEmail,
 } = require("../services/profileLookup.service.js");
@@ -118,30 +118,106 @@ async function approveApplication(req, res, next) {
       });
     }
 
-    // Find/create Profile by email, then update embedded subscription attributes
-    const profile = await findOrCreateProfileByEmail({
-      tenantId,
-      effective,
-      reviewerId,
-      session,
-    });
-    await mongoose.model("Profile").updateOne(
-      { _id: profile._id },
-      {
-        $set: {
-          subscriptionAttributes: subAttrs(effective.subscriptionDetails),
-        },
-      },
-      { session }
-    );
+    // Find existing profile or create new one
+    const email =
+      effective.contactInfo?.personalEmail || effective.contactInfo?.workEmail;
+    if (!email) throw new Error("No email found in effective data");
 
-    // Update Professional (excluding membershipCategory)
-    const { membershipCategory, ...profNoCategory } =
-      effective.professionalDetails || {};
-    if (Object.keys(profNoCategory || {}).length) {
-      await Professional.updateOne(
-        { tenantId, ApplicationId: applicationId },
-        { $set: { professionalDetails: profNoCategory } },
+    const normalizedEmail = email.toLowerCase();
+    let existingProfile = await Profile.findOne({
+      tenantId,
+      normalizedEmail,
+    }).session(session);
+
+    let profile;
+    if (existingProfile) {
+      // Update existing profile - keep existing membership number
+      await Profile.updateOne(
+        { _id: existingProfile._id },
+        {
+          $set: {
+            personalInfo: effective.personalInfo,
+            contactInfo: effective.contactInfo,
+            professionalDetails: effective.professionalDetails,
+            subscriptionAttributes: subAttrs(effective.subscriptionDetails),
+            applicationStatus: "APPROVED",
+            approvalDetails: {
+              approvedBy: reviewerId,
+              approvedAt: new Date(),
+              effectiveHash: crypto
+                .createHash("sha256")
+                .update(JSON.stringify(effective))
+                .digest("hex"),
+              effectiveSnapshot: effective,
+            },
+          },
+        },
+        { session }
+      );
+      profile = existingProfile;
+    } else {
+      // Create new profile - will get new membership number
+      profile = await findOrCreateProfileByEmail({
+        tenantId,
+        effective,
+        reviewerId,
+        session,
+      });
+
+      // Update Profile with approved data
+      await Profile.updateOne(
+        { _id: profile._id },
+        {
+          $set: {
+            personalInfo: effective.personalInfo,
+            contactInfo: effective.contactInfo,
+            professionalDetails: effective.professionalDetails,
+            subscriptionAttributes: subAttrs(effective.subscriptionDetails),
+            applicationStatus: "APPROVED",
+            approvalDetails: {
+              approvedBy: reviewerId,
+              approvedAt: new Date(),
+              effectiveHash: crypto
+                .createHash("sha256")
+                .update(JSON.stringify(effective))
+                .digest("hex"),
+              effectiveSnapshot: effective,
+            },
+          },
+        },
+        { session }
+      );
+    }
+
+    // Update main application models with approved data
+    if (effective.personalInfo) {
+      await PersonalDetails.updateOne(
+        { ApplicationId: applicationId },
+        {
+          $set: {
+            personalInfo: effective.personalInfo,
+            contactInfo: effective.contactInfo,
+            applicationStatus: "approved",
+            "approvalDetails.approvedBy": reviewerId,
+            "approvalDetails.approvedAt": new Date(),
+          },
+        },
+        { upsert: true, session }
+      );
+    }
+
+    if (effective.professionalDetails) {
+      await ProfessionalDetails.updateOne(
+        { ApplicationId: applicationId },
+        { $set: { professionalDetails: effective.professionalDetails } },
+        { upsert: true, session }
+      );
+    }
+
+    if (effective.subscriptionDetails) {
+      await SubscriptionDetails.updateOne(
+        { ApplicationId: applicationId },
+        { $set: { subscriptionDetails: effective.subscriptionDetails } },
         { upsert: true, session }
       );
     }
@@ -154,21 +230,33 @@ async function approveApplication(req, res, next) {
       await overlay.save({ session });
     }
 
-    // Publish event for subscription-service
-    await publishDomainEvent(
-      APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_APPROVED,
-      {
-        applicationId,
-        reviewerId,
-        profileId: String(profile._id),
-        effective: {
-          subscriptionDetails: pickSubForContract(
-            effective.subscriptionDetails
-          ),
-        },
+    // Publish events using dedicated publisher
+    await ApplicationApprovalEventPublisher.publishApplicationApproved({
+      applicationId,
+      reviewerId,
+      profileId: String(profile._id),
+      applicationStatus: "APPROVED",
+      isExistingProfile: !!existingProfile,
+      effective: {
+        personalInfo: effective.personalInfo,
+        contactInfo: effective.contactInfo,
+        professionalDetails: effective.professionalDetails,
+        subscriptionDetails: pickSubForContract(effective.subscriptionDetails),
       },
-      { tenantId, correlationId: crypto.randomUUID() }
-    );
+      subscriptionAttributes: subAttrs(effective.subscriptionDetails),
+      tenantId,
+      correlationId: crypto.randomUUID(),
+    });
+
+    await ApplicationApprovalEventPublisher.publishMemberCreatedRequested({
+      applicationId,
+      profileId: String(profile._id),
+      isExistingProfile: !!existingProfile,
+      effective,
+      subscriptionAttributes: subAttrs(effective.subscriptionDetails),
+      tenantId,
+      correlationId: crypto.randomUUID(),
+    });
 
     await session.commitTransaction();
     return res.status(200).json({
