@@ -13,10 +13,17 @@ async function loadSubmission(applicationId) {
         SubscriptionDetails.findOne({ ApplicationId: applicationId }).lean(),
       ]);
 
+    // Log loaded data for debugging
+    console.log(`Loaded submission data for application ${applicationId}:`, {
+      personalDetails: !!personalDetails,
+      professionalDetails: !!professionalDetails,
+      subscriptionDetails: !!subscriptionDetails,
+    });
+
     // Combine into submission format
     const submission = {
-      personalInfo: personalDetails?.personalDetails || {},
-      contactInfo: personalDetails?.contactDetails || {},
+      personalInfo: personalDetails?.personalInfo || {},
+      contactInfo: personalDetails?.contactInfo || {},
       professionalDetails: professionalDetails?.professionalDetails || {},
       subscriptionDetails: subscriptionDetails?.subscriptionDetails || {},
     };
@@ -28,8 +35,17 @@ async function loadSubmission(applicationId) {
       lastUpdated: new Date(),
     };
 
+    console.log(
+      `Submission structure for application ${applicationId}:`,
+      JSON.stringify(submission, null, 2)
+    );
+
     return { submission, meta };
   } catch (error) {
+    console.error(
+      `Failed to load submission for application ${applicationId}:`,
+      error
+    );
     throw new Error(
       `Failed to load submission for application ${applicationId}: ${error.message}`
     );

@@ -11,6 +11,7 @@
     "test:coverage": "jest --coverage",
     "lint": "echo \"No linting configured yet\" && exit 0",
     "build": "echo \"No build step required\" && exit 0",
+    "postinstall": "echo \"Dependencies installed successfully\"",
     "docker:build": "docker build -t profile-service .",
     "docker:run": "docker run -p 4001:4001 profile-service",
     "test:ci": "npm test && npm run lint"
@@ -26,7 +27,7 @@
   "license": "ISC",
   "dependencies": {
     "@membership/policy-middleware": "github:kashif147/policy-middleware",
-    "@projectShell/rabbitmq-middleware": "file:../rabbitmq-middleware",
+    "@projectShell/rabbitmq-middleware": "github:kashif147/rabbitmq-middleware",
     "amqplib": "^0.10.9",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",

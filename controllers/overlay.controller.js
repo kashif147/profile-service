@@ -92,6 +92,13 @@ async function saveOverlayDraft(req, res, next) {
         )
         .map((op) => op.path);
       if (missingPaths.length) {
+        // Log the base submission structure for debugging
+        console.error(
+          "Base submission structure:",
+          JSON.stringify(baseSubmission, null, 2)
+        );
+        console.error("Missing patch paths:", missingPaths);
+
         const err = new Error(
           `Patch path(s) not found on latest submission: ${missingPaths.join(
             ", "
