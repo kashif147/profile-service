@@ -16,6 +16,10 @@ const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
+const {
+  publishDomainEvent,
+  APPLICATION_REVIEW_EVENTS,
+} = require("../rabbitMQ/index.js");
 const { loadSubmission } = require("../services/submission.service.js");
 const { ApplicationApprovalEventPublisher } = require("../rabbitMQ/index.js");
 const {

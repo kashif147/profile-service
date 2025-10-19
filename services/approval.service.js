@@ -3,6 +3,10 @@ const mongoose = require("mongoose");
 const jsonPatch = require("fast-json-patch");
 const { applyPatch } = jsonPatch;
 const crypto = require("crypto");
+const {
+  publishDomainEvent,
+  APPLICATION_REVIEW_EVENTS,
+} = require("../rabbitMQ/index.js");
 const ReviewOverlay = require("../models/reviewOverlay.model.js");
 const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
