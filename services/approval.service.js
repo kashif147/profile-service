@@ -7,6 +7,14 @@ const {
   publishDomainEvent,
   APPLICATION_REVIEW_EVENTS,
 } = require("../rabbitMQ/index.js");
+
+// Helper function to handle bypass user ObjectId conversion
+function getReviewerIdForDb(reviewerId) {
+  if (reviewerId === "bypass-user") {
+    return null; // Allow null for bypass users
+  }
+  return reviewerId;
+}
 const ReviewOverlay = require("../models/reviewOverlay.model.js");
 const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
@@ -96,7 +104,7 @@ async function approveApplication({
         },
         applicationStatus: APPLICATION_STATUS.APPROVED,
         approvalDetails: {
-          approvedBy: reviewerId,
+          approvedBy: getReviewerIdForDb(reviewerId),
           approvedAt: new Date(),
           comments: overlay.notes ?? undefined,
           effectiveHash,
@@ -147,7 +155,7 @@ async function approveApplication({
         },
         applicationStatus: APPLICATION_STATUS.APPROVED,
         approvalDetails: {
-          approvedBy: reviewerId,
+          approvedBy: getReviewerIdForDb(reviewerId),
           approvedAt: new Date(),
           comments: overlay.notes ?? undefined,
           effectiveHash,
@@ -173,7 +181,7 @@ async function approveApplication({
       contactInfo: effective.contactInfo ?? null,
       applicationStatus: APPLICATION_STATUS.APPROVED,
       approvalDetails: {
-        approvedBy: reviewerId,
+        approvedBy: getReviewerIdForDb(reviewerId),
         approvedAt: new Date(),
         comments: overlay.notes ?? undefined,
       },
@@ -264,7 +272,7 @@ async function rejectApplication({
         $set: {
           applicationStatus: "REJECTED",
           approvalDetails: {
-            approvedBy: reviewerId,
+            approvedBy: getReviewerIdForDb(reviewerId),
             approvedAt: new Date(),
             rejectionReason: reason,
             comments: notes,

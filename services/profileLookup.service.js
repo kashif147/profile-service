@@ -1,4 +1,12 @@
 const Profile = require("../models/profile.model.js");
+
+// Helper function to handle bypass user ObjectId conversion
+function getReviewerIdForDb(reviewerId) {
+  if (reviewerId === "bypass-user") {
+    return null; // Allow null for bypass users
+  }
+  return reviewerId;
+}
 function normalizeEmail(email) {
   return (email || "").trim().toLowerCase();
 }
@@ -45,7 +53,10 @@ async function findOrCreateProfileByEmail({
           contactInfo: effective.contactInfo || {},
           professionalDetails: effective.professionalDetails || {},
           applicationStatus: "APPROVED",
-          approvalDetails: { approvedBy: reviewerId, approvedAt: new Date() },
+          approvalDetails: {
+            approvedBy: getReviewerIdForDb(reviewerId),
+            approvedAt: new Date(),
+          },
         },
       ],
       { session }
@@ -56,7 +67,7 @@ async function findOrCreateProfileByEmail({
       contactInfo: effective.contactInfo || {},
       professionalDetails: effective.professionalDetails || {},
       applicationStatus: "APPROVED",
-      "approvalDetails.approvedBy": reviewerId,
+      "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
       "approvalDetails.approvedAt": new Date(),
     };
     await Profile.updateOne({ _id: profile._id }, { $set }, { session });

@@ -1,6 +1,14 @@
 // services/profileLookup.service.js
 const Profile = require("../models/profile.model.js");
 
+// Helper function to handle bypass user ObjectId conversion
+function getReviewerIdForDb(reviewerId) {
+  if (reviewerId === "bypass-user") {
+    return null; // Allow null for bypass users
+  }
+  return reviewerId;
+}
+
 function normalizeEmail(email) {
   return (email || "").trim().toLowerCase();
 }
@@ -57,7 +65,7 @@ async function findOrCreateProfileByEmail({
           subscriptionAttributes: {}, // set below by caller if needed
           applicationStatus: "APPROVED",
           approvalDetails: {
-            approvedBy: reviewerId,
+            approvedBy: getReviewerIdForDb(reviewerId),
             approvedAt: new Date(),
           },
         },
@@ -71,7 +79,7 @@ async function findOrCreateProfileByEmail({
       contactInfo: effective.contactInfo || {},
       professionalDetails: effective.professionalDetails || {},
       applicationStatus: "APPROVED",
-      "approvalDetails.approvedBy": reviewerId,
+      "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
       "approvalDetails.approvedAt": new Date(),
     };
     if (!profile.mobileNumber && contactInfo.mobileNumber)

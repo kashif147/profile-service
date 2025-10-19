@@ -4,6 +4,14 @@ const ProfessionalDetails = require("../../models/professional.details.model.js"
 const SubscriptionDetails = require("../../models/subscription.model.js");
 const Profile = require("../../models/profile.model.js");
 
+// Helper function to handle bypass user ObjectId conversion
+function getReviewerIdForDb(reviewerId) {
+  if (reviewerId === "bypass-user") {
+    return null; // Allow null for bypass users
+  }
+  return reviewerId;
+}
+
 class ApplicationApprovalEventListener {
   constructor() {
     this.serviceName = "profile-service";
@@ -40,7 +48,7 @@ class ApplicationApprovalEventListener {
               personalInfo: effective.personalInfo,
               contactInfo: effective.contactInfo,
               applicationStatus: "APPROVED",
-              "approvalDetails.approvedBy": data.reviewerId,
+              "approvalDetails.approvedBy": getReviewerIdForDb(data.reviewerId),
               "approvalDetails.approvedAt": new Date(),
             },
           },
