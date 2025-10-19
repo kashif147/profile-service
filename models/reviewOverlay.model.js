@@ -8,6 +8,7 @@ const ReviewOverlaySchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "users",
       index: true,
+      required: false, // Allow null for bypass users
     },
     proposedPatch: { type: Array, default: [] }, // RFC 6902
     notes: String,

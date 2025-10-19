@@ -79,7 +79,11 @@ const ProfileSchema = new mongoose.Schema(
       default: APPLICATION_STATUS.IN_PROGRESS,
     },
     approvalDetails: {
-      approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+      approvedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "users",
+        required: false,
+      },
       approvedAt: Date,
       rejectionReason: String,
       comments: String,

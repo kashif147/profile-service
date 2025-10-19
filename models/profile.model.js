@@ -34,7 +34,11 @@ const ProfileSchema = new mongoose.Schema(
       index: true,
     },
     approvalDetails: {
-      approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+      approvedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "users",
+        required: false,
+      },
       approvedAt: Date,
       rejectionReason: String,
       comments: String,

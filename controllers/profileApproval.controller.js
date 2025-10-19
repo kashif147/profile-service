@@ -3,6 +3,14 @@ const mongoose = require("mongoose");
 const jsonPatch = require("fast-json-patch");
 const { applyPatch } = jsonPatch;
 
+// Helper function to handle bypass user ObjectId conversion
+function getReviewerIdForDb(reviewerId) {
+  if (reviewerId === "bypass-user") {
+    return null; // Allow null for bypass users
+  }
+  return reviewerId;
+}
+
 const ReviewOverlay = require("../models/reviewOverlay.model.js");
 const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
@@ -142,7 +150,7 @@ async function approveApplication(req, res, next) {
             subscriptionAttributes: subAttrs(effective.subscriptionDetails),
             applicationStatus: "APPROVED",
             approvalDetails: {
-              approvedBy: reviewerId,
+              approvedBy: getReviewerIdForDb(reviewerId),
               approvedAt: new Date(),
               effectiveHash: crypto
                 .createHash("sha256")
@@ -175,7 +183,7 @@ async function approveApplication(req, res, next) {
             subscriptionAttributes: subAttrs(effective.subscriptionDetails),
             applicationStatus: "APPROVED",
             approvalDetails: {
-              approvedBy: reviewerId,
+              approvedBy: getReviewerIdForDb(reviewerId),
               approvedAt: new Date(),
               effectiveHash: crypto
                 .createHash("sha256")
@@ -198,7 +206,7 @@ async function approveApplication(req, res, next) {
             personalInfo: effective.personalInfo,
             contactInfo: effective.contactInfo,
             applicationStatus: "approved",
-            "approvalDetails.approvedBy": reviewerId,
+            "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
             "approvalDetails.approvedAt": new Date(),
           },
         },

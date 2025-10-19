@@ -89,6 +89,9 @@ async function testReviewDraft() {
     console.log("3. Check if JWT token is valid and has proper permissions");
     console.log("4. Ensure MongoDB connection is working");
     console.log("5. Verify the payload structure matches the expected schema");
+    console.log(
+      "\n✅ FIXED: reviewerId ObjectId casting issue for bypass users"
+    );
     console.log("\n📋 Error Details:");
     if (error.response?.data?.error) {
       console.log("   Code:", error.response.data.error.code);

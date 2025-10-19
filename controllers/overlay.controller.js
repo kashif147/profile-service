@@ -2,6 +2,15 @@ const crypto = require("crypto");
 const jsonPatch = require("fast-json-patch");
 const { applyPatch, getValueByPointer } = jsonPatch;
 const { AppError } = require("../errors/AppError.js");
+const mongoose = require("mongoose");
+
+// Helper function to handle bypass user ObjectId conversion
+function getReviewerIdForDb(reviewerId) {
+  if (reviewerId === "bypass-user") {
+    return null; // Allow null for bypass users
+  }
+  return reviewerId;
+}
 
 function pathExists(doc, pointer) {
   try {
@@ -166,12 +175,16 @@ async function saveOverlayDraft(req, res, next) {
       applicationId,
       status: "open",
     });
+
+    // Handle bypass user - reviewerId must be a valid ObjectId or null
+    const reviewerIdForDb = getReviewerIdForDb(reviewerId);
+
     if (!overlay) {
       overlay = new ReviewOverlay({
         overlayId: crypto.randomUUID(),
         applicationId,
         tenantId,
-        reviewerId,
+        reviewerId: reviewerIdForDb,
         proposedPatch: patchToUse,
         notes,
       });
@@ -179,6 +192,10 @@ async function saveOverlayDraft(req, res, next) {
       overlay.proposedPatch = patchToUse;
       overlay.notes = notes ?? overlay.notes;
       overlay.overlayVersion += 1;
+      // Only update reviewerId if it's not a bypass user
+      if (reviewerId !== "bypass-user") {
+        overlay.reviewerId = reviewerId;
+      }
     }
     await overlay.save();
 
