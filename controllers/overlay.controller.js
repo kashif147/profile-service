@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const jsonPatch = require("fast-json-patch");
 const { applyPatch, getValueByPointer } = jsonPatch;
+const { AppError } = require("../errors/AppError.js");
 
 function pathExists(doc, pointer) {
   try {
@@ -27,9 +28,10 @@ function validatePatchPaths(patch) {
       )
   );
   if (bad) {
-    const err = new Error(`Patch path not allowed: ${bad.path}`);
-    err.status = 400;
-    throw err;
+    throw AppError.badRequest(`Patch path not allowed: ${bad.path}`, {
+      invalidPath: bad.path,
+      allowedPrefixes: ALLOWED_PREFIXES,
+    });
   }
 }
 
@@ -41,10 +43,25 @@ async function saveOverlayDraft(req, res, next) {
   const tenantId = req.tenantId;
   const reviewerId = req.user?.id;
 
+  console.log(
+    `[saveOverlayDraft] Starting for applicationId: ${applicationId}`
+  );
+  console.log(`[saveOverlayDraft] Request body keys:`, Object.keys(req.body));
+  console.log(
+    `[saveOverlayDraft] TenantId: ${tenantId}, ReviewerId: ${reviewerId}`
+  );
+
   try {
     // Load authoritative submission from portal-service
+    console.log(
+      `[saveOverlayDraft] Loading submission for applicationId: ${applicationId}`
+    );
     const { submission: serverSubmission } = await loadSubmission(
       applicationId
+    );
+    console.log(
+      `[saveOverlayDraft] Loaded server submission:`,
+      !!serverSubmission
     );
 
     // Check if submission exists, use client submission as fallback
@@ -67,20 +84,24 @@ async function saveOverlayDraft(req, res, next) {
       try {
         patchToUse = jsonPatch.compare(baseSubmission, effective);
       } catch (e) {
-        const err = new Error(
-          "Failed to generate patch from effectiveDocument"
+        throw AppError.badRequest(
+          "Failed to generate patch from effectiveDocument",
+          {
+            originalError: e.message,
+            baseSubmissionKeys: Object.keys(baseSubmission),
+            effectiveDocumentKeys: Object.keys(effective),
+          }
         );
-        err.status = 400;
-        throw err;
       }
     } else if (proposedPatch) {
       // Client provided proposedPatch
       try {
         validatePatchPaths(proposedPatch);
       } catch (e) {
-        const err = new Error(`Invalid patch paths: ${e.message}`);
-        err.status = 400;
-        throw err;
+        throw AppError.badRequest(`Invalid patch paths: ${e.message}`, {
+          originalError: e.message,
+          proposedPatch: proposedPatch,
+        });
       }
 
       // Validate patch paths exist on the base submission for replace/remove
@@ -99,13 +120,16 @@ async function saveOverlayDraft(req, res, next) {
         );
         console.error("Missing patch paths:", missingPaths);
 
-        const err = new Error(
+        throw AppError.conflict(
           `Patch path(s) not found on latest submission: ${missingPaths.join(
             ", "
-          )}`
+          )}`,
+          {
+            missingPaths: missingPaths,
+            baseSubmissionStructure: baseSubmission,
+            proposedPatch: proposedPatch,
+          }
         );
-        err.status = 409;
-        throw err;
       }
 
       // Try to apply the client-provided patch to the base submission
@@ -118,18 +142,23 @@ async function saveOverlayDraft(req, res, next) {
         patchToUse = proposedPatch;
       } catch (e) {
         // If it doesn't apply, the client likely used a stale submission → ask them to refresh
-        const err = new Error(
-          "Submission has changed. Please refresh and rebase your patch against the latest server submission."
+        throw AppError.conflict(
+          "Submission has changed. Please refresh and rebase your patch against the latest server submission.",
+          {
+            originalError: e.message,
+            baseSubmission: baseSubmission,
+            proposedPatch: proposedPatch,
+          }
         );
-        err.status = 409;
-        throw err;
       }
     } else {
-      const err = new Error(
-        "Either proposedPatch or effectiveDocument is required"
+      throw AppError.badRequest(
+        "Either proposedPatch or effectiveDocument is required",
+        {
+          receivedFields: Object.keys(req.body),
+          requiredFields: ["proposedPatch", "effectiveDocument"],
+        }
       );
-      err.status = 400;
-      throw err;
     }
 
     // Upsert single open overlay per application
@@ -161,6 +190,11 @@ async function saveOverlayDraft(req, res, next) {
       proposedPatch: patchToUse,
     });
   } catch (e) {
+    console.error(
+      `[saveOverlayDraft] Error for applicationId ${applicationId}:`,
+      e
+    );
+    console.error(`[saveOverlayDraft] Error stack:`, e.stack);
     next(e);
   }
 }

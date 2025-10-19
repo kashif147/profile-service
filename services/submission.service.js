@@ -2,9 +2,14 @@
 const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
+const { AppError } = require("../errors/AppError.js");
 
 async function loadSubmission(applicationId) {
   try {
+    console.log(
+      `[loadSubmission] Starting load for applicationId: ${applicationId}`
+    );
+
     // Load all related data for the application
     const [personalDetails, professionalDetails, subscriptionDetails] =
       await Promise.all([
@@ -12,6 +17,10 @@ async function loadSubmission(applicationId) {
         ProfessionalDetails.findOne({ ApplicationId: applicationId }).lean(),
         SubscriptionDetails.findOne({ ApplicationId: applicationId }).lean(),
       ]);
+
+    console.log(
+      `[loadSubmission] Database queries completed for applicationId: ${applicationId}`
+    );
 
     // Log loaded data for debugging
     console.log(`Loaded submission data for application ${applicationId}:`, {
@@ -43,11 +52,20 @@ async function loadSubmission(applicationId) {
     return { submission, meta };
   } catch (error) {
     console.error(
-      `Failed to load submission for application ${applicationId}:`,
+      `[loadSubmission] Failed to load submission for application ${applicationId}:`,
       error
     );
-    throw new Error(
-      `Failed to load submission for application ${applicationId}: ${error.message}`
+    console.error(`[loadSubmission] Error stack:`, error.stack);
+    console.error(`[loadSubmission] Error name:`, error.name);
+    console.error(`[loadSubmission] Error message:`, error.message);
+    throw AppError.internalServerError(
+      `Failed to load submission for application ${applicationId}`,
+      {
+        originalError: error.message,
+        applicationId: applicationId,
+        errorName: error.name,
+        errorStack: error.stack,
+      }
     );
   }
 }
