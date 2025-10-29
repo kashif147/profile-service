@@ -165,25 +165,38 @@ exports.getMyProfessionalDetails = async (req, res, next) => {
   try {
     const { userId, userType } = extractUserAndCreatorContext(req);
 
-    // Only allow PORTAL users to access this endpoint
-    if (userType !== "PORTAL") {
-      return next(AppError.forbidden("Access denied. Only for PORTAL users."));
-    }
+    // For PORTAL users, get by userId
+    if (userType === "PORTAL") {
+      if (!userId) {
+        return next(AppError.badRequest("User ID is required"));
+      }
 
-    if (!userId) {
-      return next(AppError.badRequest("User ID is required"));
-    }
+      const professionalDetails =
+        await professionalDetailsService.getMyProfessionalDetails(userId);
 
-    const professionalDetails =
-      await professionalDetailsService.getMyProfessionalDetails(userId);
+      if (!professionalDetails) {
+        return next(
+          AppError.notFound("Professional details not found for this user")
+        );
+      }
 
-    if (!professionalDetails) {
+      return res.success(professionalDetails);
+    } else if (userType === "CRM") {
+      // CRM users don't have userId - return not found instead of blocking
       return next(
-        AppError.notFound("Professional details not found for this user")
+        AppError.notFound(
+          "Professional details not found. CRM users should use GET /api/professional-details/:applicationId endpoint"
+        )
+      );
+    } else {
+      return next(
+        AppError.badRequest(
+          `Invalid userType: ${
+            userType || "undefined"
+          }. Expected PORTAL or CRM.`
+        )
       );
     }
-
-    return res.success(professionalDetails);
   } catch (error) {
     console.error(
       "ProfessionalDetailsController [getMyProfessionalDetails] Error:",

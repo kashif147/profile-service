@@ -7,11 +7,14 @@ const { AppError } = require("../errors/AppError");
 exports.createPersonalDetails = async (req, res, next) => {
   try {
     const { userId, creatorId, userType } = extractUserAndCreatorContext(req);
+    console.log("=== createPersonalDetails START ===");
+    console.log("User context:", { userId, creatorId, userType });
 
     const validatedData =
       await joischemas.personal_details_create.validateAsync(req.body);
 
     if (userType === "CRM") {
+      console.log("CRM user creating personal details - checking by email");
       const email =
         req.body.contactInfo?.personalEmail || req.body.contactInfo?.workEmail;
       const existingPersonalDetails = await personalDetailsHandler.getByEmail(
@@ -24,7 +27,8 @@ exports.createPersonalDetails = async (req, res, next) => {
           )
         );
       }
-    } else {
+    } else if (userType === "PORTAL") {
+      console.log("PORTAL user creating personal details - checking by userId");
       const existingPersonalDetails = await personalDetailsHandler.getByUserId(
         userId
       );
@@ -35,14 +39,18 @@ exports.createPersonalDetails = async (req, res, next) => {
           )
         );
       }
+    } else {
+      console.warn("Unknown userType:", userType);
     }
 
+    console.log("Creating personal details for userType:", userType);
     const result = await personalDetailsService.createPersonalDetails({
       ...validatedData,
       userId,
       meta: { createdBy: creatorId, userType },
     });
 
+    console.log("=== createPersonalDetails SUCCESS ===");
     return res.success(result);
   } catch (error) {
     console.error(
@@ -159,35 +167,48 @@ exports.getMyPersonalDetails = async (req, res, next) => {
     const { userId, userType } = extractUserAndCreatorContext(req);
     console.log("Extracted context:", { userId, userType });
 
-    // Only allow PORTAL users to access this endpoint
-    if (userType !== "PORTAL") {
-      console.log("User type check failed:", userType);
-      return next(AppError.forbidden("Access denied. Only for PORTAL users."));
-    }
+    // For PORTAL users, get by userId
+    if (userType === "PORTAL") {
+      if (!userId) {
+        console.log("User ID check failed:", userId);
+        return next(AppError.badRequest("User ID is required"));
+      }
 
-    if (!userId) {
-      console.log("User ID check failed:", userId);
-      return next(AppError.badRequest("User ID is required"));
-    }
+      console.log(
+        "Calling personalDetailsService.getMyPersonalDetails with userId:",
+        userId
+      );
+      const personalDetails = await personalDetailsService.getMyPersonalDetails(
+        userId
+      );
+      console.log("Service response:", personalDetails);
 
-    console.log(
-      "Calling personalDetailsService.getMyPersonalDetails with userId:",
-      userId
-    );
-    const personalDetails = await personalDetailsService.getMyPersonalDetails(
-      userId
-    );
-    console.log("Service response:", personalDetails);
+      if (!personalDetails) {
+        console.log("No personal details found for user:", userId);
+        return next(
+          AppError.notFound("Personal details not found for this user")
+        );
+      }
 
-    if (!personalDetails) {
-      console.log("No personal details found for user:", userId);
+      console.log("=== getMyPersonalDetails SUCCESS ===");
+      return res.success(personalDetails);
+    } else if (userType === "CRM") {
+      // CRM users don't have userId - return not found instead of blocking
+      console.log("CRM user called getMyPersonalDetails - no userId available");
       return next(
-        AppError.notFound("Personal details not found for this user")
+        AppError.notFound(
+          "Personal details not found. CRM users should use GET /api/personal-details/:applicationId endpoint"
+        )
+      );
+    } else {
+      return next(
+        AppError.badRequest(
+          `Invalid userType: ${
+            userType || "undefined"
+          }. Expected PORTAL or CRM.`
+        )
       );
     }
-
-    console.log("=== getMyPersonalDetails SUCCESS ===");
-    return res.success(personalDetails);
   } catch (error) {
     console.error(
       "PersonalDetailsController [getMyPersonalDetails] Error:",

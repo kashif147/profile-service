@@ -106,6 +106,11 @@ const authenticate = async (req, res, next) => {
       });
     }
 
+    // Validate userType is present in token (warn if missing but don't block)
+    if (!decoded.userType) {
+      console.warn("WARNING: JWT token missing userType claim. This may cause authorization failures.");
+    }
+
     // Set request context with tenant isolation
     req.ctx = {
       tenantId: tenantId,
