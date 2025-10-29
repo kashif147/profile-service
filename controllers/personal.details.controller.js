@@ -66,11 +66,33 @@ exports.createPersonalDetails = async (req, res, next) => {
 
 exports.getPersonalDetails = async (req, res, next) => {
   try {
+    console.log("=== getPersonalDetails START ===");
+    console.log("Request params:", req.params);
+    console.log("Request user:", req.user);
+    console.log("Request ctx:", req.ctx);
+
     const { userId, userType } = extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
+    console.log("Extracted context:", { userId, userType, applicationId });
+
     if (!applicationId) {
       return next(AppError.badRequest("Application ID is required"));
+    }
+
+    if (!userType) {
+      console.error("UserType is missing in request context");
+      return next(AppError.badRequest("User type is required. Please ensure authentication is valid."));
+    }
+
+    if (userType !== "CRM" && userType !== "PORTAL") {
+      console.error("Invalid userType:", userType);
+      return next(AppError.badRequest(`Invalid user type: ${userType}. Expected PORTAL or CRM.`));
+    }
+
+    if (userType === "PORTAL" && !userId) {
+      console.error("Portal user missing userId");
+      return next(AppError.badRequest("User ID is required for portal users"));
     }
 
     const personalDetails = await personalDetailsService.getPersonalDetails(
@@ -78,12 +100,15 @@ exports.getPersonalDetails = async (req, res, next) => {
       userId,
       userType
     );
+
+    console.log("=== getPersonalDetails SUCCESS ===");
     return res.success(personalDetails);
   } catch (error) {
     console.error(
       "PersonalDetailsController [getPersonalDetails] Error:",
       error
     );
+    console.error("Error stack:", error.stack);
     if (error.message === "Personal details not found") {
       return next(AppError.notFound("Personal details not found"));
     }

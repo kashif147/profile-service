@@ -40,14 +40,30 @@ class PersonalDetailsService {
         throw AppError.badRequest("Application ID is required");
       }
 
+      if (!userType) {
+        throw AppError.badRequest("User type is required");
+      }
+
+      let personalDetails;
       if (userType === "CRM") {
-        return await personalDetailsHandler.getApplicationById(applicationId);
-      } else {
-        return await personalDetailsHandler.getByUserIdAndApplicationId(
+        personalDetails = await personalDetailsHandler.getApplicationById(applicationId);
+      } else if (userType === "PORTAL") {
+        if (!userId) {
+          throw AppError.badRequest("User ID is required for portal users");
+        }
+        personalDetails = await personalDetailsHandler.getByUserIdAndApplicationId(
           userId,
           applicationId
         );
+      } else {
+        throw AppError.badRequest(`Invalid user type: ${userType}. Expected PORTAL or CRM.`);
       }
+
+      if (!personalDetails) {
+        throw new Error("Personal details not found");
+      }
+
+      return personalDetails;
     } catch (error) {
       console.error(
         "PersonalDetailsService [getPersonalDetails] Error:",
