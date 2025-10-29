@@ -56,6 +56,27 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Verify Node.js configuration files
+        run: |
+          echo "=== Checking Node.js version files ==="
+          if [ -f .nvmrc ]; then
+            echo ".nvmrc content: $(cat .nvmrc)"
+          else
+            echo "WARNING: .nvmrc file not found!"
+          fi
+          if [ -f package.json ]; then
+            echo "package.json engines:"
+            grep -A2 '"engines"' package.json || echo "No engines field found"
+          fi
+      
+      - name: Configure Node.js version in Azure App Service
+        run: |
+          # Try to set Node version - resource group name may vary
+          az webapp config appsettings set \
+            --name profileserviceShell \
+            --settings WEBSITE_NODE_DEFAULT_VERSION=~20 \
+            2>&1 || echo "Note: Could not set via CLI (may need manual setup in Azure Portal)"
+
       - name: "Deploy to Azure Web App"
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
