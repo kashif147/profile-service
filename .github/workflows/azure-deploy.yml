@@ -68,7 +68,7 @@ jobs:
             echo "package.json engines:"
             grep -A2 '"engines"' package.json || echo "No engines field found"
           fi
-      
+
       - name: Configure Node.js version in Azure App Service
         run: |
           # Try to set Node version - resource group name may vary

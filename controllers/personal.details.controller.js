@@ -121,37 +121,53 @@ exports.updatePersonalDetails = async (req, res, next) => {
     const { userId, userType, creatorId } = extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
+    // Context logging for debugging
+    console.log('[updatePersonalDetails] req.user:', req.user);
+    console.log('[updatePersonalDetails] Context:', { userId, userType, creatorId, applicationId });
+
     if (!applicationId) {
-      return next(AppError.badRequest("Application ID is required"));
+      return next(AppError.badRequest('Application ID is required'));
     }
 
-    const validatedData =
-      await joischemas.personal_details_update.validateAsync(req.body);
+    let validatedData;
+    try {
+      validatedData = await joischemas.personal_details_update.validateAsync(req.body);
+    } catch (validationError) {
+      return next(AppError.badRequest('Validation error: ' + validationError.message));
+    }
+
     const updatePayload = {
       ...validatedData,
       meta: { updatedBy: creatorId, userType },
     };
 
-    const result = await personalDetailsService.updatePersonalDetails(
-      applicationId,
-      updatePayload,
-      userId,
-      userType
-    );
+    let result;
+    try {
+      result = await personalDetailsService.updatePersonalDetails(
+        applicationId,
+        updatePayload,
+        userId,
+        userType
+      );
+    } catch (err) {
+      // Cleanly map specific business errors to AppError
+      if (err.message && err.message === 'Personal details not found') {
+        return next(AppError.notFound('Personal details not found'));
+      } else if (err.name === 'ValidationError') {
+        return next(AppError.badRequest('Mongoose model validation error: ' + err.message));
+      } else if (err.code === 'PERMISSION_DENIED') {
+        return next(AppError.forbidden('Not authorized to update personal details'));
+      }
+      return next(err);
+    }
 
     return res.success(result);
   } catch (error) {
     console.error(
-      "PersonalDetailsController [updatePersonalDetails] Error:",
+      'PersonalDetailsController [updatePersonalDetails] Error:',
       error
     );
-    if (error.isJoi) {
-      return next(AppError.badRequest("Validation error: " + error.message));
-    }
-    if (error.message === "Personal details not found") {
-      return next(AppError.notFound("Personal details not found"));
-    }
-    return next(error);
+    return next(AppError.internal(error.message || 'Internal server error'));
   }
 };
 
