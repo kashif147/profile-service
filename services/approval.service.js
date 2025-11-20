@@ -113,6 +113,10 @@ async function approveApplication({
     } else {
       // Create new profile (first-ever membership): set initial fields via upsert
       const now = new Date();
+      
+      // Generate membership number for new profile
+      const membershipNumber = await generateMembershipNumber();
+      
       await Profile.updateOne(
         { tenantId, normalizedEmail },
         {
@@ -122,6 +126,7 @@ async function approveApplication({
           $setOnInsert: {
             tenantId,
             normalizedEmail,
+            membershipNumber: membershipNumber, // Auto-generated membership number for new profile
             firstJoinedDate: now,
             submissionDate: now,
             currentSubscriptionId: null,
@@ -131,6 +136,7 @@ async function approveApplication({
         { upsert: true, session }
       );
       profile = await Profile.findOne({ tenantId, normalizedEmail }).session(session);
+      console.log(`✅ Generated membership number ${membershipNumber} for new profile ${profile._id}`);
     }
 
     // 2) Update PersonalDetails with effective personal/contact AND approval metadata

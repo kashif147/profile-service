@@ -1,6 +1,7 @@
 // services/profileLookup.service.js
 const Profile = require("../models/profile.model.js");
 const { flattenProfilePayload } = require("./profile.transform.js");
+const { generateMembershipNumber } = require("./membership.number.generator.js");
 
 // Helper function to handle bypass user ObjectId conversion
 function getReviewerIdForDb(reviewerId) {
@@ -48,6 +49,9 @@ async function findOrCreateProfileByEmail({
   }).session(session);
 
   if (!profile) {
+    // Generate membership number for new profile
+    const membershipNumber = await generateMembershipNumber();
+    
     profile = await Profile.create(
       [
         {
@@ -55,6 +59,7 @@ async function findOrCreateProfileByEmail({
           email,
           normalizedEmail: nEmail,
           ...flattenedProfileFields,
+          membershipNumber: membershipNumber, // Auto-generated membership number for new profile
           applicationStatus: "APPROVED",
           approvalDetails: {
             approvedBy: getReviewerIdForDb(reviewerId),
@@ -64,6 +69,7 @@ async function findOrCreateProfileByEmail({
       ],
       { session }
     ).then((arr) => arr[0]);
+    console.log(`✅ Generated membership number ${membershipNumber} for new profile ${profile._id}`);
   } else {
     // Update profile fields conservatively: fill if blank, refresh core payloads
     const $set = {
