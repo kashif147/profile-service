@@ -9,7 +9,7 @@ const allowedUpdateFields = new Set([
   "professionalDetails",
   "subscriptionDetails",
   "preferences",
-  "conrnMarket",
+  "cornMarket",
   "additionalInformation",
   "recruitmentDetails",
   "membershipNumber",

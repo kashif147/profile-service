@@ -46,7 +46,7 @@ async function findOrCreateProfileByEmail({
 			contactInfo: flattened.contactInfo || {},
 			professionalDetails: flattened.professionalDetails || {},
 			preferences: flattened.preferences || {},
-			conrnMarket: flattened.conrnMarket || {},
+			cornMarket: flattened.cornMarket || {},
 			additionalInformation: flattened.additionalInformation || {},
 			recruitmentDetails: flattened.recruitmentDetails || {},
 			firstJoinedDate: null, // set below when appropriate
@@ -64,7 +64,7 @@ async function findOrCreateProfileByEmail({
 			contactInfo: flattened.contactInfo || {},
 			professionalDetails: flattened.professionalDetails || {},
 			preferences: flattened.preferences || {},
-			conrnMarket: flattened.conrnMarket || {},
+			cornMarket: flattened.cornMarket || {},
 			additionalInformation: flattened.additionalInformation || {},
 			recruitmentDetails: flattened.recruitmentDetails || {},
 		};

@@ -80,7 +80,7 @@ const ProfileSchema = new mongoose.Schema(
       valueAddedServices: { type: Boolean, default: false },
       termsAndConditions: { type: Boolean, default: true },
     },
-    conrnMarket: {
+    cornMarket: {
       inmoRewards: { type: Boolean, default: false },
       exclusiveDiscountsAndOffers: { type: Boolean, default: false },
       incomeProtectionScheme: { type: Boolean, default: false },

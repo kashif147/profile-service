@@ -101,9 +101,9 @@ function flattenProfilePayload(effective = {}) {
     payload.preferences = preferences;
   }
 
-  const conrnMarket = pickSection(effective.conrnMarket, cornmarketKeys);
-  if (hasValues(conrnMarket)) {
-    payload.conrnMarket = conrnMarket;
+  const cornMarket = pickSection(effective.cornMarket, cornmarketKeys);
+  if (hasValues(cornMarket)) {
+    payload.cornMarket = cornMarket;
   }
 
 	const additionalInformationSource = effective.additionalInformation || {};
@@ -134,7 +134,7 @@ function rehydrateProfile(doc = {}) {
   const contactInfo = cloneSection(profile.contactInfo);
   const professionalDetails = cloneSection(profile.professionalDetails);
   const preferences = cloneSection(profile.preferences);
-  const conrnMarket = cloneSection(profile.conrnMarket);
+  const cornMarket = cloneSection(profile.cornMarket);
   const additionalInformation = cloneSection(profile.additionalInformation);
   const recruitmentDetails = cloneSection(profile.recruitmentDetails);
 
@@ -143,7 +143,7 @@ function rehydrateProfile(doc = {}) {
     contactInfo,
     professionalDetails,
     preferences,
-    conrnMarket,
+    cornMarket,
     additionalInformation,
     recruitmentDetails,
   };

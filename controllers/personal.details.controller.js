@@ -13,10 +13,37 @@ exports.createPersonalDetails = async (req, res, next) => {
     const validatedData =
       await joischemas.personal_details_create.validateAsync(req.body);
 
+    // Validate userType early to prevent invalid userTypes from bypassing duplicate checks
+    if (!userType) {
+      console.error("UserType is missing in request context");
+      return next(
+        AppError.badRequest(
+          "User type is required. Please ensure authentication is valid."
+        )
+      );
+    }
+
+    if (userType !== "CRM" && userType !== "PORTAL") {
+      console.error("Invalid userType:", userType);
+      return next(
+        AppError.badRequest(
+          `Invalid user type: ${userType}. Expected PORTAL or CRM.`
+        )
+      );
+    }
+
+    // Perform duplicate check based on userType
     if (userType === "CRM") {
       console.log("CRM user creating personal details - checking by email");
       const email =
         req.body.contactInfo?.personalEmail || req.body.contactInfo?.workEmail;
+      if (!email) {
+        return next(
+          AppError.badRequest(
+            "Email is required for CRM users to check for duplicates"
+          )
+        );
+      }
       const existingPersonalDetails = await personalDetailsHandler.getByEmail(
         email
       );
@@ -29,6 +56,11 @@ exports.createPersonalDetails = async (req, res, next) => {
       }
     } else if (userType === "PORTAL") {
       console.log("PORTAL user creating personal details - checking by userId");
+      if (!userId) {
+        return next(
+          AppError.badRequest("User ID is required for portal users")
+        );
+      }
       const existingPersonalDetails = await personalDetailsHandler.getByUserId(
         userId
       );
@@ -39,8 +71,6 @@ exports.createPersonalDetails = async (req, res, next) => {
           )
         );
       }
-    } else {
-      console.warn("Unknown userType:", userType);
     }
 
     console.log("Creating personal details for userType:", userType);
