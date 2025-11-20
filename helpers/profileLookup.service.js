@@ -1,5 +1,6 @@
 // services/profileLookup.service.js
 const Profile = require("../models/profile.model.js");
+const { flattenProfilePayload } = require("./profile.transform.js");
 
 // Helper function to handle bypass user ObjectId conversion
 function getReviewerIdForDb(reviewerId) {
@@ -33,7 +34,7 @@ async function findOrCreateProfileByEmail({
   session,
 }) {
   const contactInfo = effective?.contactInfo || {};
-  const personalInfo = effective?.personalInfo || {};
+  const flattenedProfileFields = flattenProfilePayload(effective);
 
   const email = pickPrimaryEmail(contactInfo);
   if (!email) {
@@ -53,16 +54,7 @@ async function findOrCreateProfileByEmail({
           tenantId,
           email,
           normalizedEmail: nEmail,
-          mobileNumber: contactInfo.mobileNumber || null,
-          surname: personalInfo.surname || null,
-          forename: personalInfo.forename || null,
-          dateOfBirth: personalInfo.dateOfBirth || null,
-          addressLine1:
-            contactInfo.buildingOrHouse || contactInfo.streetOrRoad || null,
-          personalInfo: effective.personalInfo || {},
-          contactInfo: effective.contactInfo || {},
-          professionalDetails: effective.professionalDetails || {},
-          subscriptionAttributes: {}, // set below by caller if needed
+          ...flattenedProfileFields,
           applicationStatus: "APPROVED",
           approvalDetails: {
             approvedBy: getReviewerIdForDb(reviewerId),
@@ -75,28 +67,11 @@ async function findOrCreateProfileByEmail({
   } else {
     // Update profile fields conservatively: fill if blank, refresh core payloads
     const $set = {
-      personalInfo: effective.personalInfo || {},
-      contactInfo: effective.contactInfo || {},
-      professionalDetails: effective.professionalDetails || {},
+      ...flattenedProfileFields,
       applicationStatus: "APPROVED",
       "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
       "approvalDetails.approvedAt": new Date(),
     };
-    if (!profile.mobileNumber && contactInfo.mobileNumber)
-      $set.mobileNumber = contactInfo.mobileNumber;
-    if (!profile.surname && personalInfo.surname)
-      $set.surname = personalInfo.surname;
-    if (!profile.forename && personalInfo.forename)
-      $set.forename = personalInfo.forename;
-    if (!profile.dateOfBirth && personalInfo.dateOfBirth)
-      $set.dateOfBirth = personalInfo.dateOfBirth;
-    if (
-      !profile.addressLine1 &&
-      (contactInfo.buildingOrHouse || contactInfo.streetOrRoad)
-    ) {
-      $set.addressLine1 =
-        contactInfo.buildingOrHouse || contactInfo.streetOrRoad;
-    }
     await Profile.updateOne({ _id: profile._id }, { $set }, { session });
   }
 

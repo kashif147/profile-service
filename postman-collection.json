@@ -1,0 +1,630 @@
+{
+  "info": {
+    "name": "Profile Service API",
+    "description": "Complete API collection for Profile Service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "profileId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "applicationId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "API Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api",
+              "host": ["{{baseUrl}}"],
+              "path": ["api"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Profile",
+      "item": [
+        {
+          "name": "Validate Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profileData\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/profile/validate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "profile", "validate"]
+            }
+          }
+        },
+        {
+          "name": "Search Profiles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/profile/search",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "profile", "search"]
+            }
+          }
+        },
+        {
+          "name": "Get Profile by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/profile/{{profileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "profile", "{{profileId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profileData\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/profile/{{profileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "profile", "{{profileId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Profile",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/profile/{{profileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "profile", "{{profileId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Personal Details",
+      "item": [
+        {
+          "name": "Create Personal Details",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"personalDetails\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/personal-details",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "personal-details"]
+            }
+          }
+        },
+        {
+          "name": "Get My Personal Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/personal-details",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "personal-details"]
+            }
+          }
+        },
+        {
+          "name": "Get Personal Details by Application ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/personal-details/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "personal-details", "{{applicationId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Application Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/personal-details/{{applicationId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "personal-details", "{{applicationId}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "Update Personal Details",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"personalDetails\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/personal-details/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "personal-details", "{{applicationId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Personal Details",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/personal-details/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "personal-details", "{{applicationId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Professional Details",
+      "item": [
+        {
+          "name": "Create Professional Details",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"professionalDetails\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/professional-details/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "professional-details", "{{applicationId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get My Professional Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/professional-details",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "professional-details"]
+            }
+          }
+        },
+        {
+          "name": "Get Professional Details by Application ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/professional-details/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "professional-details", "{{applicationId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Professional Details",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"professionalDetails\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/professional-details/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "professional-details", "{{applicationId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Professional Details",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/professional-details/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "professional-details", "{{applicationId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Subscription Details",
+      "item": [
+        {
+          "name": "Create Subscription Details",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subscriptionDetails\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/subscription-details/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "subscription-details", "{{applicationId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Subscription Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/subscription-details/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "subscription-details", "{{applicationId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Subscription Details",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subscriptionDetails\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/subscription-details/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "subscription-details", "{{applicationId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Subscription Details",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/subscription-details/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "subscription-details", "{{applicationId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Applications",
+      "item": [
+        {
+          "name": "Get All Applications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/applications",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "applications"]
+            }
+          }
+        },
+        {
+          "name": "Get Application by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/applications/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "applications", "{{applicationId}}"]
+            }
+          }
+        },
+        {
+          "name": "Approve Application",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/applications/status/{{applicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "applications", "status", "{{applicationId}}"]
+            }
+          }
+        },
+        {
+          "name": "Review Draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "unique-key-here",
+                "description": "Required for idempotency"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reviewData\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/applications/{{applicationId}}/review-draft",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "applications", "{{applicationId}}", "review-draft"]
+            }
+          }
+        },
+        {
+          "name": "Approve Application (Alternative)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "unique-key-here",
+                "description": "Required for idempotency"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approvalData\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/applications/{{applicationId}}/approve",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "applications", "{{applicationId}}", "approve"]
+            }
+          }
+        },
+        {
+          "name": "Reject Application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rejectionReason\": \"Reason here\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/applications/{{applicationId}}/reject",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "applications", "{{applicationId}}", "reject"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+

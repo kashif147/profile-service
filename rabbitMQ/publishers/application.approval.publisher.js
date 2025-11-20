@@ -144,6 +144,62 @@ class ApplicationApprovalEventPublisher {
       throw error;
     }
   }
+
+  async publishSubscriptionUpsertRequested({
+    tenantId,
+    profileId,
+    applicationId,
+    membershipCategory,
+    dateJoined,
+    paymentType,
+    payrollNo,
+    paymentFrequency,
+    correlationId,
+  }) {
+    try {
+      console.log(
+        "📤 [APPLICATION_APPROVAL_PUBLISHER] Publishing subscription upsert requested:",
+        { tenantId, profileId, applicationId }
+      );
+
+      const result = await publisher.publish(
+        MEMBERSHIP_EVENTS.SUBSCRIPTION_UPSERT_REQUESTED,
+        {
+          tenantId,
+          profileId,
+          applicationId,
+          membershipCategory,
+          dateJoined,
+          paymentType,
+          payrollNo,
+          paymentFrequency,
+        },
+        {
+          tenantId,
+          correlationId,
+          exchange: "membership.events",
+          routingKey: MEMBERSHIP_EVENTS.SUBSCRIPTION_UPSERT_REQUESTED,
+          metadata: { service: "profile-service", version: "1.0" },
+        }
+      );
+
+      if (!result.success) {
+        throw new Error(
+          `Failed to publish subscription upsert requested: ${result.error}`
+        );
+      }
+
+      console.log(
+        "✅ [APPLICATION_APPROVAL_PUBLISHER] Subscription upsert requested published successfully"
+      );
+    } catch (error) {
+      console.error(
+        "❌ [APPLICATION_APPROVAL_PUBLISHER] Error publishing subscription upsert requested:",
+        { error: error.message, applicationId, profileId }
+      );
+      throw error;
+    }
+  }
 }
 
 module.exports = new ApplicationApprovalEventPublisher();

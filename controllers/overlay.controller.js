@@ -42,6 +42,17 @@ function validatePatchPaths(patch) {
       allowedPrefixes: ALLOWED_PREFIXES,
     });
   }
+  const blocked = patch.find((op) =>
+    op.path.startsWith("/professionalDetails/membershipCategory")
+  );
+  if (blocked) {
+    throw AppError.badRequest(
+      "membershipCategory must be updated via subscriptionDetails",
+      {
+        invalidPath: blocked.path,
+      }
+    );
+  }
 }
 
 const clone = (o) => JSON.parse(JSON.stringify(o));

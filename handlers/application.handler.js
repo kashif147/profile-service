@@ -2,9 +2,7 @@ const PersonalDetails = require("../models/personal.details.model");
 const ProfessionalDetails = require("../models/professional.details.model");
 const SubscriptionDetails = require("../models/subscription.model");
 const { APPLICATION_STATUS } = require("../constants/enums");
-const {
-  generateMembershipNumber,
-} = require("../helpers/membership.number.generator");
+// membership number generation moved to Profile creation flow
 
 exports.getAllApplications = (statusFilters = []) =>
   new Promise(async (resolve, reject) => {
@@ -31,7 +29,7 @@ exports.getApplicationById = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
       const application = await PersonalDetails.findOne({
-        ApplicationId: applicationId,
+        applicationId: applicationId,
       })
         .populate("userId", "name email")
         .populate("approvalDetails.approvedBy", "name email");
@@ -66,7 +64,7 @@ exports.updateApplicationStatus = (
       };
 
       const result = await PersonalDetails.findOneAndUpdate(
-        { ApplicationId: applicationId },
+        { applicationId: applicationId },
         updateData,
         { new: true, runValidators: true }
       );
@@ -76,30 +74,7 @@ exports.updateApplicationStatus = (
         return;
       }
 
-      // If application is approved, generate membership number
-      if (newStatus === APPLICATION_STATUS.APPROVED) {
-        try {
-          // Find the subscription details for this application
-          const subscriptionDetails = await SubscriptionDetails.findOne({
-            ApplicationId: applicationId,
-          });
-
-          if (subscriptionDetails) {
-            // Generate membership number
-            const membershipNumber = await generateMembershipNumber();
-
-            // Update subscription with membership number
-            await SubscriptionDetails.findOneAndUpdate(
-              { ApplicationId: applicationId },
-              { membershipNumber: membershipNumber },
-              { new: true }
-            );
-          }
-        } catch (error) {
-          console.error("Error generating membership number:", error);
-          // Don't fail the approval process if membership number generation fails
-        }
-      }
+      // Membership number is generated only when a new Profile is created
 
       resolve(result);
     } catch (error) {
@@ -116,9 +91,9 @@ exports.getApplicationWithDetails = (applicationId) =>
     try {
       const [personalDetails, professionalDetails, subscriptionDetails] =
         await Promise.all([
-          PersonalDetails.findOne({ ApplicationId: applicationId }),
-          ProfessionalDetails.findOne({ ApplicationId: applicationId }),
-          SubscriptionDetails.findOne({ ApplicationId: applicationId }),
+          PersonalDetails.findOne({ applicationId: applicationId }),
+          ProfessionalDetails.findOne({ applicationId: applicationId }),
+          SubscriptionDetails.findOne({ applicationId: applicationId }),
         ]);
 
       if (!personalDetails) {
@@ -126,19 +101,40 @@ exports.getApplicationWithDetails = (applicationId) =>
         return;
       }
 
+      const membershipCategory =
+        subscriptionDetails?.subscriptionDetails?.membershipCategory ??
+        professionalDetails?.professionalDetails?.membershipCategory ??
+        null;
+
+      const professionalPayload = professionalDetails
+        ? {
+            ...professionalDetails.professionalDetails,
+            membershipCategory,
+          }
+        : membershipCategory !== null
+        ? { membershipCategory }
+        : null;
+
+      const subscriptionPayload = subscriptionDetails
+        ? {
+            ...subscriptionDetails.subscriptionDetails,
+            membershipCategory:
+              subscriptionDetails.subscriptionDetails?.membershipCategory ??
+              membershipCategory,
+          }
+        : membershipCategory !== null
+        ? { membershipCategory }
+        : null;
+
       const applicationDetails = {
-        applicationId: personalDetails.ApplicationId,
+        applicationId: personalDetails.applicationId,
         userId: personalDetails.userId,
         membershipNumber: subscriptionDetails
           ? subscriptionDetails.membershipNumber
           : null,
         personalDetails: personalDetails,
-        professionalDetails: professionalDetails
-          ? professionalDetails.professionalDetails
-          : null,
-        subscriptionDetails: subscriptionDetails
-          ? subscriptionDetails.subscriptionDetails
-          : null,
+        professionalDetails: professionalPayload,
+        subscriptionDetails: subscriptionPayload,
         applicationStatus: personalDetails.applicationStatus,
         approvalDetails: personalDetails.approvalDetails,
         createdAt: personalDetails.createdAt,
@@ -174,26 +170,47 @@ exports.getAllApplicationsWithDetails = (statusFilters = []) =>
             const [professionalDetails, subscriptionDetails] =
               await Promise.all([
                 ProfessionalDetails.findOne({
-                  ApplicationId: application.ApplicationId,
+                  applicationId: application.applicationId,
                 }),
                 SubscriptionDetails.findOne({
-                  ApplicationId: application.ApplicationId,
+                  applicationId: application.applicationId,
                 }),
               ]);
 
+            const membershipCategory =
+              subscriptionDetails?.subscriptionDetails?.membershipCategory ??
+              professionalDetails?.professionalDetails?.membershipCategory ??
+              null;
+
+            const professionalPayload = professionalDetails
+              ? {
+                  ...professionalDetails.professionalDetails,
+                  membershipCategory,
+                }
+              : membershipCategory !== null
+              ? { membershipCategory }
+              : null;
+
+            const subscriptionPayload = subscriptionDetails
+              ? {
+                  ...subscriptionDetails.subscriptionDetails,
+                  membershipCategory:
+                    subscriptionDetails.subscriptionDetails
+                      ?.membershipCategory ?? membershipCategory,
+                }
+              : membershipCategory !== null
+              ? { membershipCategory }
+              : null;
+
             return {
-              ApplicationId: application.ApplicationId,
+              applicationId: application.applicationId,
               userId: application.userId,
               membershipNumber: subscriptionDetails
                 ? subscriptionDetails.membershipNumber
                 : null,
               personalDetails: application,
-              professionalDetails: professionalDetails
-                ? professionalDetails.professionalDetails
-                : null,
-              subscriptionDetails: subscriptionDetails
-                ? subscriptionDetails.subscriptionDetails
-                : null,
+              professionalDetails: professionalPayload,
+              subscriptionDetails: subscriptionPayload,
               applicationStatus: application.applicationStatus,
               approvalDetails: application.approvalDetails,
               createdAt: application.createdAt,

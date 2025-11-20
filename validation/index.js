@@ -13,6 +13,7 @@ module.exports.personal_details_create = Joi.object({
     deceasedDate: Joi.date().iso().optional().default(null),
   }).optional(),
   contactInfo: Joi.object({
+    nATA: Joi.boolean().optional().default(false),
     preferredAddress: Joi.string()
       .valid(...Object.values(PREFERRED_ADDRESS))
       .optional()
@@ -47,6 +48,7 @@ module.exports.personal_details_update = Joi.object({
     deceasedDate: Joi.date().iso().optional().default(null),
   }).optional(),
   contactInfo: Joi.object({
+    nATA: Joi.boolean().optional().default(false),
     preferredAddress: Joi.string()
       .valid(...Object.values(PREFERRED_ADDRESS))
       .optional()
@@ -82,7 +84,7 @@ module.exports.application_approve = Joi.object({
 //
 module.exports.professional_details_create = Joi.object({
   professionalDetails: Joi.object({
-    membershipCategory: Joi.string().optional().default(null),
+    membershipCategory: Joi.any().strip(),
     workLocation: Joi.string().optional().default(null),
     otherWorkLocation: Joi.string().optional().default(null),
     grade: Joi.string().optional().default(null),
@@ -96,6 +98,7 @@ module.exports.professional_details_create = Joi.object({
     isRetired: Joi.boolean().optional().default(false),
     retiredDate: Joi.date().iso().optional().default(null),
     studyLocation: Joi.string().optional().default(null),
+    startDate: Joi.date().iso().optional().default(null),
     graduationDate: Joi.date().iso().optional().default(null),
     otherGraduationDate: Joi.date().iso().optional().default(null),
     submissionDate: Joi.date().iso().optional().default(Date.now),
@@ -104,7 +107,7 @@ module.exports.professional_details_create = Joi.object({
 
 module.exports.professional_details_update = Joi.object({
   professionalDetails: Joi.object({
-    membershipCategory: Joi.string().optional().default(null),
+    membershipCategory: Joi.any().strip(),
     workLocation: Joi.string().optional().default(null),
     otherWorkLocation: Joi.string().optional().default(null),
     grade: Joi.string().optional().default(null),
@@ -118,6 +121,7 @@ module.exports.professional_details_update = Joi.object({
     isRetired: Joi.boolean().optional().default(false),
     retiredDate: Joi.date().iso().optional().default(null),
     studyLocation: Joi.string().optional().default(null),
+    startDate: Joi.date().iso().optional().default(null),
     graduationDate: Joi.date().iso().optional().default(null),
     otherGraduationDate: Joi.date().iso().optional().default(null),
   }),
@@ -140,6 +144,7 @@ module.exports.subscription_details_create = Joi.object({
     otherSecondarySection: Joi.string().optional().default(null),
     incomeProtectionScheme: Joi.boolean().optional().default(false),
     inmoRewards: Joi.boolean().optional().default(false),
+    exclusiveDiscountsAndOffers: Joi.boolean().optional().default(false),
     valueAddedServices: Joi.boolean().optional().default(false),
     termsAndConditions: Joi.boolean().optional().default(true),
     membershipCategory: Joi.string().optional().default(null),
@@ -167,6 +172,7 @@ module.exports.subscription_details_update = Joi.object({
     otherSecondarySection: Joi.string().optional().default(null),
     incomeProtectionScheme: Joi.boolean().optional().default(false),
     inmoRewards: Joi.boolean().optional().default(false),
+    exclusiveDiscountsAndOffers: Joi.boolean().optional().default(false),
     valueAddedServices: Joi.boolean().optional().default(false),
     termsAndConditions: Joi.boolean().optional().default(true),
     membershipCategory: Joi.string().optional().default(null),

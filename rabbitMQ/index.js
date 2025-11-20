@@ -133,7 +133,9 @@ async function setupConsumers() {
     console.log("🔧 [SETUP] Creating membership queue...");
     console.log("   Queue:", MEMBERSHIP_QUEUE);
     console.log("   Exchange: membership.events");
-    console.log("   Routing Key: members.member.created.requested.v1");
+    console.log(
+      "   Routing Keys: members.member.created.requested.v1, members.subscription.current.updated.v1"
+    );
 
     await consumer.createQueue(MEMBERSHIP_QUEUE, {
       durable: true,
@@ -142,6 +144,7 @@ async function setupConsumers() {
 
     await consumer.bindQueue(MEMBERSHIP_QUEUE, "membership.events", [
       "members.member.created.requested.v1",
+      "members.subscription.current.updated.v1",
     ]);
 
     consumer.registerHandler(
@@ -150,6 +153,26 @@ async function setupConsumers() {
         await ApplicationApprovalEventListener.handleMemberCreatedRequested(
           payload.data
         );
+      }
+    );
+    consumer.registerHandler(
+      "members.subscription.current.updated.v1",
+      async (payload, context) => {
+        const { profileId, subscriptionId } = payload.data || {};
+        if (!profileId || !subscriptionId) {
+          return;
+        }
+        const Profile = require("../models/profile.model.js");
+        const profile = await Profile.findById(profileId);
+        if (!profile) return;
+        const update = { currentSubscriptionId: subscriptionId };
+        if (
+          profile.currentSubscriptionId &&
+          String(profile.currentSubscriptionId) !== String(subscriptionId)
+        ) {
+          update.hasHistory = true;
+        }
+        await Profile.updateOne({ _id: profileId }, { $set: update });
       }
     );
 

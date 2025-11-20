@@ -13,9 +13,9 @@ async function loadSubmission(applicationId) {
     // Load all related data for the application
     const [personalDetails, professionalDetails, subscriptionDetails] =
       await Promise.all([
-        PersonalDetails.findOne({ ApplicationId: applicationId }).lean(),
-        ProfessionalDetails.findOne({ ApplicationId: applicationId }).lean(),
-        SubscriptionDetails.findOne({ ApplicationId: applicationId }).lean(),
+        PersonalDetails.findOne({ applicationId: applicationId }).lean(),
+        ProfessionalDetails.findOne({ applicationId: applicationId }).lean(),
+        SubscriptionDetails.findOne({ applicationId: applicationId }).lean(),
       ]);
 
     console.log(
@@ -30,11 +30,28 @@ async function loadSubmission(applicationId) {
     });
 
     // Combine into submission format
+    const rawProfessionalDetails =
+      professionalDetails?.professionalDetails || {};
+    const professionalDetailsPayload = { ...rawProfessionalDetails };
+    delete professionalDetailsPayload.membershipCategory;
+
+    const subscriptionDetailsPayload = {
+      ...(subscriptionDetails?.subscriptionDetails || {}),
+    };
+
+    if (
+      subscriptionDetailsPayload.membershipCategory == null &&
+      rawProfessionalDetails?.membershipCategory
+    ) {
+      subscriptionDetailsPayload.membershipCategory =
+        rawProfessionalDetails.membershipCategory;
+    }
+
     const submission = {
       personalInfo: personalDetails?.personalInfo || {},
       contactInfo: personalDetails?.contactInfo || {},
-      professionalDetails: professionalDetails?.professionalDetails || {},
-      subscriptionDetails: subscriptionDetails?.subscriptionDetails || {},
+      professionalDetails: professionalDetailsPayload,
+      subscriptionDetails: subscriptionDetailsPayload,
     };
 
     const meta = {

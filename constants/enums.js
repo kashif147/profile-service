@@ -29,6 +29,7 @@ exports.PAYMENT_TYPE = {
   PAYROLL_DEDUCTION: "Payroll Deduction",
   DIRECT_DEBIT: "Direct Debit",
   CARD_PAYMENT: "Card Payment",
+  SBO_PAYMENT: "Standing Bank Order",
 };
 
 // Payment Frequency Enums
@@ -44,4 +45,17 @@ exports.MEMBERSHIP_STATUS = {
   CANCELLED: "Cancelled",
   SUSPENDED: "Suspended",
   ARCHIVED: "Archived",
+};
+
+// Overlay Status Enums
+exports.OVERLAY_STATUS = {
+  OPEN: "open",
+  DECIDED: "decided",
+};
+
+// Overlay Decision Enums
+exports.OVERLAY_DECISION = {
+  NONE: "none",
+  APPROVED: "approved",
+  REJECTED: "rejected",
 };

@@ -1,4 +1,5 @@
 const Profile = require("../models/profile.model.js");
+const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 
 // Helper function to handle bypass user ObjectId conversion
 function getReviewerIdForDb(reviewerId) {
@@ -24,7 +25,6 @@ async function findOrCreateProfileByEmail({
   session,
 }) {
   const contactInfo = effective?.contactInfo || {};
-  const personalInfo = effective?.personalInfo || {};
   const email = pickPrimaryEmail(contactInfo);
   if (!email)
     throw Object.assign(new Error("Primary email required to approve"), {
@@ -37,39 +37,37 @@ async function findOrCreateProfileByEmail({
     normalizedEmail: nEmail,
   }).session(session);
   if (!profile) {
-    profile = await Profile.create(
-      [
-        {
-          tenantId,
-          email,
-          normalizedEmail: nEmail,
-          mobileNumber: contactInfo.mobileNumber || null,
-          surname: personalInfo.surname || null,
-          forename: personalInfo.forename || null,
-          dateOfBirth: personalInfo.dateOfBirth || null,
-          addressLine1:
-            contactInfo.buildingOrHouse || contactInfo.streetOrRoad || null,
-          personalInfo: effective.personalInfo || {},
-          contactInfo: effective.contactInfo || {},
-          professionalDetails: effective.professionalDetails || {},
-          applicationStatus: "APPROVED",
-          approvalDetails: {
-            approvedBy: getReviewerIdForDb(reviewerId),
-            approvedAt: new Date(),
-          },
-        },
-      ],
-      { session }
-    ).then((x) => x[0]);
+		const flattened = flattenProfilePayload(effective);
+		const now = new Date();
+		const doc = {
+			tenantId,
+			normalizedEmail: nEmail,
+			personalInfo: flattened.personalInfo || {},
+			contactInfo: flattened.contactInfo || {},
+			professionalDetails: flattened.professionalDetails || {},
+			preferences: flattened.preferences || {},
+			conrnMarket: flattened.conrnMarket || {},
+			additionalInformation: flattened.additionalInformation || {},
+			recruitmentDetails: flattened.recruitmentDetails || {},
+			firstJoinedDate: null, // set below when appropriate
+			currentSubscriptionId: null,
+			hasHistory: false,
+			submissionDate: now,
+		};
+		// first-ever membership: set firstJoinedDate once
+		doc.firstJoinedDate = now;
+		profile = await Profile.create([doc], { session }).then((x) => x[0]);
   } else {
-    const $set = {
-      personalInfo: effective.personalInfo || {},
-      contactInfo: effective.contactInfo || {},
-      professionalDetails: effective.professionalDetails || {},
-      applicationStatus: "APPROVED",
-      "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
-      "approvalDetails.approvedAt": new Date(),
-    };
+		const flattened = flattenProfilePayload(effective);
+		const $set = {
+			personalInfo: flattened.personalInfo || {},
+			contactInfo: flattened.contactInfo || {},
+			professionalDetails: flattened.professionalDetails || {},
+			preferences: flattened.preferences || {},
+			conrnMarket: flattened.conrnMarket || {},
+			additionalInformation: flattened.additionalInformation || {},
+			recruitmentDetails: flattened.recruitmentDetails || {},
+		};
     await Profile.updateOne({ _id: profile._id }, { $set }, { session });
   }
   return profile;

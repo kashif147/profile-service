@@ -22,10 +22,23 @@ const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
 const { loadSubmission } = require("./submission.service.js");
 const { ApplicationApprovalEventPublisher } = require("../rabbitMQ/index.js");
-const { APPLICATION_STATUS } = require("../constants/constants.js");
+const { APPLICATION_STATUS } = require("../constants/enums.js");
+const { flattenProfilePayload } = require("../helpers/profile.transform.js");
+const { generateMembershipNumber } = require("../helpers/membership.number.generator.js");
 
 function deepClone(o) {
   return JSON.parse(JSON.stringify(o));
+}
+
+function normalizeSubscriptionDetails(subscriptionDetails = {}, professional = {}) {
+  const normalized = { ...subscriptionDetails };
+  if (
+    normalized.membershipCategory == null &&
+    professional?.membershipCategory != null
+  ) {
+    normalized.membershipCategory = professional.membershipCategory;
+  }
+  return normalized;
 }
 
 async function approveApplication({
@@ -53,10 +66,21 @@ async function approveApplication({
     }
 
     // Compute effective
-    const effective = applyPatch(
+    let effective = applyPatch(
       deepClone(submission),
       overlay.proposedPatch
     ).newDocument;
+    const normalizedSubscriptionDetails = normalizeSubscriptionDetails(
+      effective.subscriptionDetails,
+      effective.professionalDetails
+    );
+    effective = {
+      ...effective,
+      subscriptionDetails: normalizedSubscriptionDetails,
+    };
+
+    const flattenedProfileFields = flattenProfilePayload(effective);
+
     const effectiveHash = crypto
       .createHash("sha256")
       .update(JSON.stringify(effective))
@@ -77,39 +101,7 @@ async function approveApplication({
     if (existingProfile) {
       // Update existing profile - keep existing membership number
       const profileUpdate = {
-        personalInfo: effective.personalInfo,
-        contactInfo: effective.contactInfo,
-        professionalDetails: effective.professionalDetails,
-        subscriptionAttributes: {
-          payrollNo: effective.subscriptionDetails?.payrollNo,
-          otherIrishTradeUnion:
-            !!effective.subscriptionDetails?.otherIrishTradeUnion,
-          otherScheme: !!effective.subscriptionDetails?.otherScheme,
-          recuritedBy: effective.subscriptionDetails?.recuritedBy,
-          recuritedByMembershipNo:
-            effective.subscriptionDetails?.recuritedByMembershipNo,
-          primarySection: effective.subscriptionDetails?.primarySection,
-          otherPrimarySection:
-            effective.subscriptionDetails?.otherPrimarySection,
-          secondarySection: effective.subscriptionDetails?.secondarySection,
-          otherSecondarySection:
-            effective.subscriptionDetails?.otherSecondarySection,
-          incomeProtectionScheme:
-            !!effective.subscriptionDetails?.incomeProtectionScheme,
-          inmoRewards: !!effective.subscriptionDetails?.inmoRewards,
-          valueAddedServices:
-            !!effective.subscriptionDetails?.valueAddedServices,
-          termsAndConditions:
-            effective.subscriptionDetails?.termsAndConditions !== false,
-        },
-        applicationStatus: APPLICATION_STATUS.APPROVED,
-        approvalDetails: {
-          approvedBy: getReviewerIdForDb(reviewerId),
-          approvedAt: new Date(),
-          comments: overlay.notes ?? undefined,
-          effectiveHash,
-          effectiveSnapshot: effective,
-        },
+        ...flattenedProfileFields,
       };
 
       await Profile.updateOne(
@@ -119,60 +111,26 @@ async function approveApplication({
       );
       profile = existingProfile;
     } else {
-      // Create new profile - will get new membership number
-      const profileUpdate = {
-        tenantId,
-        email,
-        normalizedEmail,
-        mobileNumber: effective.contactInfo?.mobileNumber,
-        surname: effective.personalInfo?.surname,
-        forename: effective.personalInfo?.forename,
-        dateOfBirth: effective.personalInfo?.dateOfBirth,
-        personalInfo: effective.personalInfo,
-        contactInfo: effective.contactInfo,
-        professionalDetails: effective.professionalDetails,
-        subscriptionAttributes: {
-          payrollNo: effective.subscriptionDetails?.payrollNo,
-          otherIrishTradeUnion:
-            !!effective.subscriptionDetails?.otherIrishTradeUnion,
-          otherScheme: !!effective.subscriptionDetails?.otherScheme,
-          recuritedBy: effective.subscriptionDetails?.recuritedBy,
-          recuritedByMembershipNo:
-            effective.subscriptionDetails?.recuritedByMembershipNo,
-          primarySection: effective.subscriptionDetails?.primarySection,
-          otherPrimarySection:
-            effective.subscriptionDetails?.otherPrimarySection,
-          secondarySection: effective.subscriptionDetails?.secondarySection,
-          otherSecondarySection:
-            effective.subscriptionDetails?.otherSecondarySection,
-          incomeProtectionScheme:
-            !!effective.subscriptionDetails?.incomeProtectionScheme,
-          inmoRewards: !!effective.subscriptionDetails?.inmoRewards,
-          valueAddedServices:
-            !!effective.subscriptionDetails?.valueAddedServices,
-          termsAndConditions:
-            effective.subscriptionDetails?.termsAndConditions !== false,
-        },
-        applicationStatus: APPLICATION_STATUS.APPROVED,
-        approvalDetails: {
-          approvedBy: getReviewerIdForDb(reviewerId),
-          approvedAt: new Date(),
-          comments: overlay.notes ?? undefined,
-          effectiveHash,
-          effectiveSnapshot: effective,
-        },
-      };
-
+      // Create new profile (first-ever membership): set initial fields via upsert
+      const now = new Date();
       await Profile.updateOne(
         { tenantId, normalizedEmail },
-        { $set: profileUpdate },
+        {
+          $set: {
+            ...flattenedProfileFields,
+          },
+          $setOnInsert: {
+            tenantId,
+            normalizedEmail,
+            firstJoinedDate: now,
+            submissionDate: now,
+            currentSubscriptionId: null,
+            hasHistory: false,
+          },
+        },
         { upsert: true, session }
       );
-
-      // Get the created profile
-      profile = await Profile.findOne({ tenantId, normalizedEmail }).session(
-        session
-      );
+      profile = await Profile.findOne({ tenantId, normalizedEmail }).session(session);
     }
 
     // 2) Update PersonalDetails with effective personal/contact AND approval metadata
@@ -187,25 +145,27 @@ async function approveApplication({
       },
     };
     await PersonalDetails.updateOne(
-      { ApplicationId: applicationId },
+      { applicationId: applicationId },
       { $set: personalUpdate }
     ).session(session);
 
     // 2) Update ProfessionalDetails and SubscriptionDetails from effective
     if (effective.professionalDetails) {
       await ProfessionalDetails.updateOne(
-        { ApplicationId: applicationId },
+        { applicationId: applicationId },
         { $set: { professionalDetails: effective.professionalDetails } },
         { upsert: true, session }
       );
     }
 
     if (effective.subscriptionDetails) {
-      await SubscriptionDetails.updateOne(
-        { ApplicationId: applicationId },
+      await SubscriptionDetails.findOneAndUpdate(
+        { applicationId: applicationId },
         { $set: { subscriptionDetails: effective.subscriptionDetails } },
-        { upsert: true, session }
+        { upsert: true, new: true, runValidators: true, session }
       );
+      // Do not update Profile.currentSubscriptionId or hasHistory here.
+      // This will be handled via subscription-service RabbitMQ events.
     }
 
     // 3) Close overlay (decided)
@@ -217,6 +177,37 @@ async function approveApplication({
 
     // 4) Publish events using shared middleware
     // 4) Publish events using dedicated publisher
+    const subscriptionAttributes = {
+      payrollNo: effective.subscriptionDetails?.payrollNo ?? null,
+      otherIrishTradeUnion: !!effective.subscriptionDetails?.otherIrishTradeUnion,
+      otherIrishTradeUnionName:
+        effective.subscriptionDetails?.otherIrishTradeUnionName ?? null,
+      otherScheme: !!effective.subscriptionDetails?.otherScheme,
+      recuritedBy: effective.subscriptionDetails?.recuritedBy ?? null,
+      recuritedByMembershipNo:
+        effective.subscriptionDetails?.recuritedByMembershipNo ?? null,
+      primarySection: effective.subscriptionDetails?.primarySection ?? null,
+      otherPrimarySection:
+        effective.subscriptionDetails?.otherPrimarySection ?? null,
+      secondarySection: effective.subscriptionDetails?.secondarySection ?? null,
+      otherSecondarySection:
+        effective.subscriptionDetails?.otherSecondarySection ?? null,
+      incomeProtectionScheme:
+        !!effective.subscriptionDetails?.incomeProtectionScheme,
+      inmoRewards: !!effective.subscriptionDetails?.inmoRewards,
+      exclusiveDiscountsAndOffers:
+        !!effective.subscriptionDetails?.exclusiveDiscountsAndOffers,
+      valueAddedServices: !!effective.subscriptionDetails?.valueAddedServices,
+      termsAndConditions:
+        effective.subscriptionDetails?.termsAndConditions !== false,
+      membershipCategory: effective.subscriptionDetails?.membershipCategory ?? null,
+      membershipStatus: effective.subscriptionDetails?.membershipStatus ?? null,
+      dateJoined: effective.subscriptionDetails?.dateJoined ?? null,
+      submissionDate: effective.subscriptionDetails?.submissionDate ?? null,
+      dateLeft: effective.subscriptionDetails?.dateLeft ?? null,
+      reasonLeft: effective.subscriptionDetails?.reasonLeft ?? null,
+    };
+
     await ApplicationApprovalEventPublisher.publishApplicationApproved({
       applicationId,
       reviewerId,
@@ -224,7 +215,7 @@ async function approveApplication({
       applicationStatus: APPLICATION_STATUS.APPROVED,
       isExistingProfile: !!existingProfile,
       effective,
-      subscriptionAttributes: profile.subscriptionAttributes,
+      subscriptionAttributes,
       tenantId,
       correlationId: crypto.randomUUID(),
     });
@@ -234,8 +225,25 @@ async function approveApplication({
       profileId: String(profile._id),
       isExistingProfile: !!existingProfile,
       effective,
-      subscriptionAttributes: profile.subscriptionAttributes,
+      subscriptionAttributes,
       tenantId,
+      correlationId: crypto.randomUUID(),
+    });
+
+    // Publish subscription upsert request for subscription-service
+    const sub = effective.subscriptionDetails || {};
+    await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested({
+      tenantId,
+      profileId: String(profile._id),
+      applicationId,
+      membershipCategory:
+        sub.membershipCategory ??
+        effective.professionalDetails?.membershipCategory ??
+        null,
+      dateJoined: sub.dateJoined ?? null,
+      paymentType: sub.paymentType ?? null,
+      payrollNo: sub.payrollNo ?? null,
+      paymentFrequency: sub.paymentFrequency ?? null,
       correlationId: crypto.randomUUID(),
     });
 
@@ -267,10 +275,10 @@ async function rejectApplication({
 
     // Update PersonalDetails status and approvalDetails
     await PersonalDetails.updateOne(
-      { ApplicationId: applicationId },
+      { applicationId: applicationId },
       {
         $set: {
-          applicationStatus: "REJECTED",
+          applicationStatus: APPLICATION_STATUS.REJECTED,
           approvalDetails: {
             approvedBy: getReviewerIdForDb(reviewerId),
             approvedAt: new Date(),

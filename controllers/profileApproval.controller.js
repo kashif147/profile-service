@@ -25,12 +25,14 @@ const { ApplicationApprovalEventPublisher } = require("../rabbitMQ/index.js");
 const {
   findOrCreateProfileByEmail,
 } = require("../services/profileLookup.service.js");
+const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
 const subAttrs = (s = {}) => ({
   payrollNo: s?.payrollNo ?? null,
   otherIrishTradeUnion: !!s?.otherIrishTradeUnion,
+  otherIrishTradeUnionName: s?.otherIrishTradeUnionName ?? null,
   otherScheme: !!s?.otherScheme,
   recuritedBy: s?.recuritedBy ?? null,
   recuritedByMembershipNo: s?.recuritedByMembershipNo ?? null,
@@ -42,6 +44,12 @@ const subAttrs = (s = {}) => ({
   inmoRewards: !!s?.inmoRewards,
   valueAddedServices: !!s?.valueAddedServices,
   termsAndConditions: s?.termsAndConditions !== false,
+  membershipCategory: s?.membershipCategory ?? null,
+  membershipStatus: s?.membershipStatus ?? null,
+  dateJoined: s?.dateJoined ?? null,
+  submissionDate: s?.submissionDate ?? null,
+  dateLeft: s?.dateLeft ?? null,
+  reasonLeft: s?.reasonLeft ?? null,
 });
 
 const pickSubForContract = (s = {}) => ({
@@ -53,6 +61,17 @@ const pickSubForContract = (s = {}) => ({
   paymentType: s?.paymentType ?? "PAYROLL_DEDUCTION",
   paymentFrequency: s?.paymentFrequency ?? "MONTHLY",
 });
+
+const normalizeSubscription = (subscriptionDetails = {}, professional = {}) => {
+  const normalized = { ...subscriptionDetails };
+  if (
+    normalized.membershipCategory == null &&
+    professional?.membershipCategory != null
+  ) {
+    normalized.membershipCategory = professional.membershipCategory;
+  }
+  return normalized;
+};
 
 // Optional path whitelist, shared with overlay controller
 const ALLOWED_PREFIXES = [
@@ -70,6 +89,16 @@ function validatePatchPaths(patch) {
   );
   if (bad) {
     const err = new Error(`Patch path not allowed: ${bad.path}`);
+    err.status = 400;
+    throw err;
+  }
+  const blocked = patch?.find((op) =>
+    op.path.startsWith("/professionalDetails/membershipCategory")
+  );
+  if (blocked) {
+    const err = new Error(
+      "membershipCategory must be modified under subscriptionDetails"
+    );
     err.status = 400;
     throw err;
   }
@@ -130,6 +159,18 @@ async function approveApplication(req, res, next) {
       });
     }
 
+    const normalizedSubscriptionDetails = normalizeSubscription(
+      effective.subscriptionDetails,
+      effective.professionalDetails
+    );
+    effective = {
+      ...effective,
+      subscriptionDetails: normalizedSubscriptionDetails,
+    };
+
+    // Flatten payload for profile storage (no embedded objects)
+    const flattenedProfileFields = flattenProfilePayload(effective);
+
     // Find existing profile or create new one
     const email =
       effective.contactInfo?.personalEmail || effective.contactInfo?.workEmail;
@@ -148,20 +189,7 @@ async function approveApplication(req, res, next) {
         { _id: existingProfile._id },
         {
           $set: {
-            personalInfo: effective.personalInfo,
-            contactInfo: effective.contactInfo,
-            professionalDetails: effective.professionalDetails,
-            subscriptionAttributes: subAttrs(effective.subscriptionDetails),
-            applicationStatus: "APPROVED",
-            approvalDetails: {
-              approvedBy: getReviewerIdForDb(reviewerId),
-              approvedAt: new Date(),
-              effectiveHash: crypto
-                .createHash("sha256")
-                .update(JSON.stringify(effective))
-                .digest("hex"),
-              effectiveSnapshot: effective,
-            },
+            ...flattenedProfileFields,
           },
         },
         { session }
@@ -181,20 +209,7 @@ async function approveApplication(req, res, next) {
         { _id: profile._id },
         {
           $set: {
-            personalInfo: effective.personalInfo,
-            contactInfo: effective.contactInfo,
-            professionalDetails: effective.professionalDetails,
-            subscriptionAttributes: subAttrs(effective.subscriptionDetails),
-            applicationStatus: "APPROVED",
-            approvalDetails: {
-              approvedBy: getReviewerIdForDb(reviewerId),
-              approvedAt: new Date(),
-              effectiveHash: crypto
-                .createHash("sha256")
-                .update(JSON.stringify(effective))
-                .digest("hex"),
-              effectiveSnapshot: effective,
-            },
+            ...flattenedProfileFields,
           },
         },
         { session }
@@ -204,7 +219,7 @@ async function approveApplication(req, res, next) {
     // Update main application models with approved data
     if (effective.personalInfo) {
       await PersonalDetails.updateOne(
-        { ApplicationId: applicationId },
+        { applicationId: applicationId },
         {
           $set: {
             personalInfo: effective.personalInfo,
@@ -220,18 +235,20 @@ async function approveApplication(req, res, next) {
 
     if (effective.professionalDetails) {
       await ProfessionalDetails.updateOne(
-        { ApplicationId: applicationId },
+        { applicationId: applicationId },
         { $set: { professionalDetails: effective.professionalDetails } },
         { upsert: true, session }
       );
     }
 
     if (effective.subscriptionDetails) {
-      await SubscriptionDetails.updateOne(
-        { ApplicationId: applicationId },
+      await SubscriptionDetails.findOneAndUpdate(
+        { applicationId: applicationId },
         { $set: { subscriptionDetails: effective.subscriptionDetails } },
-        { upsert: true, session }
+        { upsert: true, new: true, runValidators: true, session }
       );
+      // Do not update Profile.currentSubscriptionId or hasHistory here.
+      // This will be handled via subscription-service RabbitMQ events.
     }
 
     // Close overlay if used
@@ -267,6 +284,23 @@ async function approveApplication(req, res, next) {
       effective,
       subscriptionAttributes: subAttrs(effective.subscriptionDetails),
       tenantId,
+      correlationId: crypto.randomUUID(),
+    });
+
+    // Publish subscription upsert request for subscription-service
+    const sub = effective.subscriptionDetails || {};
+    await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested({
+      tenantId,
+      profileId: String(profile._id),
+      applicationId,
+      membershipCategory:
+        sub.membershipCategory ??
+        effective.professionalDetails?.membershipCategory ??
+        null,
+      dateJoined: sub.dateJoined ?? null,
+      paymentType: sub.paymentType ?? null,
+      payrollNo: sub.payrollNo ?? null,
+      paymentFrequency: sub.paymentFrequency ?? null,
       correlationId: crypto.randomUUID(),
     });
 

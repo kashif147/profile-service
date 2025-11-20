@@ -9,17 +9,6 @@ const {
 
 const ProfileSchema = new mongoose.Schema(
   {
-    ApplicationId: {
-      type: String,
-      default: uuidv4,
-      unique: true,
-    },
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "users",
-      required: false,
-      default: null,
-    }, // Azure B2C ID
     personalInfo: {
       title: {
         type: String,
@@ -39,20 +28,20 @@ const ProfileSchema = new mongoose.Schema(
         required: true,
         default: null,
       },
-
-      deceased: { type: Boolean, default: false },
-      deceasedDate: { type: Date, allowNull: true },
+      // deceased: { type: Boolean, default: false },
+      // deceasedDate: { type: Date, allowNull: true },
     },
     contactInfo: {
+      consent: { type: Boolean, default: true }, // consent to receive correspondence from the union
       preferredAddress: {
         type: String,
         enum: Object.values(PREFERRED_ADDRESS),
         default: PREFERRED_ADDRESS.HOME,
       },
-      eircode: { type: String, allowNull: true },
       buildingOrHouse: { type: String, allowNull: true },
       streetOrRoad: { type: String, allowNull: true },
       areaOrTown: { type: String, allowNull: true },
+      eircode: { type: String, allowNull: true },
       countyCityOrPostCode: { type: String, allowNull: true },
       country: {
         type: String,
@@ -69,9 +58,18 @@ const ProfileSchema = new mongoose.Schema(
       },
       personalEmail: { type: String, allowNull: true },
       workEmail: { type: String, allowNull: true },
-      consent: { type: Boolean, default: false },
     },
-
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "users",
+      required: false,
+      default: null,
+    }, // Azure B2C ID
+    applicationId: {
+      type: String,
+      default: uuidv4,
+      unique: true,
+    },
     // Application status for approval workflow
     applicationStatus: {
       type: String,

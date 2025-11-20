@@ -1,4 +1,4 @@
-const SubscriptionDetails = require("../models/subscription.model");
+const Profile = require("../models/profile.model");
 
 const YEAR_TO_ALPHABET = {
   2025: "A",
@@ -38,10 +38,12 @@ const getCurrentYearAlphabet = () => {
 // Function to get the next sequence number for a given year alphabet
 const getNextSequenceNumber = async (yearAlphabet) => {
   try {
-    // Find the highest membership number for the current year
-    const highestMembership = await SubscriptionDetails.findOne({
+    // Find the highest membership number for the current year from Profile
+    const highestMembership = await Profile.findOne({
       membershipNumber: { $regex: `^${yearAlphabet}` },
-    }).sort({ membershipNumber: -1 });
+    })
+      .sort({ membershipNumber: -1 })
+      .lean();
 
     if (!highestMembership || !highestMembership.membershipNumber) {
       // First membership for this year

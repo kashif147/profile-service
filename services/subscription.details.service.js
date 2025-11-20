@@ -1,5 +1,6 @@
 const subscriptionDetailsHandler = require("../handlers/subscription.details.handler");
 const personalDetailsHandler = require("../handlers/personal.details.handler");
+const professionalDetailsHandler = require("../handlers/professional.details.handler");
 const { APPLICATION_STATUS } = require("../constants/enums");
 const { AppError } = require("../errors/AppError");
 
@@ -52,12 +53,29 @@ class SubscriptionDetailsService {
         }
       }
 
+      const professionalDetails =
+        await professionalDetailsHandler.getApplicationById(applicationId);
+      const membershipCategoryFromProfessional =
+        professionalDetails?.professionalDetails?.membershipCategory ?? null;
+
       const createData = {
         ...data,
-        ApplicationId: applicationId,
+        applicationId: applicationId,
         userId: userId,
         meta: { createdBy: userId, userType },
       };
+
+      if (!createData.subscriptionDetails) {
+        createData.subscriptionDetails = {};
+      }
+
+      if (
+        createData.subscriptionDetails.membershipCategory == null &&
+        membershipCategoryFromProfessional != null
+      ) {
+        createData.subscriptionDetails.membershipCategory =
+          membershipCategoryFromProfessional;
+      }
 
       const result = await subscriptionDetailsHandler.create(createData);
 

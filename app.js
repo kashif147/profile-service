@@ -123,6 +123,7 @@ app.get("/api", (req, res) => {
       personalDetails: "GET /api/personal-details (auth required)",
       professionalDetails: "GET /api/professional-details (auth required)",
       subscriptionDetails: "GET /api/subscription-details (auth required)",
+      profileValidate: "POST /api/profile/validate",
       applications: "GET /api/applications (auth required)",
     },
     authentication:
@@ -131,6 +132,7 @@ app.get("/api", (req, res) => {
 });
 
 // Initialize authentication middleware for protected routes
+app.use("/api/profile", require("./routes/profile.routes"));
 app.use(authenticate);
 
 app.use("/api", require("./routes/index"));
