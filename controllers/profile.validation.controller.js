@@ -59,3 +59,4 @@ exports.validateProfile = async (req, res) => {
     });
   }
 };
+
