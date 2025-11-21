@@ -102,4 +102,8 @@ const ProfileSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Indexes for frequently queried fields
+ProfileSchema.index({ userId: 1 });
+ProfileSchema.index({ applicationId: 1 });
+
 module.exports = mongoose.model("personalDetails", ProfileSchema);

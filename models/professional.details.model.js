@@ -38,4 +38,7 @@ const ProfessionalSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Index for frequently queried field
+ProfessionalSchema.index({ applicationId: 1 });
+
 module.exports = mongoose.model("ProfessionalDetails", ProfessionalSchema);
