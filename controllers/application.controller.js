@@ -117,7 +117,7 @@ exports.approveApplication = async (req, res, next) => {
     // }
 
     return res.success({
-      applicationId: updatedApplication.ApplicationId,
+      applicationId: updatedApplication.applicationId,
       applicationStatus: updatedApplication.applicationStatus,
       approvalDetails: updatedApplication.approvalDetails,
     });

@@ -33,9 +33,9 @@ class ProfileApplicationCreateListener {
         "📝 [PROFILE_CREATE_LISTENER] Creating/updating personal details..."
       );
       const newPersonalDetails = await PersonalDetails.findOneAndUpdate(
-        { ApplicationId: applicationId },
+        { applicationId: applicationId },
         {
-          ApplicationId: applicationId,
+          applicationId: applicationId,
           userId: personalDetails.userId,
           personalInfo: personalDetails.personalInfo,
           contactInfo: personalDetails.contactInfo,
@@ -50,7 +50,7 @@ class ProfileApplicationCreateListener {
         "✅ [PROFILE_CREATE_LISTENER] Personal details created/updated:",
         {
           id: newPersonalDetails._id,
-          applicationId: newPersonalDetails.ApplicationId,
+          applicationId: newPersonalDetails.applicationId,
         }
       );
 
@@ -61,9 +61,9 @@ class ProfileApplicationCreateListener {
         );
         const newProfessionalDetails =
           await ProfessionalDetails.findOneAndUpdate(
-            { ApplicationId: applicationId },
+            { applicationId: applicationId },
             {
-              ApplicationId: applicationId,
+              applicationId: applicationId,
               userId: professionalDetails.userId,
               professionalDetails: professionalDetails.professionalDetails,
               meta: professionalDetails.meta,
@@ -75,7 +75,7 @@ class ProfileApplicationCreateListener {
           "✅ [PROFILE_CREATE_LISTENER] Professional details created/updated:",
           {
             id: newProfessionalDetails._id,
-            applicationId: newProfessionalDetails.ApplicationId,
+            applicationId: newProfessionalDetails.applicationId,
           }
         );
       } else {
@@ -92,7 +92,7 @@ class ProfileApplicationCreateListener {
 
         // Build update object - only include membershipNumber if application is approved
         const updateData = {
-          ApplicationId: applicationId,
+          applicationId: applicationId,
           userId: subscriptionDetails.userId,
           subscriptionDetails: subscriptionDetails.subscriptionDetails,
           paymentDetails: subscriptionDetails.paymentDetails,
@@ -106,7 +106,7 @@ class ProfileApplicationCreateListener {
 
         const newSubscriptionDetails =
           await SubscriptionDetails.findOneAndUpdate(
-            { ApplicationId: applicationId },
+            { applicationId: applicationId },
             updateData,
             { upsert: true, new: true, runValidators: true }
           );
@@ -115,7 +115,7 @@ class ProfileApplicationCreateListener {
           "✅ [PROFILE_CREATE_LISTENER] Subscription details created/updated:",
           {
             id: newSubscriptionDetails._id,
-            applicationId: newSubscriptionDetails.ApplicationId,
+            applicationId: newSubscriptionDetails.applicationId,
             membershipNumber: newSubscriptionDetails.membershipNumber,
             status: status,
           }

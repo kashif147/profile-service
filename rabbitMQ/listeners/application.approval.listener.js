@@ -42,7 +42,7 @@ class ApplicationApprovalEventListener {
       // Update main application models with approved data
       if (effective.personalInfo) {
         await PersonalDetails.updateOne(
-          { ApplicationId: applicationId },
+          { applicationId: applicationId },
           {
             $set: {
               personalInfo: effective.personalInfo,
@@ -61,7 +61,7 @@ class ApplicationApprovalEventListener {
 
       if (effective.professionalDetails) {
         await ProfessionalDetails.updateOne(
-          { ApplicationId: applicationId },
+          { applicationId: applicationId },
           { $set: { professionalDetails: effective.professionalDetails } },
           { upsert: true }
         );
@@ -72,7 +72,7 @@ class ApplicationApprovalEventListener {
 
       if (effective.subscriptionDetails) {
         await SubscriptionDetails.updateOne(
-          { ApplicationId: applicationId },
+          { applicationId: applicationId },
           { $set: { subscriptionDetails: effective.subscriptionDetails } },
           { upsert: true }
         );

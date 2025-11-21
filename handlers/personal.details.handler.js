@@ -98,9 +98,17 @@ exports.getByEmail = (email) =>
 exports.getApplicationById = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const result = await PersonalDetails.findOne({
-        ApplicationId: applicationId,
+      // Try lowercase first, then uppercase for backward compatibility
+      let result = await PersonalDetails.findOne({
+        applicationId: applicationId,
       });
+      
+      if (!result) {
+        result = await PersonalDetails.findOne({
+          ApplicationId: applicationId,
+        });
+      }
+      
       resolve(result);
     } catch (error) {
       console.error(
@@ -114,10 +122,19 @@ exports.getApplicationById = (applicationId) =>
 exports.getByUserIdAndApplicationId = (userId, applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const result = await PersonalDetails.findOne({
+      // Try lowercase first, then uppercase for backward compatibility
+      let result = await PersonalDetails.findOne({
         userId: userId,
-        ApplicationId: applicationId,
+        applicationId: applicationId,
       });
+      
+      if (!result) {
+        result = await PersonalDetails.findOne({
+          userId: userId,
+          ApplicationId: applicationId,
+        });
+      }
+      
       resolve(result);
     } catch (error) {
       console.error(
@@ -131,14 +148,27 @@ exports.getByUserIdAndApplicationId = (userId, applicationId) =>
 exports.updateByApplicationId = (applicationId, updateData) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await PersonalDetails.findOneAndUpdate(
-        { ApplicationId: applicationId },
+      // Try lowercase first, then uppercase for backward compatibility
+      let record = await PersonalDetails.findOneAndUpdate(
+        { applicationId: applicationId },
         updateData,
         {
           new: true,
           runValidators: true,
         }
       );
+      
+      if (!record) {
+        record = await PersonalDetails.findOneAndUpdate(
+          { ApplicationId: applicationId },
+          updateData,
+          {
+            new: true,
+            runValidators: true,
+          }
+        );
+      }
+      
       if (!record) return reject(new Error("Personal details not found"));
       resolve(record);
     } catch (error) {
@@ -153,14 +183,27 @@ exports.updateByApplicationId = (applicationId, updateData) =>
 exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await PersonalDetails.findOneAndUpdate(
-        { userId: userId, ApplicationId: applicationId },
+      // Try lowercase first, then uppercase for backward compatibility
+      let record = await PersonalDetails.findOneAndUpdate(
+        { userId: userId, applicationId: applicationId },
         updateData,
         {
           new: true,
           runValidators: true,
         }
       );
+      
+      if (!record) {
+        record = await PersonalDetails.findOneAndUpdate(
+          { userId: userId, ApplicationId: applicationId },
+          updateData,
+          {
+            new: true,
+            runValidators: true,
+          }
+        );
+      }
+      
       if (!record) return reject(new Error("Personal details not found"));
       resolve(record);
     } catch (error) {
@@ -175,9 +218,17 @@ exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
 exports.deleteByApplicationId = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await PersonalDetails.findOneAndDelete({
-        ApplicationId: applicationId,
+      // Try lowercase first, then uppercase for backward compatibility
+      let record = await PersonalDetails.findOneAndDelete({
+        applicationId: applicationId,
       });
+      
+      if (!record) {
+        record = await PersonalDetails.findOneAndDelete({
+          ApplicationId: applicationId,
+        });
+      }
+      
       if (!record) return reject(new Error("Personal details not found"));
       resolve(record);
     } catch (error) {
@@ -192,10 +243,19 @@ exports.deleteByApplicationId = (applicationId) =>
 exports.deleteByUserIdAndApplicationId = (userId, applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await PersonalDetails.findOneAndDelete({
+      // Try lowercase first, then uppercase for backward compatibility
+      let record = await PersonalDetails.findOneAndDelete({
         userId: userId,
-        ApplicationId: applicationId,
+        applicationId: applicationId,
       });
+      
+      if (!record) {
+        record = await PersonalDetails.findOneAndDelete({
+          userId: userId,
+          ApplicationId: applicationId,
+        });
+      }
+      
       if (!record) return reject(new Error("Personal details not found"));
       resolve(record);
     } catch (error) {
@@ -210,11 +270,21 @@ exports.deleteByUserIdAndApplicationId = (userId, applicationId) =>
 exports.updateApplicationStatus = (applicationId, status) =>
   new Promise(async (resolve, reject) => {
     try {
-      const result = await PersonalDetails.findOneAndUpdate(
-        { ApplicationId: applicationId },
+      // Try lowercase first, then uppercase for backward compatibility
+      let result = await PersonalDetails.findOneAndUpdate(
+        { applicationId: applicationId },
         { applicationStatus: status },
         { new: true }
       );
+      
+      if (!result) {
+        result = await PersonalDetails.findOneAndUpdate(
+          { ApplicationId: applicationId },
+          { applicationStatus: status },
+          { new: true }
+        );
+      }
+      
       resolve(result);
     } catch (error) {
       console.error(

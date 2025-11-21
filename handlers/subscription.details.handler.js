@@ -12,10 +12,10 @@ exports.create = (data) =>
     }
   });
 
-exports.getByApplicationId = (ApplicationId) =>
+exports.getByApplicationId = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await SubscriptionDetails.findOne({ ApplicationId });
+      const record = await SubscriptionDetails.findOne({ applicationId });
       resolve(record);
     } catch (error) {
       console.error(
@@ -26,11 +26,11 @@ exports.getByApplicationId = (ApplicationId) =>
     }
   });
 
-exports.updateByApplicationId = (ApplicationId, updateData) =>
+exports.updateByApplicationId = (applicationId, updateData) =>
   new Promise(async (resolve, reject) => {
     try {
       const record = await SubscriptionDetails.findOneAndUpdate(
-        { ApplicationId },
+        { applicationId },
         updateData,
         {
           new: true,
@@ -48,11 +48,11 @@ exports.updateByApplicationId = (ApplicationId, updateData) =>
     }
   });
 
-exports.deleteByApplicationId = (ApplicationId) =>
+exports.deleteByApplicationId = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
       const record = await SubscriptionDetails.findOneAndDelete({
-        ApplicationId,
+        applicationId,
       });
       if (!record) return reject(new Error("Subscription details not found"));
       resolve(record);
@@ -336,9 +336,17 @@ exports.checkifSoftDeleted = (userId) =>
 exports.getApplicationById = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await SubscriptionDetails.findOne({
-        ApplicationId: applicationId,
+      // Try lowercase first, then uppercase for backward compatibility
+      let record = await SubscriptionDetails.findOne({
+        applicationId: applicationId,
       });
+      
+      if (!record) {
+        record = await SubscriptionDetails.findOne({
+          ApplicationId: applicationId,
+        });
+      }
+      
       resolve(record);
     } catch (error) {
       console.error(
@@ -352,10 +360,19 @@ exports.getApplicationById = (applicationId) =>
 exports.getByUserIdAndApplicationId = (userId, applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await SubscriptionDetails.findOne({
+      // Try lowercase first, then uppercase for backward compatibility
+      let record = await SubscriptionDetails.findOne({
         userId: userId,
-        ApplicationId: applicationId,
+        applicationId: applicationId,
       });
+      
+      if (!record) {
+        record = await SubscriptionDetails.findOne({
+          userId: userId,
+          ApplicationId: applicationId,
+        });
+      }
+      
       resolve(record);
     } catch (error) {
       console.error(
@@ -369,14 +386,27 @@ exports.getByUserIdAndApplicationId = (userId, applicationId) =>
 exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await SubscriptionDetails.findOneAndUpdate(
-        { userId: userId, ApplicationId: applicationId },
+      // Try lowercase first, then uppercase for backward compatibility
+      let record = await SubscriptionDetails.findOneAndUpdate(
+        { userId: userId, applicationId: applicationId },
         updateData,
         {
           new: true,
           runValidators: true,
         }
       );
+      
+      if (!record) {
+        record = await SubscriptionDetails.findOneAndUpdate(
+          { userId: userId, ApplicationId: applicationId },
+          updateData,
+          {
+            new: true,
+            runValidators: true,
+          }
+        );
+      }
+      
       if (!record) return reject(new Error("Subscription details not found"));
       resolve(record);
     } catch (error) {
@@ -391,10 +421,19 @@ exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
 exports.deleteByUserIdAndApplicationId = (userId, applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await SubscriptionDetails.findOneAndDelete({
+      // Try lowercase first, then uppercase for backward compatibility
+      let record = await SubscriptionDetails.findOneAndDelete({
         userId: userId,
-        ApplicationId: applicationId,
+        applicationId: applicationId,
       });
+      
+      if (!record) {
+        record = await SubscriptionDetails.findOneAndDelete({
+          userId: userId,
+          ApplicationId: applicationId,
+        });
+      }
+      
       if (!record) return reject(new Error("Subscription details not found"));
       resolve(record);
     } catch (error) {

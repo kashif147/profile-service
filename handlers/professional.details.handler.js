@@ -12,10 +12,10 @@ exports.create = (data) =>
     }
   });
 
-exports.checkApplicationId = (ApplicationId) =>
+exports.checkApplicationId = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await personalDetails.findOne({ ApplicationId });
+      const record = await personalDetails.findOne({ applicationId });
       resolve(record);
     } catch (error) {
       console.error(
@@ -26,10 +26,10 @@ exports.checkApplicationId = (ApplicationId) =>
     }
   });
 
-exports.getByApplicationId = (ApplicationId) =>
+exports.getByApplicationId = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await ProfessionalDetails.findOne({ ApplicationId });
+      const record = await ProfessionalDetails.findOne({ applicationId });
       resolve(record);
     } catch (error) {
       console.error(
@@ -40,11 +40,11 @@ exports.getByApplicationId = (ApplicationId) =>
     }
   });
 
-exports.updateByApplicationId = (ApplicationId, updateData) =>
+exports.updateByApplicationId = (applicationId, updateData) =>
   new Promise(async (resolve, reject) => {
     try {
       const record = await ProfessionalDetails.findOneAndUpdate(
-        { ApplicationId },
+        { applicationId },
         updateData,
         {
           new: true,
@@ -62,11 +62,11 @@ exports.updateByApplicationId = (ApplicationId, updateData) =>
     }
   });
 
-exports.deleteByApplicationId = (ApplicationId) =>
+exports.deleteByApplicationId = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
       const record = await ProfessionalDetails.findOneAndDelete({
-        ApplicationId,
+        applicationId,
       });
       if (!record) return reject(new Error("Professional details not found"));
       resolve(record);
@@ -268,15 +268,15 @@ exports.getApplicationById = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
       // Query both uppercase and lowercase field names to handle legacy data
-      // Prioritize uppercase since existing data from portal-service uses ApplicationId
+      // Prioritize lowercase since schema uses applicationId
       let record = await ProfessionalDetails.findOne({
-        ApplicationId: applicationId,
+        applicationId: applicationId,
       });
       
-      // Fallback to lowercase if uppercase query returns null
+      // Fallback to uppercase for backward compatibility with legacy data
       if (!record) {
         record = await ProfessionalDetails.findOne({
-          applicationId: applicationId,
+          ApplicationId: applicationId,
         });
       }
       
@@ -294,10 +294,19 @@ exports.getApplicationById = (applicationId) =>
 exports.getByUserIdAndApplicationId = (userId, applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await ProfessionalDetails.findOne({
+      // Try lowercase first, then uppercase for backward compatibility
+      let record = await ProfessionalDetails.findOne({
         userId: userId,
-        ApplicationId: applicationId,
+        applicationId: applicationId,
       });
+      
+      if (!record) {
+        record = await ProfessionalDetails.findOne({
+          userId: userId,
+          ApplicationId: applicationId,
+        });
+      }
+      
       resolve(record);
     } catch (error) {
       console.error(
@@ -311,14 +320,27 @@ exports.getByUserIdAndApplicationId = (userId, applicationId) =>
 exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await ProfessionalDetails.findOneAndUpdate(
-        { userId: userId, ApplicationId: applicationId },
+      // Try lowercase first, then uppercase for backward compatibility
+      let record = await ProfessionalDetails.findOneAndUpdate(
+        { userId: userId, applicationId: applicationId },
         updateData,
         {
           new: true,
           runValidators: true,
         }
       );
+      
+      if (!record) {
+        record = await ProfessionalDetails.findOneAndUpdate(
+          { userId: userId, ApplicationId: applicationId },
+          updateData,
+          {
+            new: true,
+            runValidators: true,
+          }
+        );
+      }
+      
       if (!record) return reject(new Error("Professional details not found"));
       resolve(record);
     } catch (error) {
@@ -333,10 +355,19 @@ exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
 exports.deleteByUserIdAndApplicationId = (userId, applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await ProfessionalDetails.findOneAndDelete({
+      // Try lowercase first, then uppercase for backward compatibility
+      let record = await ProfessionalDetails.findOneAndDelete({
         userId: userId,
-        ApplicationId: applicationId,
+        applicationId: applicationId,
       });
+      
+      if (!record) {
+        record = await ProfessionalDetails.findOneAndDelete({
+          userId: userId,
+          ApplicationId: applicationId,
+        });
+      }
+      
       if (!record) return reject(new Error("Professional details not found"));
       resolve(record);
     } catch (error) {
