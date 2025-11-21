@@ -53,7 +53,7 @@ class ProfessionalDetailsService {
 
       const createData = {
         ...data,
-        ApplicationId: applicationId,
+        applicationId: applicationId,
         userId: userId,
         meta: { createdBy: userId, userType: userType },
       };
@@ -81,7 +81,18 @@ class ProfessionalDetailsService {
         throw AppError.badRequest("Application ID is required");
       }
 
-      return await professionalDetailsHandler.getApplicationById(applicationId);
+      const professionalDetails = await professionalDetailsHandler.getApplicationById(applicationId);
+      
+      // Validate user permissions for PORTAL users
+      if (userType !== "CRM") {
+        if (!professionalDetails.userId || professionalDetails.userId.toString() !== userId?.toString()) {
+          throw AppError.forbidden(
+            "Access denied. You can only view professional details for your own applications."
+          );
+        }
+      }
+
+      return professionalDetails;
     } catch (error) {
       console.error(
         "ProfessionalDetailsService [getProfessionalDetails] Error:",
