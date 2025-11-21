@@ -267,9 +267,20 @@ exports.findDeletedByEmail = (email) =>
 exports.getApplicationById = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await ProfessionalDetails.findOne({
+      // Query both uppercase and lowercase field names to handle legacy data
+      // Prioritize uppercase since existing data from portal-service uses ApplicationId
+      let record = await ProfessionalDetails.findOne({
         ApplicationId: applicationId,
       });
+      
+      // Fallback to lowercase if uppercase query returns null
+      if (!record) {
+        record = await ProfessionalDetails.findOne({
+          applicationId: applicationId,
+        });
+      }
+      
+      if (!record) return reject(new Error("Professional details not found"));
       resolve(record);
     } catch (error) {
       console.error(
