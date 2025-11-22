@@ -260,49 +260,74 @@ async function approveApplication(req, res, next) {
     }
 
     // Publish events using dedicated publisher
-    await ApplicationApprovalEventPublisher.publishApplicationApproved({
-      applicationId,
-      reviewerId,
-      profileId: String(profile._id),
-      applicationStatus: "APPROVED",
-      isExistingProfile: !!existingProfile,
-      effective: {
-        personalInfo: effective.personalInfo,
-        contactInfo: effective.contactInfo,
-        professionalDetails: effective.professionalDetails,
-        subscriptionDetails: pickSubForContract(effective.subscriptionDetails),
-      },
-      subscriptionAttributes: subAttrs(effective.subscriptionDetails),
-      tenantId,
-      correlationId: crypto.randomUUID(),
-    });
+    // Wrap in try-catch to prevent approval failure if publishing fails
+    try {
+      await ApplicationApprovalEventPublisher.publishApplicationApproved({
+        applicationId,
+        reviewerId,
+        profileId: String(profile._id),
+        applicationStatus: "APPROVED",
+        isExistingProfile: !!existingProfile,
+        effective: {
+          personalInfo: effective.personalInfo,
+          contactInfo: effective.contactInfo,
+          professionalDetails: effective.professionalDetails,
+          subscriptionDetails: pickSubForContract(effective.subscriptionDetails),
+        },
+        subscriptionAttributes: subAttrs(effective.subscriptionDetails),
+        tenantId,
+        correlationId: crypto.randomUUID(),
+      });
+    } catch (publishError) {
+      console.error(
+        "[approveApplication] Failed to publish application approved event:",
+        publishError.message
+      );
+      // Continue with approval even if publishing fails
+    }
 
-    await ApplicationApprovalEventPublisher.publishMemberCreatedRequested({
-      applicationId,
-      profileId: String(profile._id),
-      isExistingProfile: !!existingProfile,
-      effective,
-      subscriptionAttributes: subAttrs(effective.subscriptionDetails),
-      tenantId,
-      correlationId: crypto.randomUUID(),
-    });
+    try {
+      await ApplicationApprovalEventPublisher.publishMemberCreatedRequested({
+        applicationId,
+        profileId: String(profile._id),
+        isExistingProfile: !!existingProfile,
+        effective,
+        subscriptionAttributes: subAttrs(effective.subscriptionDetails),
+        tenantId,
+        correlationId: crypto.randomUUID(),
+      });
+    } catch (publishError) {
+      console.error(
+        "[approveApplication] Failed to publish member created requested event:",
+        publishError.message
+      );
+      // Continue with approval even if publishing fails
+    }
 
     // Publish subscription upsert request for subscription-service
     const sub = effective.subscriptionDetails || {};
-    await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested({
-      tenantId,
-      profileId: String(profile._id),
-      applicationId,
-      membershipCategory:
-        sub.membershipCategory ??
-        effective.professionalDetails?.membershipCategory ??
-        null,
-      dateJoined: sub.dateJoined ?? null,
-      paymentType: sub.paymentType ?? null,
-      payrollNo: sub.payrollNo ?? null,
-      paymentFrequency: sub.paymentFrequency ?? null,
-      correlationId: crypto.randomUUID(),
-    });
+    try {
+      await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested({
+        tenantId,
+        profileId: String(profile._id),
+        applicationId,
+        membershipCategory:
+          sub.membershipCategory ??
+          effective.professionalDetails?.membershipCategory ??
+          null,
+        dateJoined: sub.dateJoined ?? null,
+        paymentType: sub.paymentType ?? null,
+        payrollNo: sub.payrollNo ?? null,
+        paymentFrequency: sub.paymentFrequency ?? null,
+        correlationId: crypto.randomUUID(),
+      });
+    } catch (publishError) {
+      console.error(
+        "[approveApplication] Failed to publish subscription upsert requested event:",
+        publishError.message
+      );
+      // Continue with approval even if publishing fails
+    }
 
     await session.commitTransaction();
     return res.status(200).json({
@@ -313,6 +338,14 @@ async function approveApplication(req, res, next) {
     });
   } catch (e) {
     await session.abortTransaction();
+    console.error("[approveApplication] Error details:", {
+      message: e.message,
+      stack: e.stack,
+      name: e.name,
+      applicationId,
+      reviewerId,
+      tenantId,
+    });
     next(e);
   } finally {
     session.endSession();
