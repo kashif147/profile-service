@@ -58,11 +58,22 @@ exports.getApplicationById = async (req, res, next) => {
 
     const applicationDetails =
       await applicationService.getApplicationWithDetails(applicationId);
+    
+    if (!applicationDetails) {
+      return res.status(200).json({
+        data: null,
+        message: "Not found"
+      });
+    }
+    
     return res.success(applicationDetails);
   } catch (error) {
     console.error("ApplicationController [getApplicationById] Error:", error);
     if (error.message === "Application not found") {
-      return next(AppError.notFound("Application not found"));
+      return res.status(200).json({
+        data: null,
+        message: "Not found"
+      });
     }
     return next(error);
   }

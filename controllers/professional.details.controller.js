@@ -81,6 +81,14 @@ exports.getProfessionalDetails = async (req, res, next) => {
         userId,
         userType
       );
+    
+    if (!professionalDetails) {
+      return res.status(200).json({
+        data: null,
+        message: "Not found"
+      });
+    }
+    
     return res.success(professionalDetails);
   } catch (error) {
     console.error(
@@ -88,7 +96,10 @@ exports.getProfessionalDetails = async (req, res, next) => {
       error
     );
     if (error.message === "Professional details not found") {
-      return next(AppError.notFound("Professional details not found"));
+      return res.status(200).json({
+        data: null,
+        message: "Not found"
+      });
     }
     return next(error);
   }
@@ -175,19 +186,19 @@ exports.getMyProfessionalDetails = async (req, res, next) => {
         await professionalDetailsService.getMyProfessionalDetails(userId);
 
       if (!professionalDetails) {
-        return next(
-          AppError.notFound("Professional details not found for this user")
-        );
+        return res.status(200).json({
+          data: null,
+          message: "Not found"
+        });
       }
 
       return res.success(professionalDetails);
     } else if (userType === "CRM") {
       // CRM users don't have userId - return not found instead of blocking
-      return next(
-        AppError.notFound(
-          "Professional details not found. CRM users should use GET /api/professional-details/:applicationId endpoint"
-        )
-      );
+      return res.status(200).json({
+        data: null,
+        message: "Not found"
+      });
     } else {
       return next(
         AppError.badRequest(

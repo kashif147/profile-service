@@ -131,7 +131,10 @@ async function getProfileById(req, res, next) {
     }).lean();
 
     if (!profile) {
-      return next(AppError.notFound("Profile not found"));
+      return res.status(200).json({
+        data: null,
+        message: "Not found"
+      });
     }
 
     return res.success(profile);
