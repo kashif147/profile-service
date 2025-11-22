@@ -113,8 +113,53 @@ class ProfileApplicationCreateListener {
 
       // Build update object - use subscriptionDetails from event if available, otherwise use defaults
       // Note: paymentDetails is not stored in profile-service model (commented out in schema)
+      console.log(
+        "🔍 [PROFILE_CREATE_LISTENER] Processing subscriptionDetails from event:",
+        {
+          hasSubscriptionDetails: !!subscriptionDetails,
+          subscriptionDetailsType: subscriptionDetails
+            ? typeof subscriptionDetails
+            : "null",
+          subscriptionDetailsFull: subscriptionDetails
+            ? JSON.stringify(subscriptionDetails, null, 2)
+            : "null",
+          hasNestedSubscriptionDetails: !!subscriptionDetails?.subscriptionDetails,
+          nestedSubscriptionDetailsType: subscriptionDetails?.subscriptionDetails
+            ? typeof subscriptionDetails.subscriptionDetails
+            : "null",
+          nestedSubscriptionDetailsKeys: subscriptionDetails?.subscriptionDetails
+            ? Object.keys(subscriptionDetails.subscriptionDetails)
+            : [],
+        }
+      );
+
       let subscriptionDetailsData =
         subscriptionDetails?.subscriptionDetails || {};
+
+      // Check if we have existing subscription details in the database
+      const existingSubscriptionDetails = await SubscriptionDetails.findOne({
+        applicationId: applicationId,
+      });
+
+      // If subscriptionDetailsData is empty but we have existing data, merge them
+      if (
+        (!subscriptionDetailsData ||
+          Object.keys(subscriptionDetailsData).length === 0) &&
+        existingSubscriptionDetails?.subscriptionDetails
+      ) {
+        console.warn(
+          "⚠️ [PROFILE_CREATE_LISTENER] subscriptionDetails.subscriptionDetails is empty in event, but found existing data in database - preserving existing data"
+        );
+        subscriptionDetailsData = existingSubscriptionDetails.subscriptionDetails;
+      } else if (
+        !subscriptionDetailsData ||
+        Object.keys(subscriptionDetailsData).length === 0
+      ) {
+        console.warn(
+          "⚠️ [PROFILE_CREATE_LISTENER] subscriptionDetails.subscriptionDetails is empty, will use schema defaults"
+        );
+        subscriptionDetailsData = {}; // Will use schema defaults
+      }
 
       // Enforce payment frequency rule: Credit Card = Annually, Others = Monthly
       const {
@@ -122,6 +167,15 @@ class ProfileApplicationCreateListener {
       } = require("../../helpers/payment.frequency.helper.js");
       subscriptionDetailsData = enforcePaymentFrequencyRule(
         subscriptionDetailsData
+      );
+
+      console.log(
+        "🔍 [PROFILE_CREATE_LISTENER] After payment frequency enforcement:",
+        {
+          subscriptionDetailsDataKeys: Object.keys(subscriptionDetailsData),
+          paymentType: subscriptionDetailsData.paymentType,
+          paymentFrequency: subscriptionDetailsData.paymentFrequency,
+        }
       );
 
       // Build updateData, handling meta structure differences
@@ -146,12 +200,58 @@ class ProfileApplicationCreateListener {
         updateData.membershipNumber = subscriptionDetails.membershipNumber;
       }
 
+      // Log what we're about to save
+      console.log(
+        "🔍 [PROFILE_CREATE_LISTENER] About to save subscription details:",
+        {
+          applicationId,
+          updateDataStructure: {
+            hasApplicationId: !!updateData.applicationId,
+            hasUserId: !!updateData.userId,
+            hasSubscriptionDetails: !!updateData.subscriptionDetails,
+            subscriptionDetailsType: typeof updateData.subscriptionDetails,
+            subscriptionDetailsKeys: updateData.subscriptionDetails
+              ? Object.keys(updateData.subscriptionDetails)
+              : [],
+            subscriptionDetailsPaymentType:
+              updateData.subscriptionDetails?.paymentType,
+            subscriptionDetailsPaymentFrequency:
+              updateData.subscriptionDetails?.paymentFrequency,
+            hasMeta: !!updateData.meta,
+            metaKeys: updateData.meta ? Object.keys(updateData.meta) : [],
+          },
+        }
+      );
+
       try {
+        // Use $set operator to ensure nested fields are updated correctly
+        const updateQuery = {
+          $set: {
+            applicationId: updateData.applicationId,
+            userId: updateData.userId,
+            "subscriptionDetails": updateData.subscriptionDetails,
+            "meta": updateData.meta,
+            deleted: updateData.deleted,
+            isActive: updateData.isActive,
+          },
+        };
+
+        // Only set membershipNumber if provided
+        if (updateData.membershipNumber) {
+          updateQuery.$set.membershipNumber = updateData.membershipNumber;
+        }
+
         const newSubscriptionDetails = await SubscriptionDetails.findOneAndUpdate(
           { applicationId: applicationId },
-          updateData,
+          updateQuery,
           { upsert: true, new: true, runValidators: true }
         );
+
+        if (!newSubscriptionDetails) {
+          throw new Error(
+            `Failed to create/update subscription details for application ${applicationId}`
+          );
+        }
 
         console.log(
           "✅ [PROFILE_CREATE_LISTENER] Subscription details created/updated:",
@@ -165,7 +265,16 @@ class ProfileApplicationCreateListener {
               ? Object.keys(newSubscriptionDetails.subscriptionDetails)
               : [],
             hasPaymentType: !!newSubscriptionDetails.subscriptionDetails?.paymentType,
-            hasPaymentFrequency: !!newSubscriptionDetails.subscriptionDetails?.paymentFrequency,
+            paymentType: newSubscriptionDetails.subscriptionDetails?.paymentType,
+            hasPaymentFrequency:
+              !!newSubscriptionDetails.subscriptionDetails?.paymentFrequency,
+            paymentFrequency:
+              newSubscriptionDetails.subscriptionDetails?.paymentFrequency,
+            subscriptionDetailsFull: JSON.stringify(
+              newSubscriptionDetails.subscriptionDetails,
+              null,
+              2
+            ),
           }
         );
       } catch (saveError) {
@@ -174,13 +283,23 @@ class ProfileApplicationCreateListener {
           {
             error: saveError.message,
             errorName: saveError.name,
+            errorStack: saveError.stack,
             applicationId,
             updateDataKeys: Object.keys(updateData),
             subscriptionDetailsKeys: updateData.subscriptionDetails
               ? Object.keys(updateData.subscriptionDetails)
               : [],
+            subscriptionDetailsValue: JSON.stringify(
+              updateData.subscriptionDetails,
+              null,
+              2
+            ),
             validationErrors: saveError.errors
-              ? Object.keys(saveError.errors)
+              ? Object.keys(saveError.errors).map((key) => ({
+                  field: key,
+                  message: saveError.errors[key].message,
+                  value: saveError.errors[key].value,
+                }))
               : [],
           }
         );
