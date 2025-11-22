@@ -85,46 +85,46 @@ class ProfileApplicationCreateListener {
       }
 
       // 3. Create/Update Subscription Details (Idempotent)
-      if (subscriptionDetails) {
-        console.log(
-          "📝 [PROFILE_CREATE_LISTENER] Creating/updating subscription details..."
-        );
+      // Always create/update subscription details, even if not provided in event
+      // Use data from event if available, otherwise create with defaults
+      console.log(
+        "📝 [PROFILE_CREATE_LISTENER] Creating/updating subscription details..."
+      );
 
-        // Build update object - only include membershipNumber if application is approved
-        const updateData = {
-          applicationId: applicationId,
-          userId: subscriptionDetails.userId,
-          subscriptionDetails: subscriptionDetails.subscriptionDetails,
-          paymentDetails: subscriptionDetails.paymentDetails,
-          meta: subscriptionDetails.meta,
-        };
+      // Build update object - use subscriptionDetails from event if available, otherwise use defaults
+      // Note: paymentDetails is not stored in profile-service model (commented out in schema)
+      const updateData = {
+        applicationId: applicationId,
+        userId: subscriptionDetails?.userId || newPersonalDetails.userId,
+        subscriptionDetails: subscriptionDetails?.subscriptionDetails || {},
+        meta: subscriptionDetails?.meta || {
+          createdBy: newPersonalDetails.userId,
+          userType: "PORTAL",
+        },
+      };
 
-        // Only copy membershipNumber if application status is approved
-        if (status === "approved" && subscriptionDetails.membershipNumber) {
-          updateData.membershipNumber = subscriptionDetails.membershipNumber;
-        }
-
-        const newSubscriptionDetails =
-          await SubscriptionDetails.findOneAndUpdate(
-            { applicationId: applicationId },
-            updateData,
-            { upsert: true, new: true, runValidators: true }
-          );
-
-        console.log(
-          "✅ [PROFILE_CREATE_LISTENER] Subscription details created/updated:",
-          {
-            id: newSubscriptionDetails._id,
-            applicationId: newSubscriptionDetails.applicationId,
-            membershipNumber: newSubscriptionDetails.membershipNumber,
-            status: status,
-          }
-        );
-      } else {
-        console.log(
-          "⚠️ [PROFILE_CREATE_LISTENER] No subscription details provided"
-        );
+      // Only copy membershipNumber if application status is approved
+      if (status === "approved" && subscriptionDetails?.membershipNumber) {
+        updateData.membershipNumber = subscriptionDetails.membershipNumber;
       }
+
+      const newSubscriptionDetails =
+        await SubscriptionDetails.findOneAndUpdate(
+          { applicationId: applicationId },
+          updateData,
+          { upsert: true, new: true, runValidators: true }
+        );
+
+      console.log(
+        "✅ [PROFILE_CREATE_LISTENER] Subscription details created/updated:",
+        {
+          id: newSubscriptionDetails._id,
+          applicationId: newSubscriptionDetails.applicationId,
+          membershipNumber: newSubscriptionDetails.membershipNumber,
+          status: status,
+          hadSubscriptionDetailsInEvent: !!subscriptionDetails,
+        }
+      );
 
       console.log(
         "✅ [PROFILE_CREATE_LISTENER] Profile application created successfully:",
