@@ -25,10 +25,11 @@ exports.PREFERRED_EMAIL = {
 };
 
 // Payment Type Enums
+// NOTE: Must match portal-service enum values for compatibility
 exports.PAYMENT_TYPE = {
-  PAYROLL_DEDUCTION: "Payroll Deduction",
+  PAYROLL_DEDUCTION: "Salary Deduction", // Matches portal-service
   DIRECT_DEBIT: "Direct Debit",
-  CARD_PAYMENT: "Card Payment",
+  CARD_PAYMENT: "Credit Card", // Matches portal-service
   SBO_PAYMENT: "Standing Bank Order",
 };
 

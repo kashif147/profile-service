@@ -124,14 +124,21 @@ class ProfileApplicationCreateListener {
         subscriptionDetailsData
       );
 
+      // Build updateData, handling meta structure differences
+      // Portal-service has deleted/isActive in meta, profile-service has them at root
+      const portalMeta = subscriptionDetails?.meta || {};
       const updateData = {
         applicationId: applicationId,
         userId: subscriptionDetails?.userId || newPersonalDetails.userId,
         subscriptionDetails: subscriptionDetailsData,
-        meta: subscriptionDetails?.meta || {
-          createdBy: newPersonalDetails.userId,
-          userType: "PORTAL",
+        meta: {
+          createdBy: portalMeta.createdBy || newPersonalDetails.userId,
+          updatedBy: portalMeta.updatedBy || null,
+          userType: portalMeta.userType || "PORTAL",
         },
+        // Handle deleted/isActive - portal has them in meta, profile has at root
+        deleted: portalMeta.deleted !== undefined ? portalMeta.deleted : false,
+        isActive: portalMeta.isActive !== undefined ? portalMeta.isActive : true,
       };
 
       // Only copy membershipNumber if application status is approved
@@ -139,22 +146,46 @@ class ProfileApplicationCreateListener {
         updateData.membershipNumber = subscriptionDetails.membershipNumber;
       }
 
-      const newSubscriptionDetails = await SubscriptionDetails.findOneAndUpdate(
-        { applicationId: applicationId },
-        updateData,
-        { upsert: true, new: true, runValidators: true }
-      );
+      try {
+        const newSubscriptionDetails = await SubscriptionDetails.findOneAndUpdate(
+          { applicationId: applicationId },
+          updateData,
+          { upsert: true, new: true, runValidators: true }
+        );
 
-      console.log(
-        "✅ [PROFILE_CREATE_LISTENER] Subscription details created/updated:",
-        {
-          id: newSubscriptionDetails._id,
-          applicationId: newSubscriptionDetails.applicationId,
-          membershipNumber: newSubscriptionDetails.membershipNumber,
-          status: status,
-          hadSubscriptionDetailsInEvent: !!subscriptionDetails,
-        }
-      );
+        console.log(
+          "✅ [PROFILE_CREATE_LISTENER] Subscription details created/updated:",
+          {
+            id: newSubscriptionDetails._id,
+            applicationId: newSubscriptionDetails.applicationId,
+            membershipNumber: newSubscriptionDetails.membershipNumber,
+            status: status,
+            hadSubscriptionDetailsInEvent: !!subscriptionDetails,
+            subscriptionDetailsKeys: newSubscriptionDetails.subscriptionDetails
+              ? Object.keys(newSubscriptionDetails.subscriptionDetails)
+              : [],
+            hasPaymentType: !!newSubscriptionDetails.subscriptionDetails?.paymentType,
+            hasPaymentFrequency: !!newSubscriptionDetails.subscriptionDetails?.paymentFrequency,
+          }
+        );
+      } catch (saveError) {
+        console.error(
+          "❌ [PROFILE_CREATE_LISTENER] Failed to save subscription details:",
+          {
+            error: saveError.message,
+            errorName: saveError.name,
+            applicationId,
+            updateDataKeys: Object.keys(updateData),
+            subscriptionDetailsKeys: updateData.subscriptionDetails
+              ? Object.keys(updateData.subscriptionDetails)
+              : [],
+            validationErrors: saveError.errors
+              ? Object.keys(saveError.errors)
+              : [],
+          }
+        );
+        throw saveError;
+      }
 
       console.log(
         "✅ [PROFILE_CREATE_LISTENER] Profile application created successfully:",
