@@ -87,6 +87,32 @@ const ProfileSchema = new mongoose.Schema(
       comments: String,
     },
 
+    // Duplicate detection flags
+    duplicateDetection: {
+      isPotentialDuplicate: {
+        type: Boolean,
+        default: false,
+        index: true,
+      },
+      detectedAt: Date,
+      matchType: {
+        type: String,
+        enum: ["exact_email", "exact_mobile", "fuzzy_3of4", null],
+        default: null,
+      },
+      matchedApplicationIds: [
+        {
+          type: String,
+        },
+      ],
+      matchedProfileIds: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Profile",
+        },
+      ],
+    },
+
     meta: {
       createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
       updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
@@ -105,5 +131,7 @@ const ProfileSchema = new mongoose.Schema(
 // Indexes for frequently queried fields
 ProfileSchema.index({ userId: 1 });
 ProfileSchema.index({ applicationId: 1 });
+ProfileSchema.index({ "duplicateDetection.isPotentialDuplicate": 1 });
+ProfileSchema.index({ "duplicateDetection.matchedApplicationIds": 1 });
 
 module.exports = mongoose.model("personalDetails", ProfileSchema);

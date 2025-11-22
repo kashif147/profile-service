@@ -51,13 +51,13 @@ const SubscriptionSchema = new mongoose.Schema(
     },
 
     // Payment details for tracking payment information
-    // paymentDetails: {
-    //   paymentIntentId: { type: String, allowNull: true },
-    //   amount: { type: Number, allowNull: true },
-    //   currency: { type: String, allowNull: true },
-    //   status: { type: String, allowNull: true },
-    //   updatedAt: { type: Date, allowNull: true },
-    // },
+    paymentDetails: {
+      paymentIntentId: { type: String, allowNull: true },
+      amount: { type: Number, allowNull: true },
+      currency: { type: String, allowNull: true },
+      status: { type: String, allowNull: true },
+      updatedAt: { type: Date, allowNull: true },
+    },
 
     // // Professional details that will be synced from professional details
     // professionalDetails: {

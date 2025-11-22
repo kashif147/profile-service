@@ -1,6 +1,9 @@
 const PersonalDetails = require("../../models/personal.details.model.js");
 const ProfessionalDetails = require("../../models/professional.details.model.js");
 const SubscriptionDetails = require("../../models/subscription.model.js");
+const {
+  detectDuplicates,
+} = require("../../services/duplicate.detection.service.js");
 
 class ProfileApplicationCreateListener {
   constructor() {
@@ -27,6 +30,23 @@ class ProfileApplicationCreateListener {
         professionalDetails,
         subscriptionDetails,
       } = data;
+
+      console.log("🔍 [PROFILE_CREATE_LISTENER] Event data structure:", {
+        applicationId,
+        hasPersonalDetails: !!personalDetails,
+        hasProfessionalDetails: !!professionalDetails,
+        hasSubscriptionDetails: !!subscriptionDetails,
+        subscriptionDetailsType: subscriptionDetails
+          ? typeof subscriptionDetails
+          : "null",
+        subscriptionDetailsKeys: subscriptionDetails
+          ? Object.keys(subscriptionDetails)
+          : [],
+        subscriptionDetailsApplicationId: subscriptionDetails?.applicationId,
+        subscriptionDetailsUserId: subscriptionDetails?.userId,
+        hasSubscriptionDetailsField: !!subscriptionDetails?.subscriptionDetails,
+        hasPaymentDetails: !!subscriptionDetails?.paymentDetails,
+      });
 
       // 1. Create/Update Personal Details (Idempotent)
       console.log(
@@ -93,10 +113,21 @@ class ProfileApplicationCreateListener {
 
       // Build update object - use subscriptionDetails from event if available, otherwise use defaults
       // Note: paymentDetails is not stored in profile-service model (commented out in schema)
+      let subscriptionDetailsData =
+        subscriptionDetails?.subscriptionDetails || {};
+
+      // Enforce payment frequency rule: Credit Card = Annually, Others = Monthly
+      const {
+        enforcePaymentFrequencyRule,
+      } = require("../../helpers/payment.frequency.helper.js");
+      subscriptionDetailsData = enforcePaymentFrequencyRule(
+        subscriptionDetailsData
+      );
+
       const updateData = {
         applicationId: applicationId,
         userId: subscriptionDetails?.userId || newPersonalDetails.userId,
-        subscriptionDetails: subscriptionDetails?.subscriptionDetails || {},
+        subscriptionDetails: subscriptionDetailsData,
         meta: subscriptionDetails?.meta || {
           createdBy: newPersonalDetails.userId,
           userType: "PORTAL",
@@ -108,12 +139,11 @@ class ProfileApplicationCreateListener {
         updateData.membershipNumber = subscriptionDetails.membershipNumber;
       }
 
-      const newSubscriptionDetails =
-        await SubscriptionDetails.findOneAndUpdate(
-          { applicationId: applicationId },
-          updateData,
-          { upsert: true, new: true, runValidators: true }
-        );
+      const newSubscriptionDetails = await SubscriptionDetails.findOneAndUpdate(
+        { applicationId: applicationId },
+        updateData,
+        { upsert: true, new: true, runValidators: true }
+      );
 
       console.log(
         "✅ [PROFILE_CREATE_LISTENER] Subscription details created/updated:",
@@ -133,6 +163,32 @@ class ProfileApplicationCreateListener {
           tenantId,
         }
       );
+
+      // 4. Run duplicate detection in background (non-blocking)
+      // Use setImmediate to run after current event loop, doesn't block response
+      if (tenantId) {
+        setImmediate(async () => {
+          try {
+            await detectDuplicates(applicationId, tenantId);
+          } catch (error) {
+            console.error(
+              "❌ [PROFILE_CREATE_LISTENER] Background duplicate detection failed:",
+              {
+                error: error.message,
+                applicationId,
+              }
+            );
+            // Don't throw - duplicate detection failure shouldn't affect application creation
+          }
+        });
+        console.log(
+          "🔍 [PROFILE_CREATE_LISTENER] Duplicate detection queued for background processing"
+        );
+      } else {
+        console.warn(
+          "⚠️ [PROFILE_CREATE_LISTENER] tenantId missing, skipping duplicate detection"
+        );
+      }
     } catch (error) {
       console.error(
         "❌ [PROFILE_CREATE_LISTENER] Error creating profile application:",
