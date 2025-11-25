@@ -3,6 +3,7 @@ const personalDetailsHandler = require("../handlers/personal.details.handler");
 const professionalDetailsHandler = require("../handlers/professional.details.handler");
 const { APPLICATION_STATUS } = require("../constants/enums");
 const { AppError } = require("../errors/AppError");
+const mongoose = require("mongoose");
 
 /**
  * Subscription Details Service Layer
@@ -87,11 +88,120 @@ class SubscriptionDetailsService {
 
       const result = await subscriptionDetailsHandler.create(createData);
 
-      // Update application status to submitted (complete application)
-      await personalDetailsHandler.updateApplicationStatus(
-        applicationId,
-        APPLICATION_STATUS.SUBMITTED
-      );
+      // Get membership category from subscription details or professional details
+      let membershipCategoryId =
+        result?.subscriptionDetails?.membershipCategory ||
+        professionalDetails?.professionalDetails?.membershipCategory;
+
+      // Helper function to check if a value is a MongoDB ObjectId
+      const isObjectId = (value) => {
+        if (!value) return false;
+        // Check if it's already a mongoose ObjectId instance
+        if (value instanceof mongoose.Types.ObjectId) return true;
+        // Check if it's a string that represents a valid ObjectId
+        if (typeof value === "string") {
+          return mongoose.Types.ObjectId.isValid(value) && value.length === 24;
+        }
+        return false;
+      };
+
+      // If membership category is an ObjectId, fetch the lookup name
+      let membershipCategoryName = membershipCategoryId;
+      if (isObjectId(membershipCategoryId)) {
+        try {
+          // Convert to string if it's an ObjectId instance
+          const categoryIdString = membershipCategoryId.toString();
+          
+          // Fetch lookup from database
+          // Try to get existing model or create schema if needed
+          let Lookup;
+          try {
+            Lookup = mongoose.model("Lookup");
+          } catch (modelError) {
+            // Model doesn't exist, create it
+            const lookupSchema = new mongoose.Schema(
+              {
+                code: { type: String, required: true },
+                lookupname: { type: String, required: true },
+                DisplayName: { type: String },
+                Parentlookupid: {
+                  type: mongoose.Schema.Types.ObjectId,
+                  ref: "Lookup",
+                  default: null,
+                },
+                lookuptypeId: {
+                  type: mongoose.Schema.Types.ObjectId,
+                  ref: "LookupType",
+                  required: true,
+                },
+                isdeleted: { type: Boolean, default: false },
+                isactive: { type: Boolean, default: true },
+                userid: {
+                  type: mongoose.Schema.Types.ObjectId,
+                  ref: "User",
+                  required: true,
+                },
+              },
+              { timestamps: true }
+            );
+            Lookup = mongoose.model("Lookup", lookupSchema);
+          }
+
+          const lookup = await Lookup.findById(categoryIdString);
+          if (lookup && lookup.lookupname) {
+            membershipCategoryName = lookup.lookupname;
+            console.log(
+              `📋 [PROFILE_SUBSCRIPTION_SERVICE] Resolved membership category ID ${categoryIdString} to name: ${membershipCategoryName}`
+            );
+          } else {
+            console.warn(
+              `⚠️ [PROFILE_SUBSCRIPTION_SERVICE] Lookup not found for ID: ${categoryIdString}`
+            );
+          }
+        } catch (lookupError) {
+          console.error(
+            `❌ [PROFILE_SUBSCRIPTION_SERVICE] Error fetching lookup for ID ${categoryIdString}:`,
+            lookupError.message
+          );
+          // Continue with ID as fallback - won't match "Undergraduate Student" but won't break
+        }
+      }
+
+      // Check if membership category is "Undergraduate Student"
+      const isUndergraduateStudent =
+        membershipCategoryName &&
+        membershipCategoryName.toLowerCase() === "undergraduate student";
+
+      // Update application status based on userType and membership category:
+      // - CRM users: Mark ALL applications as "submitted" immediately (bypass payment flow)
+      // - PORTAL users + Undergraduate Student: Mark as "submitted" immediately (no payment required)
+      // - PORTAL users + Other categories: Keep as "in-progress" until payment is received
+      if (userType === "CRM") {
+        console.log(
+          "📝 [PROFILE_SUBSCRIPTION_SERVICE] CRM user - updating status to submitted (bypassing payment flow)"
+        );
+        await personalDetailsHandler.updateApplicationStatus(
+          applicationId,
+          APPLICATION_STATUS.SUBMITTED
+        );
+      } else if (userType === "PORTAL" && isUndergraduateStudent) {
+        console.log(
+          "📝 [PROFILE_SUBSCRIPTION_SERVICE] PORTAL user + Undergraduate Student - updating status to submitted (no payment required)"
+        );
+        await personalDetailsHandler.updateApplicationStatus(
+          applicationId,
+          APPLICATION_STATUS.SUBMITTED
+        );
+      } else if (userType === "PORTAL" && !isUndergraduateStudent) {
+        console.log(
+          "ℹ️ [PROFILE_SUBSCRIPTION_SERVICE] PORTAL user + Non-Undergraduate Student - keeping status as in-progress until payment is received"
+        );
+        // Status remains as "in-progress" - will be updated when payment is processed
+      } else {
+        console.warn(
+          `⚠️ [PROFILE_SUBSCRIPTION_SERVICE] Unexpected userType: ${userType}, keeping status unchanged`
+        );
+      }
 
       return result;
     } catch (error) {
