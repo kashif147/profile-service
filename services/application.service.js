@@ -65,9 +65,12 @@ class ApplicationService {
         throw AppError.badRequest("Approver ID is required");
       }
 
+      // Normalize status to lowercase for consistency
+      const normalizedStatus = newStatus?.toLowerCase();
+
       // Validate status
       const validStatuses = ["approved", "rejected", "pending"];
-      if (!validStatuses.includes(newStatus)) {
+      if (!validStatuses.includes(normalizedStatus)) {
         throw AppError.badRequest(
           `Invalid status. Must be one of: ${validStatuses.join(", ")}`
         );
@@ -75,7 +78,7 @@ class ApplicationService {
 
       return await applicationHandler.updateApplicationStatus(
         applicationId,
-        newStatus,
+        normalizedStatus,
         approvedBy,
         comments
       );

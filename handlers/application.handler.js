@@ -10,8 +10,12 @@ exports.getAllApplications = (statusFilters = []) =>
       let query = {};
 
       // If status filters are provided, filter by them
+      // Normalize to lowercase to handle both cases
       if (statusFilters && statusFilters.length > 0) {
-        query.applicationStatus = { $in: statusFilters };
+        const normalizedFilters = statusFilters.map(filter => 
+          typeof filter === 'string' ? filter.toLowerCase() : filter
+        );
+        query.applicationStatus = { $in: normalizedFilters };
       }
 
       const applications = await PersonalDetails.find(query).sort({
@@ -54,8 +58,10 @@ exports.updateApplicationStatus = (
 ) =>
   new Promise(async (resolve, reject) => {
     try {
+      // Normalize status to lowercase to ensure consistency
+      const normalizedStatus = newStatus?.toLowerCase();
       const updateData = {
-        applicationStatus: newStatus,
+        applicationStatus: normalizedStatus,
         approvalDetails: {
           approvedBy: approvedBy,
           approvedAt: new Date(),

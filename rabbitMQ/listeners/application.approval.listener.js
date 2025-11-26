@@ -3,6 +3,7 @@ const PersonalDetails = require("../../models/personal.details.model.js");
 const ProfessionalDetails = require("../../models/professional.details.model.js");
 const SubscriptionDetails = require("../../models/subscription.model.js");
 const Profile = require("../../models/profile.model.js");
+const { APPLICATION_STATUS } = require("../../constants/enums.js");
 
 // Helper function to handle bypass user ObjectId conversion
 function getReviewerIdForDb(reviewerId) {
@@ -47,7 +48,7 @@ class ApplicationApprovalEventListener {
             $set: {
               personalInfo: effective.personalInfo,
               contactInfo: effective.contactInfo,
-              applicationStatus: "APPROVED",
+              applicationStatus: APPLICATION_STATUS.APPROVED,
               "approvalDetails.approvedBy": getReviewerIdForDb(data.reviewerId),
               "approvalDetails.approvedAt": new Date(),
             },
