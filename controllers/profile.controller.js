@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const Profile = require("../models/profile.model.js");
 const { AppError } = require("../errors/AppError");
-const { normalizeEmail } = require("../helpers/profileLookup.service.js");
+const { normalizeEmail, pickPrimaryEmail } = require("../helpers/profileLookup.service.js");
 
 const allowedUpdateFields = new Set([
   "personalInfo",
@@ -176,6 +176,16 @@ async function updateProfile(req, res, next) {
 
     if (updates.isActive === true) {
       updates.deactivatedAt = null;
+    }
+
+    // Update normalizedEmail if contactInfo is being updated
+    if (updates.contactInfo) {
+      const existingContactInfo = profile.contactInfo?.toObject ? profile.contactInfo.toObject() : (profile.contactInfo || {});
+      const contactInfo = { ...existingContactInfo, ...updates.contactInfo };
+      const primaryEmail = pickPrimaryEmail(contactInfo);
+      if (primaryEmail) {
+        updates.normalizedEmail = normalizeEmail(primaryEmail);
+      }
     }
 
     profile.set(updates);

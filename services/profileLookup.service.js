@@ -75,6 +75,15 @@ async function findOrCreateProfileByEmail({
 			additionalInformation: flattened.additionalInformation || {},
 			recruitmentDetails: flattened.recruitmentDetails || {},
 		};
+		
+		// Update normalizedEmail based on preferred email
+		const existingContactInfo = profile.contactInfo?.toObject ? profile.contactInfo.toObject() : (profile.contactInfo || {});
+		const updatedContactInfo = { ...existingContactInfo, ...flattened.contactInfo };
+		const primaryEmail = pickPrimaryEmail(updatedContactInfo);
+		if (primaryEmail) {
+			$set.normalizedEmail = normalizeEmail(primaryEmail);
+		}
+		
     await Profile.updateOne({ _id: profile._id }, { $set }, { session });
   }
   return profile;

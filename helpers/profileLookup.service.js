@@ -78,6 +78,15 @@ async function findOrCreateProfileByEmail({
       "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
       "approvalDetails.approvedAt": new Date(),
     };
+    
+    // Update normalizedEmail based on preferred email
+    const existingContactInfo = profile.contactInfo?.toObject ? profile.contactInfo.toObject() : (profile.contactInfo || {});
+    const updatedContactInfo = { ...existingContactInfo, ...flattenedProfileFields.contactInfo };
+    const primaryEmail = pickPrimaryEmail(updatedContactInfo);
+    if (primaryEmail) {
+      $set.normalizedEmail = normalizeEmail(primaryEmail);
+    }
+    
     await Profile.updateOne({ _id: profile._id }, { $set }, { session });
   }
 
