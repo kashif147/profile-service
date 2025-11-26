@@ -8,6 +8,7 @@ const UserSchema = new mongoose.Schema({
     index: true,
   },
 
+  userId: { type: String, index: true }, // Reference to user-service user ID
   userEmail: { type: String, default: null }, // `emails[0]` ADB2C
   userFirstName: { type: String, default: null }, // `given_name` ADB2C
   userLastName: { type: String, default: null }, // `family_name` ADB2C
@@ -55,7 +56,8 @@ const UserSchema = new mongoose.Schema({
 });
 
 // Compound indexes for tenant isolation
-UserSchema.index({ tenantId: 1, userEmail: 1 }, { unique: true }); // Unique email per tenant
+UserSchema.index({ tenantId: 1, userEmail: 1 }, { unique: true });
+UserSchema.index({ tenantId: 1, userId: 1 }, { unique: true, sparse: true }); // Unique email per tenant
 UserSchema.index({ tenantId: 1, userMicrosoftId: 1 }, { unique: true }); // Unique Microsoft ID per tenant
 // UserSchema.index({ tenantId: 1, userSubject: 1 }, { unique: true }); // Unique subject per tenant
 
