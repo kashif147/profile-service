@@ -8,6 +8,7 @@ router.post("/validate", profileValidationController.validateProfile);
 
 router.use(authenticate);
 
+router.get("/", profileController.getAllProfiles);
 router.get("/search", profileController.searchProfiles);
 router.get("/:profileId", profileController.getProfileById);
 router.put("/:profileId", profileController.updateProfile);

@@ -41,6 +41,39 @@ function pickAllowedUpdates(payload = {}) {
   return result;
 }
 
+async function getAllProfiles(req, res, next) {
+  try {
+    const tenantId = req.tenantId;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    const query = { tenantId };
+
+    const [profiles, total] = await Promise.all([
+      Profile.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Profile.countDocuments(query),
+    ]);
+
+    return res.success({
+      count: profiles.length,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      results: profiles,
+    });
+  } catch (error) {
+    return next(
+      AppError.internalServerError(error.message || "Failed to fetch profiles")
+    );
+  }
+}
+
 async function searchProfiles(req, res, next) {
   try {
     const tenantId = req.tenantId;
@@ -246,6 +279,7 @@ async function softDeleteProfile(req, res, next) {
 }
 
 module.exports = {
+  getAllProfiles,
   searchProfiles,
   getProfileById,
   updateProfile,
