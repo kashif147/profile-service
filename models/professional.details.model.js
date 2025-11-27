@@ -16,6 +16,7 @@ const ProfessionalSchema = new mongoose.Schema(
       studyLocation: { type: String, allowNull: true },
       startDate: { type: Date, allowNull: true },
       graduationDate: { type: Date, allowNull: true },
+      discipline: { type: String, allowNull: true },
       workLocation: { type: String, allowNull: true },
       otherWorkLocation: { type: String, allowNull: true },
       branch: { type: String, allowNull: true },
