@@ -57,6 +57,7 @@ const ProfileSchema = new mongoose.Schema(
       studyLocation: { type: String, default: null },
       startDate: { type: Date, default: null },
       graduationDate: { type: Date, default: null },
+      discipline: { type: String, default: null },
       workLocation: { type: String, default: null },
       payrollNo: { type: String, default: null },
       otherWorkLocation: { type: String, default: null },
@@ -77,6 +78,10 @@ const ProfileSchema = new mongoose.Schema(
     },
     preferences: {
       consent: { type: Boolean, default: true },
+      smsConsent: { type: Boolean, default: false },
+      emailConsent: { type: Boolean, default: false },
+      postalConsent: { type: Boolean, default: false },
+      appConsent: { type: Boolean, default: false },
       valueAddedServices: { type: Boolean, default: false },
       termsAndConditions: { type: Boolean, default: true },
     },

@@ -33,6 +33,7 @@ const professionalDetailsKeys = [
   "studyLocation",
   "startDate",
   "graduationDate",
+  "discipline",
   "workLocation",
   "payrollNo",
   "otherWorkLocation",
@@ -49,7 +50,15 @@ const professionalDetailsKeys = [
   "nurseType",
 ];
 
-const preferencesKeys = ["consent", "valueAddedServices", "termsAndConditions"];
+const preferencesKeys = [
+  "consent",
+  "smsConsent",
+  "emailConsent",
+  "postalConsent",
+  "appConsent",
+  "valueAddedServices",
+  "termsAndConditions",
+];
 
 const cornmarketKeys = [
   "inmoRewards",

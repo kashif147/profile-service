@@ -226,6 +226,29 @@ async function updateProfile(req, res, next) {
       }
     }
 
+    // Handle consent synchronization with individual consent fields
+    if (updates.preferences) {
+      const existingPreferences = profile.preferences?.toObject
+        ? profile.preferences.toObject()
+        : profile.preferences || {};
+      const preferences = { ...existingPreferences, ...updates.preferences };
+
+      // Check if consent is being explicitly set in the request
+      if ("consent" in updates.preferences && typeof updates.preferences.consent === "boolean") {
+        const consentValue = updates.preferences.consent;
+        const consentFields = ["smsConsent", "emailConsent", "postalConsent", "appConsent"];
+
+        // Only set individual consent fields if they're not explicitly provided in the request
+        for (const field of consentFields) {
+          if (!(field in updates.preferences)) {
+            preferences[field] = consentValue;
+          }
+        }
+      }
+
+      updates.preferences = preferences;
+    }
+
     profile.set(updates);
 
     await profile.save();
