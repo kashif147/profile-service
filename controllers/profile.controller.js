@@ -1,7 +1,10 @@
 const mongoose = require("mongoose");
 const Profile = require("../models/profile.model.js");
 const { AppError } = require("../errors/AppError");
-const { normalizeEmail, pickPrimaryEmail } = require("../helpers/profileLookup.service.js");
+const {
+  normalizeEmail,
+  pickPrimaryEmail,
+} = require("../helpers/profileLookup.service.js");
 
 const allowedUpdateFields = new Set([
   "personalInfo",
@@ -45,7 +48,7 @@ async function getAllProfiles(req, res, next) {
   try {
     const tenantId = req.tenantId;
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
+    const limit = parseInt(req.query.limit) || 100;
     const skip = (page - 1) * limit;
 
     const query = { tenantId };
@@ -166,7 +169,7 @@ async function getProfileById(req, res, next) {
     if (!profile) {
       return res.status(200).json({
         data: null,
-        message: "Not found"
+        message: "Not found",
       });
     }
 
@@ -213,7 +216,9 @@ async function updateProfile(req, res, next) {
 
     // Update normalizedEmail if contactInfo is being updated
     if (updates.contactInfo) {
-      const existingContactInfo = profile.contactInfo?.toObject ? profile.contactInfo.toObject() : (profile.contactInfo || {});
+      const existingContactInfo = profile.contactInfo?.toObject
+        ? profile.contactInfo.toObject()
+        : profile.contactInfo || {};
       const contactInfo = { ...existingContactInfo, ...updates.contactInfo };
       const primaryEmail = pickPrimaryEmail(contactInfo);
       if (primaryEmail) {
