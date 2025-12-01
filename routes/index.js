@@ -6,5 +6,6 @@ router.use("/professional-details", require("./professional.details.routes"));
 router.use("/subscription-details", require("./subscription.details.routes"));
 router.use("/applications", require("./application.routes"));
 router.use("/applications", require("./applications.routes"));
+router.use("/transfer-request", require("./transfer.request.routes"));
 
 module.exports = router;
