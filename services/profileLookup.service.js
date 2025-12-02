@@ -33,6 +33,10 @@ async function findOrCreateProfileByEmail({
     });
   const nEmail = normalizeEmail(email);
 
+  // Get userId and userType from effective (from submission data)
+  const userId = effective?.userId || null;
+  const userType = effective?.userType || null;
+
   let profile = await Profile.findOne({
     tenantId,
     normalizedEmail: nEmail,
@@ -60,6 +64,12 @@ async function findOrCreateProfileByEmail({
 			hasHistory: false,
 			submissionDate: now,
 		};
+		
+		// Set userId for portal users when creating new profile
+		if (userType === "PORTAL" && userId) {
+			doc.userId = userId;
+		}
+		
 		// first-ever membership: set firstJoinedDate once
 		doc.firstJoinedDate = now;
 		profile = await Profile.create([doc], { session }).then((x) => x[0]);
@@ -75,6 +85,11 @@ async function findOrCreateProfileByEmail({
 			additionalInformation: flattened.additionalInformation || {},
 			recruitmentDetails: flattened.recruitmentDetails || {},
 		};
+		
+		// Set userId for portal users when updating existing profile (only if not already set)
+		if (userType === "PORTAL" && userId && !profile.userId) {
+			$set.userId = userId;
+		}
 		
 		// Update normalizedEmail based on preferred email
 		const existingContactInfo = profile.contactInfo?.toObject ? profile.contactInfo.toObject() : (profile.contactInfo || {});

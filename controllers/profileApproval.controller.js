@@ -187,15 +187,24 @@ async function approveApplication(req, res, next) {
       normalizedEmail,
     }).session(session);
 
+    // Get userId and userType from effective (from submission data)
+    const userId = effective?.userId || null;
+    const userType = effective?.userType || null;
+
     let profile;
     if (existingProfile) {
       // Update existing profile - keep existing membership number
+      const updateFields = { ...flattenedProfileFields };
+
+      // Set userId for portal users when updating existing profile (only if not already set)
+      if (userType === "PORTAL" && userId && !existingProfile.userId) {
+        updateFields.userId = userId;
+      }
+
       await Profile.updateOne(
         { _id: existingProfile._id },
         {
-          $set: {
-            ...flattenedProfileFields,
-          },
+          $set: updateFields,
         },
         { session }
       );
@@ -210,12 +219,17 @@ async function approveApplication(req, res, next) {
       });
 
       // Update Profile with approved data
+      const updateFields = { ...flattenedProfileFields };
+
+      // Ensure userId is set for portal users (preserve if already set during creation)
+      if (userType === "PORTAL" && userId) {
+        updateFields.userId = userId;
+      }
+
       await Profile.updateOne(
         { _id: profile._id },
         {
-          $set: {
-            ...flattenedProfileFields,
-          },
+          $set: updateFields,
         },
         { session }
       );
