@@ -138,10 +138,14 @@ async function approveApplication(req, res, next) {
           .json({ error: "CONFLICT", message: "Overlay version conflict" });
       }
       patchToApply = overlay.proposedPatch ?? [];
-    } else if (submission && proposedPatch) {
-      validatePatchPaths(proposedPatch);
-      patchToApply = proposedPatch;
-    } // else impossible due to validator
+    } else if (submission) {
+      // submission provided - proposedPatch is optional (empty array if not provided)
+      if (proposedPatch) {
+        validatePatchPaths(proposedPatch);
+        patchToApply = proposedPatch;
+      }
+      // else patchToApply remains [] (no changes)
+    }
 
     // Apply patch to authoritative submission
     let effective;
@@ -272,7 +276,9 @@ async function approveApplication(req, res, next) {
           personalInfo: effective.personalInfo,
           contactInfo: effective.contactInfo,
           professionalDetails: effective.professionalDetails,
-          subscriptionDetails: pickSubForContract(effective.subscriptionDetails),
+          subscriptionDetails: pickSubForContract(
+            effective.subscriptionDetails
+          ),
         },
         subscriptionAttributes: subAttrs(effective.subscriptionDetails),
         tenantId,
@@ -307,20 +313,22 @@ async function approveApplication(req, res, next) {
     // Publish subscription upsert request for subscription-service
     const sub = effective.subscriptionDetails || {};
     try {
-      await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested({
-        tenantId,
-        profileId: String(profile._id),
-        applicationId,
-        membershipCategory:
-          sub.membershipCategory ??
-          effective.professionalDetails?.membershipCategory ??
-          null,
-        dateJoined: sub.dateJoined ?? null,
-        paymentType: sub.paymentType ?? null,
-        payrollNo: sub.payrollNo ?? null,
-        paymentFrequency: sub.paymentFrequency ?? null,
-        correlationId: crypto.randomUUID(),
-      });
+      await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested(
+        {
+          tenantId,
+          profileId: String(profile._id),
+          applicationId,
+          membershipCategory:
+            sub.membershipCategory ??
+            effective.professionalDetails?.membershipCategory ??
+            null,
+          dateJoined: sub.dateJoined ?? null,
+          paymentType: sub.paymentType ?? null,
+          payrollNo: sub.payrollNo ?? null,
+          paymentFrequency: sub.paymentFrequency ?? null,
+          correlationId: crypto.randomUUID(),
+        }
+      );
     } catch (publishError) {
       console.error(
         "[approveApplication] Failed to publish subscription upsert requested event:",

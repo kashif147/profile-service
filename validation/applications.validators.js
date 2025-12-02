@@ -76,7 +76,8 @@ const ReviewDraftBody = z
 
 // Approve:
 // Path A: overlayId + overlayVersion
-// Path B: submission + proposedPatch (single-step approval)
+// Path B: submission (approval with no changes)
+// Path C: submission + proposedPatch (approval with changes)
 const ApproveBody = z
   .object({
     overlayId: z.string().min(1).optional(),
@@ -87,20 +88,23 @@ const ApproveBody = z
   .superRefine((data, ctx) => {
     const hasOverlay =
       !!data.overlayId || typeof data.overlayVersion === "number";
-    const hasPatch = !!data.submission && !!data.proposedPatch;
+    const hasSubmission = !!data.submission;
+    const hasPatch = !!data.proposedPatch;
+    const hasSubmissionWithPatch = hasSubmission && hasPatch;
+    const hasSubmissionOnly = hasSubmission && !hasPatch;
 
-    if (hasOverlay && hasPatch) {
+    if (hasOverlay && (hasSubmission || hasPatch)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "Provide either overlayId+overlayVersion OR submission+proposedPatch, not both.",
+          "Provide either overlayId+overlayVersion OR submission (with optional proposedPatch), not both.",
       });
     }
-    if (!hasOverlay && !hasPatch) {
+    if (!hasOverlay && !hasSubmission) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "Missing approval input. Provide overlayId+overlayVersion OR submission+proposedPatch.",
+          "Missing approval input. Provide overlayId+overlayVersion OR submission (with optional proposedPatch).",
       });
     }
     if (data.overlayId && typeof data.overlayVersion !== "number") {
