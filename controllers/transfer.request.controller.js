@@ -30,6 +30,8 @@ exports.submitTransferRequest = async (req, res, next) => {
       isActive: true,
     });
 
+    console.log("User ID:---------------------------------  ", userId);
+
     if (!profile) {
       return next(AppError.notFound("Profile not found for this user"));
     }
