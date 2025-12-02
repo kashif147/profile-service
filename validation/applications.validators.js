@@ -39,12 +39,6 @@ const ProposedPatch = z
   .array(PatchOp)
   .nonempty({ message: "proposedPatch cannot be empty" });
 
-// Optional version for approve endpoint (can be undefined or non-empty array)
-const ProposedPatchOptional = z
-  .array(PatchOp)
-  .nonempty({ message: "proposedPatch cannot be empty" })
-  .optional();
-
 // Minimal submission object (flexible, but must be an object)
 const Submission = z.record(z.any());
 
@@ -83,7 +77,7 @@ const ApproveBody = z
     overlayId: z.string().min(1).optional(),
     overlayVersion: z.number().int().nonnegative().optional(),
     submission: Submission.optional(),
-    proposedPatch: ProposedPatchOptional,
+    proposedPatch: z.array(PatchOp).optional(),
   })
   .superRefine((data, ctx) => {
     const hasOverlay =
@@ -125,7 +119,7 @@ const RejectBody = z
     overlayId: z.string().min(1).optional(),
     overlayVersion: z.number().int().nonnegative().optional(),
     submission: Submission.optional(),
-    proposedPatch: ProposedPatchOptional,
+    proposedPatch: z.array(PatchOp).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.overlayId && typeof data.overlayVersion !== "number") {
