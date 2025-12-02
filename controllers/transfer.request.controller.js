@@ -11,7 +11,7 @@ const axios = require("axios");
 exports.submitTransferRequest = async (req, res, next) => {
   try {
     const { currentWorkLocationId, requestedWorkLocationId, reason } = req.body;
-    const { userId, tenantId } = extractUserAndCreatorContext(req);
+    const { userId } = extractUserAndCreatorContext(req);
 
     if (!currentWorkLocationId) {
       return next(AppError.badRequest("Current work location ID is required"));
@@ -27,7 +27,6 @@ exports.submitTransferRequest = async (req, res, next) => {
 
     const profile = await Profile.findOne({
       userId: userId,
-      tenantId: tenantId,
       isActive: true,
     });
 
@@ -38,7 +37,6 @@ exports.submitTransferRequest = async (req, res, next) => {
     // Check if there's already a pending request
     const existingPendingRequest = await TransferRequest.findOne({
       userId: userId,
-      tenantId: tenantId,
       status: "PENDING",
     });
 
@@ -50,7 +48,6 @@ exports.submitTransferRequest = async (req, res, next) => {
 
     // Create transfer request
     const transferRequest = await TransferRequest.create({
-      tenantId: tenantId,
       userId: userId,
       profileId: profile._id,
       currentWorkLocationId: currentWorkLocationId,
@@ -72,16 +69,13 @@ exports.submitTransferRequest = async (req, res, next) => {
   }
 };
 
-/**
- * Get transfer requests (supports filters)
- * GET /transfer-request?status=PENDING&userId=xxx&myRequests=true
- */
+
 exports.getTransferRequests = async (req, res, next) => {
   try {
-    const { userId: contextUserId, tenantId } = extractUserAndCreatorContext(req);
+    const { userId: contextUserId } = extractUserAndCreatorContext(req);
     const { status, userId, myRequests } = req.query;
 
-    const query = { tenantId: tenantId };
+    const query = {};
 
     // If myRequests=true, only get current user's requests
     if (myRequests === "true") {
@@ -119,7 +113,6 @@ exports.reviewTransferRequest = async (req, res, next) => {
   try {
     const { requestId } = req.params;
     const { action, reason } = req.body;
-    const { tenantId } = extractUserAndCreatorContext(req);
 
     if (!action || !["APPROVE", "REJECT"].includes(action.toUpperCase())) {
       return next(AppError.badRequest("Action must be 'APPROVE' or 'REJECT'"));
@@ -127,7 +120,6 @@ exports.reviewTransferRequest = async (req, res, next) => {
 
     const transferRequest = await TransferRequest.findOne({
       _id: requestId,
-      tenantId: tenantId,
       status: "PENDING",
     });
 
@@ -165,7 +157,6 @@ exports.reviewTransferRequest = async (req, res, next) => {
             `${userServiceUrl}/api/lookup/${transferRequest.requestedWorkLocationId}/hierarchy`,
             {
               headers: {
-                "x-tenant-id": tenantId,
                 Authorization: req.headers.authorization,
               },
             }
