@@ -117,6 +117,7 @@ const ApproveBody = z
   });
 
 // Reject: requires reason; overlay optional; optionally echo submission+proposedPatch for audit
+// proposedPatch is optional and only needed when changes were made
 const RejectBody = z
   .object({
     reason: z.string().min(2).max(500),
@@ -124,7 +125,7 @@ const RejectBody = z
     overlayId: z.string().min(1).optional(),
     overlayVersion: z.number().int().nonnegative().optional(),
     submission: Submission.optional(),
-    proposedPatch: ProposedPatch.optional(),
+    proposedPatch: ProposedPatchOptional,
   })
   .superRefine((data, ctx) => {
     if (data.overlayId && typeof data.overlayVersion !== "number") {
