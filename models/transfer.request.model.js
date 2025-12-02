@@ -6,6 +6,7 @@ const TransferRequestSchema = new mongoose.Schema(
       type: String,
       required: true,
       index: true,
+      default: "39866a06-30bc-4a89-80c6-9dd9357dd453", // Default tenant
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
