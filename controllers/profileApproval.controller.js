@@ -16,6 +16,7 @@ const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
+const { APPLICATION_STATUS } = require("../constants/enums.js");
 const {
   publishDomainEvent,
   APPLICATION_REVIEW_EVENTS,
@@ -410,6 +411,24 @@ async function rejectApplication(req, res, next) {
       }
     }
 
+    // Update PersonalDetails with rejection status and details
+    await PersonalDetails.updateOne(
+      { applicationId: applicationId },
+      {
+        $set: {
+          applicationStatus: APPLICATION_STATUS.REJECTED,
+          "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
+          "approvalDetails.approvedAt": new Date(),
+          "approvalDetails.rejectionReason": reason,
+          "approvalDetails.comments": notes ?? null,
+        },
+      },
+      { session }
+    );
+
+    // Note: ProfessionalDetails and SubscriptionDetails are kept as-is (not deleted)
+    // No Profile is created for rejected applications
+
     // Publish rejection event for portal-service
     await publishDomainEvent(
       APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_REJECTED,
@@ -417,6 +436,7 @@ async function rejectApplication(req, res, next) {
         applicationId,
         reviewerId,
         reason,
+        notes,
       },
       { tenantId, correlationId: crypto.randomUUID() }
     );
