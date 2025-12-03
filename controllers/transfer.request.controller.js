@@ -115,9 +115,81 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
       .populate("profileId", "membershipNumber")
       .lean();
 
+    // Fetch work location hierarchy for each transfer request
+    const userServiceUrl =
+      process.env.POLICY_SERVICE_URL || "http://localhost:3000";
+
+    const transferRequestsWithDetails = await Promise.all(
+      transferRequests.map(async (request) => {
+        try {
+          // Fetch hierarchy for current work location
+          const currentLocationResponse = await axios.get(
+            `${userServiceUrl}/api/lookup/${request.currentWorkLocationId}/hierarchy`,
+            {
+              headers: {
+                Authorization: req.headers.authorization,
+              },
+            }
+          );
+
+          const currentLocationData = currentLocationResponse.data || {};
+          const currentWorkLocationName =
+            currentLocationData.workLocation?.DisplayName ||
+            currentLocationData.requestedLookup?.DisplayName ||
+            null;
+          const currentBranchName = currentLocationData.branch?.DisplayName || null;
+          const currentRegionName = currentLocationData.region?.DisplayName || null;
+
+          // Fetch hierarchy for requested work location
+          const requestedLocationResponse = await axios.get(
+            `${userServiceUrl}/api/lookup/${request.requestedWorkLocationId}/hierarchy`,
+            {
+              headers: {
+                Authorization: req.headers.authorization,
+              },
+            }
+          );
+
+          const requestedLocationData = requestedLocationResponse.data || {};
+          const requestedWorkLocationName =
+            requestedLocationData.workLocation?.DisplayName ||
+            requestedLocationData.requestedLookup?.DisplayName ||
+            null;
+          const requestedBranchName = requestedLocationData.branch?.DisplayName || null;
+          const requestedRegionName = requestedLocationData.region?.DisplayName || null;
+
+          return {
+            ...request,
+            currentWorkLocationName,
+            currentBranchName,
+            currentRegionName,
+            requestedWorkLocationName,
+            requestedBranchName,
+            requestedRegionName,
+          };
+        } catch (error) {
+          console.error(
+            `Error fetching work location details for request ${request._id}:`,
+            error.message
+          );
+          // Return request without location details if lookup fails
+          return {
+            ...request,
+            currentWorkLocationName: null,
+            currentBranchName: null,
+            currentRegionName: null,
+            requestedWorkLocationName: null,
+            requestedBranchName: null,
+            requestedRegionName: null,
+          };
+        }
+      })
+    );
+
     return res.status(200).json({
       success: true,
-      data: transferRequests,
+      // data: transferRequests,
+      data: transferRequestsWithDetails,
     });
   } catch (error) {
     console.error("Error fetching transfer requests for CRM:", error);
@@ -164,9 +236,80 @@ exports.getTransferRequestsForPortal = async (req, res, next) => {
       .populate("profileId", "membershipNumber")
       .lean();
 
+    // Fetch work location hierarchy for each transfer request
+    const userServiceUrl =
+      process.env.POLICY_SERVICE_URL || "http://localhost:3000";
+
+    const transferRequestsWithDetails = await Promise.all(
+      transferRequests.map(async (request) => {
+        try {
+          // Fetch hierarchy for current work location
+          const currentLocationResponse = await axios.get(
+            `${userServiceUrl}/api/lookup/${request.currentWorkLocationId}/hierarchy`,
+            {
+              headers: {
+                Authorization: req.headers.authorization,
+              },
+            }
+          );
+
+          const currentLocationData = currentLocationResponse.data || {};
+          const currentWorkLocationName =
+            currentLocationData.workLocation?.DisplayName ||
+            currentLocationData.requestedLookup?.DisplayName ||
+            null;
+          const currentBranchName = currentLocationData.branch?.DisplayName || null;
+          const currentRegionName = currentLocationData.region?.DisplayName || null;
+
+          // Fetch hierarchy for requested work location
+          const requestedLocationResponse = await axios.get(
+            `${userServiceUrl}/api/lookup/${request.requestedWorkLocationId}/hierarchy`,
+            {
+              headers: {
+                Authorization: req.headers.authorization,
+              },
+            }
+          );
+
+          const requestedLocationData = requestedLocationResponse.data || {};
+          const requestedWorkLocationName =
+            requestedLocationData.workLocation?.DisplayName ||
+            requestedLocationData.requestedLookup?.DisplayName ||
+            null;
+          const requestedBranchName = requestedLocationData.branch?.DisplayName || null;
+          const requestedRegionName = requestedLocationData.region?.DisplayName || null;
+
+          return {
+            ...request,
+            currentWorkLocationName,
+            currentBranchName,
+            currentRegionName,
+            requestedWorkLocationName,
+            requestedBranchName,
+            requestedRegionName,
+          };
+        } catch (error) {
+          console.error(
+            `Error fetching work location details for request ${request._id}:`,
+            error.message
+          );
+          // Return request without location details if lookup fails
+          return {
+            ...request,
+            currentWorkLocationName: null,
+            currentBranchName: null,
+            currentRegionName: null,
+            requestedWorkLocationName: null,
+            requestedBranchName: null,
+            requestedRegionName: null,
+          };
+        }
+      })
+    );
+
     return res.status(200).json({
       success: true,
-      data: transferRequests,
+      data: transferRequestsWithDetails,
     });
   } catch (error) {
     console.error("Error fetching transfer requests for Portal:", error);
