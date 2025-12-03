@@ -4,12 +4,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Environment variables (keep staging for deployment)
+# Environment variables
 .env.*
 .env.local
 .env.development
-!.env.staging
-# .env.staging (commented out to allow staging config)
 
 # Logs
 logs
@@ -18,7 +16,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
-
+.env.staging
 # Runtime data
 pids
 *.pid

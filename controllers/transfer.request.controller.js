@@ -1,8 +1,10 @@
 const TransferRequest = require("../models/transfer.request.model");
 const Profile = require("../models/profile.model");
+const User = require("../models/user.model"); // Import User model to ensure it's registered with Mongoose
 const { AppError } = require("../errors/AppError");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 const axios = require("axios");
+const mongoose = require("mongoose");
 
 /**
  * Submit a new transfer request
@@ -25,8 +27,20 @@ exports.submitTransferRequest = async (req, res, next) => {
       return next(AppError.badRequest("Transfer reason is required"));
     }
 
+    if (!userId) {
+      return next(AppError.badRequest("User ID is required"));
+    }
+
+    // Convert userId string to ObjectId if it's a valid ObjectId
+    let userIdObjectId;
+    if (mongoose.Types.ObjectId.isValid(userId)) {
+      userIdObjectId = new mongoose.Types.ObjectId(userId);
+    } else {
+      return next(AppError.badRequest("Invalid user ID format"));
+    }
+
     const profile = await Profile.findOne({
-      userId: userId,
+      userId: userIdObjectId,
       isActive: true,
     });
 
@@ -38,7 +52,7 @@ exports.submitTransferRequest = async (req, res, next) => {
 
     // Check if there's already a pending request
     const existingPendingRequest = await TransferRequest.findOne({
-      userId: userId,
+      userId: userIdObjectId,
       status: "PENDING",
     });
 
@@ -50,7 +64,7 @@ exports.submitTransferRequest = async (req, res, next) => {
 
     // Create transfer request
     const transferRequest = await TransferRequest.create({
-      userId: userId,
+      userId: userIdObjectId,
       profileId: profile._id,
       currentWorkLocationId: currentWorkLocationId,
       requestedWorkLocationId: requestedWorkLocationId,
@@ -72,27 +86,32 @@ exports.submitTransferRequest = async (req, res, next) => {
 };
 
 
-exports.getTransferRequests = async (req, res, next) => {
+/**
+ * Get transfer requests for CRM users
+ * CRM users can see all transfer requests with filters
+ */
+exports.getTransferRequestsForCRM = async (req, res, next) => {
   try {
-    const { userId: contextUserId } = extractUserAndCreatorContext(req);
-    const { status, userId, myRequests } = req.query;
+    const { status, userId } = req.query;
 
     const query = {};
 
-    // If myRequests=true, only get current user's requests
-    if (myRequests === "true") {
-      query.userId = contextUserId;
-    } else if (userId) {
-      query.userId = userId;
+    if (userId) {
+      // Convert userId string to ObjectId if it's a valid ObjectId
+      if (mongoose.Types.ObjectId.isValid(userId)) {
+        query.userId = new mongoose.Types.ObjectId(userId);
+      } else {
+        return next(AppError.badRequest("Invalid userId format"));
+      }
     }
 
     if (status) {
-      query.status = status;
+      query.status = status.toUpperCase();
     }
 
     const transferRequests = await TransferRequest.find(query)
       .sort({ createdAt: -1 })
-      .populate("userId", "userEmail userFullName userMemberNumber")
+      .populate("userId", "userEmail userFullName")
       .populate("profileId", "membershipNumber")
       .lean();
 
@@ -101,7 +120,77 @@ exports.getTransferRequests = async (req, res, next) => {
       data: transferRequests,
     });
   } catch (error) {
-    console.error("Error fetching transfer requests:", error);
+    console.error("Error fetching transfer requests for CRM:", error);
+    return next(AppError.internalServerError("Failed to fetch transfer requests"));
+  }
+};
+
+/**
+ * Get transfer requests for Portal users
+ * Portal users can only see their own requests
+ */
+exports.getTransferRequestsForPortal = async (req, res, next) => {
+  try {
+    const { userId: currentUserId, userType } = extractUserAndCreatorContext(req);
+    const { status } = req.query;
+
+    if (userType !== "PORTAL") {
+      return next(AppError.forbidden("This endpoint is only for Portal users"));
+    }
+
+    if (!currentUserId) {
+      return next(AppError.badRequest("User ID is required"));
+    }
+
+    // Convert userId string to ObjectId if it's a valid ObjectId
+    let userIdObjectId;
+    if (mongoose.Types.ObjectId.isValid(currentUserId)) {
+      userIdObjectId = new mongoose.Types.ObjectId(currentUserId);
+    } else {
+      return next(AppError.badRequest("Invalid user ID format"));
+    }
+
+    const query = {
+      userId: userIdObjectId,
+    };
+
+    if (status) {
+      query.status = status.toUpperCase();
+    }
+
+    const transferRequests = await TransferRequest.find(query)
+      .sort({ createdAt: -1 })
+      .populate("userId", "userEmail userFullName")
+      .populate("profileId", "membershipNumber")
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: transferRequests,
+    });
+  } catch (error) {
+    console.error("Error fetching transfer requests for Portal:", error);
+    return next(AppError.internalServerError("Failed to fetch transfer requests"));
+  }
+};
+
+/**
+ * Backward-compatible route handler that routes to appropriate function based on userType
+ * This maintains compatibility with the old /api/transfer-request endpoint
+ */
+exports.getTransferRequests = async (req, res, next) => {
+  try {
+    const { userType } = extractUserAndCreatorContext(req);
+    
+    if (userType === "CRM") {
+      return exports.getTransferRequestsForCRM(req, res, next);
+    } else if (userType === "PORTAL") {
+      return exports.getTransferRequestsForPortal(req, res, next);
+    } else {
+      return next(AppError.badRequest("Invalid user type"));
+    }
+  } catch (error) {
+    console.error("Error in getTransferRequests router:", error);
     return next(AppError.internalServerError("Failed to fetch transfer requests"));
   }
 };
