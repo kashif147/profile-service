@@ -166,69 +166,29 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
           const requestedBranchName = requestedLocationData.branch?.DisplayName || null;
           const requestedRegionName = requestedLocationData.region?.DisplayName || null;
 
-          // Get user info from userId (if populated) or from profile.userId (fallback)
-          let user = request.userId;
-          
-          // If userId is null, try to get user from profile
-          if (!user && request.profileId?.userId) {
-            try {
-              user = await User.findById(request.profileId.userId)
-                .select("userEmail userFullName userFirstName")
-                .lean();
-            } catch (err) {
-              console.error(`Error fetching user from profile: ${err.message}`);
-              user = null;
-            }
-          }
-          
-          // Derive a simple user forename for CRM display
-          const userForename =
-            user?.userFirstName ||
-            (user?.userFullName
-              ? user.userFullName.split(" ")[0]
-              : null);
-
-          // Prefer email from Profile (normalizedEmail), fallback to User.userEmail
-          const emailFromProfile = request.profileId?.normalizedEmail || null;
-          const userEmail = emailFromProfile || user?.userEmail || null;
-          const userFullName = user?.userFullName || null;
-
-          // Basic personal info from Profile
-          const profileTitle = request.profileId?.personalInfo?.title || null;
-          const profileForename = request.profileId?.personalInfo?.forename || null;
-          const profileSurname = request.profileId?.personalInfo?.surname || null;
-          const profileGender = request.profileId?.personalInfo?.gender || null;
-          const profileDateOfBirth =
-            request.profileId?.personalInfo?.dateOfBirth || null;
-          const profileCountryPrimaryQualification =
-            request.profileId?.personalInfo?.countryPrimaryQualification || null;
+          // Exclude userId from the response payload (CRM will use profile info instead)
+          const { userId, ...requestWithoutUserId } = request;
 
           return {
-            ...request,
+            ...requestWithoutUserId,
             currentWorkLocationName,
             currentBranchName,
             currentRegionName,
             requestedWorkLocationName,
             requestedBranchName,
             requestedRegionName,
-            userForename,
-            userEmail,
-            userFullName,
-            profileTitle,
-            profileForename,
-            profileSurname,
-            profileGender,
-            profileDateOfBirth,
-            profileCountryPrimaryQualification,
           };
         } catch (error) {
           console.error(
             `Error fetching work location details for request ${request._id}:`,
             error.message
           );
+          // Exclude userId from the response payload even if lookup fails
+          const { userId, ...requestWithoutUserId } = request;
+
           // Return request without location details if lookup fails
           return {
-            ...request,
+            ...requestWithoutUserId,
             currentWorkLocationName: null,
             currentBranchName: null,
             currentRegionName: null,
