@@ -111,8 +111,22 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
 
     const transferRequests = await TransferRequest.find(query)
       .sort({ createdAt: -1 })
-      .populate("userId", "userEmail userFullName")
-      .populate("profileId", "membershipNumber")
+      .populate({
+        path: "userId",
+        select: "userEmail userFullName userFirstName",
+        model: "User",
+        options: { strictPopulate: false },
+      })
+      .populate({
+        path: "profileId",
+        select: "membershipNumber userId",
+        populate: {
+          path: "userId",
+          select: "userEmail userFullName userFirstName",
+          model: "User",
+          options: { strictPopulate: false },
+        },
+      })
       .lean();
 
     // Fetch work location hierarchy for each transfer request
@@ -158,6 +172,31 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
           const requestedBranchName = requestedLocationData.branch?.DisplayName || null;
           const requestedRegionName = requestedLocationData.region?.DisplayName || null;
 
+          // Get user info from userId (if populated) or from profile.userId (fallback)
+          let user = request.userId;
+          
+          // If userId is null, try to get user from profile
+          if (!user && request.profileId?.userId) {
+            try {
+              user = await User.findById(request.profileId.userId)
+                .select("userEmail userFullName userFirstName")
+                .lean();
+            } catch (err) {
+              console.error(`Error fetching user from profile: ${err.message}`);
+              user = null;
+            }
+          }
+          
+          // Derive a simple user forename for CRM display
+          const userForename =
+            user?.userFirstName ||
+            (user?.userFullName
+              ? user.userFullName.split(" ")[0]
+              : null);
+
+          const userEmail = user?.userEmail || null;
+          const userFullName = user?.userFullName || null;
+
           return {
             ...request,
             currentWorkLocationName,
@@ -166,6 +205,9 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
             requestedWorkLocationName,
             requestedBranchName,
             requestedRegionName,
+            userForename,
+            userEmail,
+            userFullName,
           };
         } catch (error) {
           console.error(
