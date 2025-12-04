@@ -6,6 +6,7 @@ const { AppError } = require("../errors/AppError");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 const axios = require("axios");
 const mongoose = require("mongoose");
+const { publishDomainEvent, MEMBERSHIP_EVENTS } = require("../rabbitMQ");
 
 /**
  * Submit a new transfer request
@@ -452,6 +453,30 @@ exports.reviewTransferRequest = async (req, res, next) => {
             }
           }
 
+          // Publish domain event so other services (e.g. portal-service) can sync professional details
+          try {
+            await publishDomainEvent(
+              MEMBERSHIP_EVENTS.PROFESSIONAL_WORK_LOCATION_UPDATED,
+              {
+                userId: profile.userId,
+                profileId: profile._id,
+                transferRequestId: transferRequest._id,
+                tenantId: profile.tenantId,
+                workLocation: workLocationName,
+                branch: branchName,
+                region: regionName,
+              },
+              {
+                tenantId: profile.tenantId,
+              }
+            );
+          } catch (eventError) {
+            console.error(
+              "Error publishing PROFESSIONAL_WORK_LOCATION_UPDATED event:",
+              eventError.message
+            );
+          }
+///
           console.log(
             `✅ Updated user profile - Work Location: ${workLocationName}, Branch: ${branchName}, Region: ${regionName}`
           );
