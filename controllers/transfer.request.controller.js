@@ -1,5 +1,6 @@
 const TransferRequest = require("../models/transfer.request.model");
 const Profile = require("../models/profile.model");
+const ProfessionalDetails = require("../models/professional.details.model.js");
 const User = require("../models/user.model"); // Import User model to ensure it's registered with Mongoose
 const { AppError } = require("../errors/AppError");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
@@ -429,6 +430,27 @@ exports.reviewTransferRequest = async (req, res, next) => {
           profile.professionalDetails.branch = branchName;
           profile.professionalDetails.region = regionName;
           await profile.save();
+
+          // Also update ProfessionalDetails collection for this user (if exists)
+          if (profile.userId) {
+            try {
+              await ProfessionalDetails.updateOne(
+                { userId: profile.userId },
+                {
+                  $set: {
+                    "professionalDetails.workLocation": workLocationName,
+                    "professionalDetails.branch": branchName,
+                    "professionalDetails.region": regionName,
+                  },
+                }
+              );
+            } catch (pdError) {
+              console.error(
+                "Error updating ProfessionalDetails with new work location:",
+                pdError.message
+              );
+            }
+          }
 
           console.log(
             `✅ Updated user profile - Work Location: ${workLocationName}, Branch: ${branchName}, Region: ${regionName}`
