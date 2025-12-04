@@ -119,13 +119,7 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
       })
       .populate({
         path: "profileId",
-        select: "membershipNumber userId",
-        populate: {
-          path: "userId",
-          select: "userEmail userFullName userFirstName",
-          model: "User",
-          options: { strictPopulate: false },
-        },
+        select: "membershipNumber userId normalizedEmail personalInfo",
       })
       .lean();
 
@@ -194,8 +188,20 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
               ? user.userFullName.split(" ")[0]
               : null);
 
-          const userEmail = user?.userEmail || null;
+          // Prefer email from Profile (normalizedEmail), fallback to User.userEmail
+          const emailFromProfile = request.profileId?.normalizedEmail || null;
+          const userEmail = emailFromProfile || user?.userEmail || null;
           const userFullName = user?.userFullName || null;
+
+          // Basic personal info from Profile
+          const profileTitle = request.profileId?.personalInfo?.title || null;
+          const profileForename = request.profileId?.personalInfo?.forename || null;
+          const profileSurname = request.profileId?.personalInfo?.surname || null;
+          const profileGender = request.profileId?.personalInfo?.gender || null;
+          const profileDateOfBirth =
+            request.profileId?.personalInfo?.dateOfBirth || null;
+          const profileCountryPrimaryQualification =
+            request.profileId?.personalInfo?.countryPrimaryQualification || null;
 
           return {
             ...request,
@@ -208,6 +214,12 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
             userForename,
             userEmail,
             userFullName,
+            profileTitle,
+            profileForename,
+            profileSurname,
+            profileGender,
+            profileDateOfBirth,
+            profileCountryPrimaryQualification,
           };
         } catch (error) {
           console.error(
