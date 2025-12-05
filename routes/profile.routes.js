@@ -8,9 +8,9 @@ router.post("/validate", profileValidationController.validateProfile);
 
 router.use(authenticate);
 
-router.get("/me", profileController.getMyProfile); 
 router.get("/", profileController.getAllProfiles);
 router.get("/search", profileController.searchProfiles);
+router.get("/my-profile", profileController.getMyProfile); // Portal users: get their own profileId and membershipNumber
 router.get("/:profileId", profileController.getProfileById);
 router.put("/:profileId", profileController.updateProfile);
 router.delete("/:profileId", profileController.softDeleteProfile);
