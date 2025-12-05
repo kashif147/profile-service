@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Profile = require("../models/profile.model.js");
+const Subscription = require("../models/subscription.model.js");
 const { AppError } = require("../errors/AppError");
 const {
   normalizeEmail,
@@ -363,6 +364,158 @@ async function getMyProfile(req, res, next) {
   }
 }
 
+
+async function getCornMarketNew(req, res, next) {
+  try {
+    const { userType } = extractUserAndCreatorContext(req);
+
+    // Only allow CRM users
+    if (userType !== "CRM") {
+      return next(
+        AppError.forbidden("This endpoint is only available for CRM users")
+      );
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 100;
+    const skip = (page - 1) * limit;
+
+    // Find subscriptions with membershipStatus = "new"
+    const subscriptions = await Subscription.find({
+      "subscriptionDetails.membershipStatus": "new",
+      deleted: false,
+      isActive: true,
+    })
+      .select("userId")
+      .lean();
+
+    // Extract unique userIds
+    const userIds = [
+      ...new Set(
+        subscriptions
+          .map((sub) => sub.userId)
+          .filter((id) => id !== null && id !== undefined)
+      ),
+    ];
+
+    if (userIds.length === 0) {
+      return res.success({
+        count: 0,
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+        results: [],
+      });
+    }
+
+    // Find profiles matching these userIds
+    const query = {
+      userId: { $in: userIds },
+    };
+
+    const [profiles, total] = await Promise.all([
+      Profile.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Profile.countDocuments(query),
+    ]);
+
+    return res.success({
+      count: profiles.length,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      results: profiles,
+    });
+  } catch (error) {
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch corn market new profiles"
+      )
+    );
+  }
+}
+
+
+async function getCornMarketGraduate(req, res, next) {
+  try {
+    const { userType } = extractUserAndCreatorContext(req);
+
+    // Only allow CRM users
+    if (userType !== "CRM") {
+      return next(
+        AppError.forbidden("This endpoint is only available for CRM users")
+      );
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 100;
+    const skip = (page - 1) * limit;
+
+    // Find subscriptions with membershipStatus = "graduate"
+    const subscriptions = await Subscription.find({
+      "subscriptionDetails.membershipStatus": "graduate",
+      deleted: false,
+      isActive: true,
+    })
+      .select("userId")
+      .lean();
+
+    // Extract unique userIds
+    const userIds = [
+      ...new Set(
+        subscriptions
+          .map((sub) => sub.userId)
+          .filter((id) => id !== null && id !== undefined)
+      ),
+    ];
+
+    if (userIds.length === 0) {
+      return res.success({
+        count: 0,
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+        results: [],
+      });
+    }
+
+    // Find profiles matching these userIds
+    const query = {
+      userId: { $in: userIds },
+    };
+
+    const [profiles, total] = await Promise.all([
+      Profile.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Profile.countDocuments(query),
+    ]);
+
+    return res.success({
+      count: profiles.length,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      results: profiles,
+    });
+  } catch (error) {
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch corn market graduate profiles"
+      )
+    );
+  }
+}
+
 module.exports = {
   getAllProfiles,
   searchProfiles,
@@ -370,4 +523,6 @@ module.exports = {
   updateProfile,
   softDeleteProfile,
   getMyProfile,
+  getCornMarketNew,
+  getCornMarketGraduate,
 };
