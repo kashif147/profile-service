@@ -5,6 +5,7 @@ const {
   normalizeEmail,
   pickPrimaryEmail,
 } = require("../helpers/profileLookup.service.js");
+const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 
 const allowedUpdateFields = new Set([
   "personalInfo",
@@ -306,10 +307,67 @@ async function softDeleteProfile(req, res, next) {
   }
 }
 
+/**
+ * Get profile ID and membership number for portal user
+ * GET /api/profile/me
+ * Returns: { profileId, membershipNumber }
+ */
+async function getMyProfile(req, res, next) {
+  try {
+    const { userId, userType } = extractUserAndCreatorContext(req);
+
+    // Only allow PORTAL users
+    if (userType !== "PORTAL") {
+      return next(
+        AppError.forbidden("This endpoint is only available for Portal users")
+      );
+    }
+
+    if (!userId) {
+      return next(AppError.badRequest("User ID is required"));
+    }
+
+    // Convert userId string to ObjectId if it's a valid ObjectId
+    let userIdObjectId;
+    if (mongoose.Types.ObjectId.isValid(userId)) {
+      userIdObjectId = new mongoose.Types.ObjectId(userId);
+    } else {
+      return next(AppError.badRequest("Invalid user ID format"));
+    }
+
+    // Find profile by userId
+    const profile = await Profile.findOne({
+      userId: userIdObjectId,
+    })
+      .select("_id membershipNumber")
+      .lean();
+
+    if (!profile) {
+      return res.status(200).json({
+        data: null,
+        message: "Profile not found",
+      });
+    }
+
+    return res.success({
+      profileId: profile._id,
+      membershipNumber: profile.membershipNumber,
+    });
+  } catch (error) {
+    console.error("ProfileController [getMyProfile] Error:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch profile information"
+      )
+    );
+  }
+}
+
 module.exports = {
   getAllProfiles,
   searchProfiles,
   getProfileById,
   updateProfile,
   softDeleteProfile,
+  getMyProfile,
 };
