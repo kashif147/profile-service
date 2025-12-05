@@ -433,49 +433,51 @@ exports.reviewTransferRequest = async (req, res, next) => {
           await profile.save();
 
           // Also update ProfessionalDetails collection for this user (if exists)
-          if (profile.userId) {
-            try {
-              await ProfessionalDetails.updateOne(
-                { userId: profile.userId },
-                {
-                  $set: {
-                    "professionalDetails.workLocation": workLocationName,
-                    "professionalDetails.branch": branchName,
-                    "professionalDetails.region": regionName,
-                  },
-                }
-              );
-            } catch (pdError) {
-              console.error(
-                "Error updating ProfessionalDetails with new work location:",
-                pdError.message
-              );
-            }
-          }
+          // COMMENTED OUT: Only updating Profile model now
+          // if (profile.userId) {
+          //   try {
+          //     await ProfessionalDetails.updateOne(
+          //       { userId: profile.userId },
+          //       {
+          //         $set: {
+          //           "professionalDetails.workLocation": workLocationName,
+          //           "professionalDetails.branch": branchName,
+          //           "professionalDetails.region": regionName,
+          //         },
+          //       }
+          //     );
+          //   } catch (pdError) {
+          //     console.error(
+          //       "Error updating ProfessionalDetails with new work location:",
+          //       pdError.message
+          //     );
+          //   }
+          // }
 
           // Publish domain event so other services (e.g. portal-service) can sync professional details
-          try {
-            await publishDomainEvent(
-              MEMBERSHIP_EVENTS.PROFESSIONAL_WORK_LOCATION_UPDATED,
-              {
-                userId: profile.userId,
-                profileId: profile._id,
-                transferRequestId: transferRequest._id,
-                tenantId: profile.tenantId,
-                workLocation: workLocationName,
-                branch: branchName,
-                region: regionName,
-              },
-              {
-                tenantId: profile.tenantId,
-              }
-            );
-          } catch (eventError) {
-            console.error(
-              "Error publishing PROFESSIONAL_WORK_LOCATION_UPDATED event:",
-              eventError.message
-            );
-          }
+          // COMMENTED OUT: Only updating Profile model now
+          // try {
+          //   await publishDomainEvent(
+          //     MEMBERSHIP_EVENTS.PROFESSIONAL_WORK_LOCATION_UPDATED,
+          //     {
+          //       userId: profile.userId,
+          //       profileId: profile._id,
+          //       transferRequestId: transferRequest._id,
+          //       tenantId: profile.tenantId,
+          //       workLocation: workLocationName,
+          //       branch: branchName,
+          //       region: regionName,
+          //     },
+          //     {
+          //       tenantId: profile.tenantId,
+          //     }
+          //   );
+          // } catch (eventError) {
+          //   console.error(
+          //     "Error publishing PROFESSIONAL_WORK_LOCATION_UPDATED event:",
+          //     eventError.message
+          //   );
+          // }
 ///
           console.log(
             `✅ Updated user profile - Work Location: ${workLocationName}, Branch: ${branchName}, Region: ${regionName}`
