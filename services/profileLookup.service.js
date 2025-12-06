@@ -1,6 +1,8 @@
 const Profile = require("../models/profile.model.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
-const { generateMembershipNumber } = require("../helpers/membership.number.generator.js");
+const {
+  generateMembershipNumber,
+} = require("../helpers/membership.number.generator.js");
 
 // Helper function to handle bypass user ObjectId conversion
 function getReviewerIdForDb(reviewerId) {
@@ -42,63 +44,72 @@ async function findOrCreateProfileByEmail({
     normalizedEmail: nEmail,
   }).session(session);
   if (!profile) {
-		const flattened = flattenProfilePayload(effective);
-		const now = new Date();
-		
-		// Generate membership number for new profile
-		const membershipNumber = await generateMembershipNumber();
-		
-		const doc = {
-			tenantId,
-			normalizedEmail: nEmail,
-			personalInfo: flattened.personalInfo || {},
-			contactInfo: flattened.contactInfo || {},
-			professionalDetails: flattened.professionalDetails || {},
-			preferences: flattened.preferences || {},
-			cornMarket: flattened.cornMarket || {},
-			additionalInformation: flattened.additionalInformation || {},
-			recruitmentDetails: flattened.recruitmentDetails || {},
-			membershipNumber: membershipNumber, // Auto-generated membership number for new profile
-			firstJoinedDate: null, // set below when appropriate
-			currentSubscriptionId: null,
-			hasHistory: false,
-			submissionDate: now,
-		};
-		
-		// Set userId for portal users when creating new profile
-		if (userType === "PORTAL" && userId) {
-			doc.userId = userId;
-		}
-		
-		// first-ever membership: set firstJoinedDate once
-		doc.firstJoinedDate = now;
-		profile = await Profile.create([doc], { session }).then((x) => x[0]);
-		console.log(`✅ Generated membership number ${membershipNumber} for new profile ${profile._id}`);
+    const flattened = flattenProfilePayload(effective);
+    const now = new Date();
+    // Use dateJoined from approval if available, otherwise use current date
+    const firstJoinedDate = effective.subscriptionDetails?.dateJoined
+      ? new Date(effective.subscriptionDetails.dateJoined)
+      : now;
+
+    // Generate membership number for new profile
+    const membershipNumber = await generateMembershipNumber();
+
+    const doc = {
+      tenantId,
+      normalizedEmail: nEmail,
+      personalInfo: flattened.personalInfo || {},
+      contactInfo: flattened.contactInfo || {},
+      professionalDetails: flattened.professionalDetails || {},
+      preferences: flattened.preferences || {},
+      cornMarket: flattened.cornMarket || {},
+      additionalInformation: flattened.additionalInformation || {},
+      recruitmentDetails: flattened.recruitmentDetails || {},
+      membershipNumber: membershipNumber, // Auto-generated membership number for new profile
+      firstJoinedDate: firstJoinedDate, // Use dateJoined from approval
+      currentSubscriptionId: null,
+      hasHistory: false,
+      submissionDate: now,
+    };
+
+    // Set userId for portal users when creating new profile
+    if (userType === "PORTAL" && userId) {
+      doc.userId = userId;
+    }
+
+    profile = await Profile.create([doc], { session }).then((x) => x[0]);
+    console.log(
+      `✅ Generated membership number ${membershipNumber} for new profile ${profile._id}`
+    );
   } else {
-		const flattened = flattenProfilePayload(effective);
-		const $set = {
-			personalInfo: flattened.personalInfo || {},
-			contactInfo: flattened.contactInfo || {},
-			professionalDetails: flattened.professionalDetails || {},
-			preferences: flattened.preferences || {},
-			cornMarket: flattened.cornMarket || {},
-			additionalInformation: flattened.additionalInformation || {},
-			recruitmentDetails: flattened.recruitmentDetails || {},
-		};
-		
-		// Set userId for portal users when updating existing profile (only if not already set)
-		if (userType === "PORTAL" && userId && !profile.userId) {
-			$set.userId = userId;
-		}
-		
-		// Update normalizedEmail based on preferred email
-		const existingContactInfo = profile.contactInfo?.toObject ? profile.contactInfo.toObject() : (profile.contactInfo || {});
-		const updatedContactInfo = { ...existingContactInfo, ...flattened.contactInfo };
-		const primaryEmail = pickPrimaryEmail(updatedContactInfo);
-		if (primaryEmail) {
-			$set.normalizedEmail = normalizeEmail(primaryEmail);
-		}
-		
+    const flattened = flattenProfilePayload(effective);
+    const $set = {
+      personalInfo: flattened.personalInfo || {},
+      contactInfo: flattened.contactInfo || {},
+      professionalDetails: flattened.professionalDetails || {},
+      preferences: flattened.preferences || {},
+      cornMarket: flattened.cornMarket || {},
+      additionalInformation: flattened.additionalInformation || {},
+      recruitmentDetails: flattened.recruitmentDetails || {},
+    };
+
+    // Set userId for portal users when updating existing profile (only if not already set)
+    if (userType === "PORTAL" && userId && !profile.userId) {
+      $set.userId = userId;
+    }
+
+    // Update normalizedEmail based on preferred email
+    const existingContactInfo = profile.contactInfo?.toObject
+      ? profile.contactInfo.toObject()
+      : profile.contactInfo || {};
+    const updatedContactInfo = {
+      ...existingContactInfo,
+      ...flattened.contactInfo,
+    };
+    const primaryEmail = pickPrimaryEmail(updatedContactInfo);
+    if (primaryEmail) {
+      $set.normalizedEmail = normalizeEmail(primaryEmail);
+    }
+
     await Profile.updateOne({ _id: profile._id }, { $set }, { session });
   }
   return profile;

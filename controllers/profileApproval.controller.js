@@ -37,6 +37,7 @@ const subAttrs = (s = {}) => ({
   otherScheme: !!s?.otherScheme,
   recuritedBy: s?.recuritedBy ?? null,
   recuritedByMembershipNo: s?.recuritedByMembershipNo ?? null,
+  confirmedRecruiterProfileId: s?.confirmedRecruiterProfileId ?? null,
   primarySection: s?.primarySection ?? null,
   otherPrimarySection: s?.otherPrimarySection ?? null,
   secondarySection: s?.secondarySection ?? null,
@@ -70,6 +71,10 @@ const normalizeSubscription = (subscriptionDetails = {}, professional = {}) => {
     professional?.membershipCategory != null
   ) {
     normalized.membershipCategory = professional.membershipCategory;
+  }
+  // Ensure dateJoined is set - use current date if not provided
+  if (!normalized.dateJoined) {
+    normalized.dateJoined = new Date();
   }
   return normalized;
 };
@@ -168,6 +173,14 @@ async function approveApplication(req, res, next) {
       effective.subscriptionDetails,
       effective.professionalDetails
     );
+
+    // Log dateJoined for debugging
+    console.log("[approveApplication] dateJoined check:", {
+      beforeNormalize: effective.subscriptionDetails?.dateJoined,
+      afterNormalize: normalizedSubscriptionDetails?.dateJoined,
+      hasDateJoined: !!normalizedSubscriptionDetails?.dateJoined,
+    });
+
     effective = {
       ...effective,
       subscriptionDetails: normalizedSubscriptionDetails,
@@ -261,9 +274,15 @@ async function approveApplication(req, res, next) {
     }
 
     if (effective.subscriptionDetails) {
+      // Ensure dateJoined is set - use from effective or current date
+      const subscriptionDetailsToSave = {
+        ...effective.subscriptionDetails,
+        dateJoined: effective.subscriptionDetails.dateJoined ?? new Date(),
+      };
+
       await SubscriptionDetails.findOneAndUpdate(
         { applicationId: applicationId },
-        { $set: { subscriptionDetails: effective.subscriptionDetails } },
+        { $set: { subscriptionDetails: subscriptionDetailsToSave } },
         { upsert: true, new: true, runValidators: true, session }
       );
       // Do not update Profile.currentSubscriptionId or hasHistory here.
@@ -327,6 +346,9 @@ async function approveApplication(req, res, next) {
 
     // Publish subscription upsert request for subscription-service
     const sub = effective.subscriptionDetails || {};
+    // Use dateJoined from the current approval (subscription details), fallback to current date
+    // Always use the dateJoined from the approval, not from profile.firstJoinedDate
+    const dateJoined = sub.dateJoined ?? new Date();
     try {
       await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested(
         {
@@ -337,7 +359,7 @@ async function approveApplication(req, res, next) {
             sub.membershipCategory ??
             effective.professionalDetails?.membershipCategory ??
             null,
-          dateJoined: sub.dateJoined ?? null,
+          dateJoined: dateJoined,
           paymentType: sub.paymentType ?? null,
           payrollNo: sub.payrollNo ?? null,
           paymentFrequency: sub.paymentFrequency ?? null,

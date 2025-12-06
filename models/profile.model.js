@@ -100,6 +100,11 @@ const ProfileSchema = new mongoose.Schema(
     recruitmentDetails: {
       recuritedBy: { type: String, default: null },
       recuritedByMembershipNo: { type: String, default: null },
+      confirmedRecruiterProfileId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Profile",
+        default: null,
+      },
     },
   },
   { timestamps: true, versionKey: "profileVersion" }

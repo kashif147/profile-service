@@ -37,6 +37,11 @@ const SubscriptionSchema = new mongoose.Schema(
       otherScheme: { type: Boolean, default: false },
       recuritedBy: { type: String, allowNull: true },
       recuritedByMembershipNo: { type: String, allowNull: true },
+      confirmedRecruiterProfileId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Profile",
+        default: null,
+      },
       primarySection: { type: String, allowNull: true },
       otherPrimarySection: { type: String, allowNull: true },
       secondarySection: { type: String, allowNull: true },
