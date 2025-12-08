@@ -4,7 +4,7 @@ const { AppError } = require("../errors/AppError");
 
 async function getRecruitAFriendProfiles(req, res, next) {
   try {
-    // Only CRM users are allowed to access this endpoint
+  
     if (req.user?.userType !== "CRM") {
       return next(
         AppError.badRequest("Only CRM users can access this endpoint")
@@ -15,7 +15,7 @@ async function getRecruitAFriendProfiles(req, res, next) {
     const limit = parseInt(req.query.limit, 10) || 50;
     const skip = (page - 1) * limit;
 
-    // Build query: confirmedRecruiterProfileId is not null
+  
     const query = {
       "recruitmentDetails.confirmedRecruiterProfileId": { $ne: null },
     };
