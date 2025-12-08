@@ -341,9 +341,6 @@ async function approveSingleApplication({
   }
 }
 
-/**
- * Bulk approval controller
- */
 async function bulkApproveApplications(req, res, next) {
   const { applicationIds } = req.body;
   const tenantId = req.tenantId;
