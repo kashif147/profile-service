@@ -131,8 +131,17 @@ const RejectBody = z
     }
   });
 
+// Bulk approval: array of application IDs
+const BulkApprovalBody = z.object({
+  applicationIds: z
+    .array(z.string().min(1))
+    .min(1, { message: "At least one application ID is required" })
+    .max(1000, { message: "Maximum 1000 applications can be approved at once" }),
+});
+
 module.exports = {
   ReviewDraftBody,
   ApproveBody,
   RejectBody,
+  BulkApprovalBody,
 };
