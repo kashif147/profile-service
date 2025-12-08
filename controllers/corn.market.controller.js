@@ -25,14 +25,9 @@ async function getCornMarketProfiles(req, res, next) {
     // Normalize membershipStatus to lowercase for simple matching
     const normalizedStatus = membershipStatus.toLowerCase().trim();
 
-    // Map CRM input to database values
-    // CRM sends "new" or "graduate", but DB stores "new" or "new graduate"
-    let dbMembershipStatus;
-    if (normalizedStatus === "new") {
-      dbMembershipStatus = "new";
-    } else if (normalizedStatus === "graduate") {
-      dbMembershipStatus = "new graduate";
-    } else {
+    // Validate that membershipStatus is either "new" or "graduate"
+    // Database stores "new" or "graduate" directly
+    if (normalizedStatus !== "new" && normalizedStatus !== "graduate") {
       return next(
         AppError.badRequest(
           'membershipStatus must be either "new" or "graduate"'
@@ -42,7 +37,7 @@ async function getCornMarketProfiles(req, res, next) {
 
     // Build query: membershipStatus matches AND valueAddedServices is true
     const query = {
-      "additionalInformation.membershipStatus": dbMembershipStatus, // Map CRM input to DB value
+      "additionalInformation.membershipStatus": normalizedStatus, // Direct match - DB stores "new" or "graduate"
       "preferences.valueAddedServices": true, // Must be true
     };
 
@@ -159,7 +154,7 @@ async function getCornMarketProfiles(req, res, next) {
     };
 
     const formatter =
-      normalizedStatus === "graduate" || dbMembershipStatus === "new graduate"
+      normalizedStatus === "graduate"
         ? formatForNewGraduate
         : formatForNew;
 
