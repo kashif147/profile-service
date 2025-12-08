@@ -25,8 +25,7 @@ async function getCornMarketProfiles(req, res, next) {
     // Normalize membershipStatus to lowercase for simple matching
     const normalizedStatus = membershipStatus.toLowerCase().trim();
 
-    // Validate that membershipStatus is either "new" or "graduate"
-    // Database stores "new" or "graduate" directly
+  
     if (normalizedStatus !== "new" && normalizedStatus !== "graduate") {
       return next(
         AppError.badRequest(
