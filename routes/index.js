@@ -7,5 +7,6 @@ router.use("/subscription-details", require("./subscription.details.routes"));
 router.use("/applications", require("./application.routes"));
 router.use("/applications", require("./applications.routes"));
 router.use("/transfer-request", require("./transfer.request.routes"));
+router.use("/corn-market", require("./corn.market.routes"));
 
 module.exports = router;
