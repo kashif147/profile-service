@@ -8,9 +8,13 @@ const {
   rejectApplication,
 } = require("../controllers/profileApproval.controller.js");
 const {
+  bulkApproveApplications,
+} = require("../controllers/bulkApproval.controller.js");
+const {
   ReviewDraftBody,
   ApproveBody,
   RejectBody,
+  BulkApprovalBody,
 } = require("../validation/applications.validators.js");
 const { ApplicationParams } = require("../validation/params.validators.js");
 const router = Router();
@@ -34,6 +38,13 @@ router.post(
   ensureAuthenticated,
   validate(RejectBody),
   rejectApplication
+);
+router.post(
+  "/bulk-approval",
+  ensureAuthenticated,
+  idempotency(),
+  validate(BulkApprovalBody),
+  bulkApproveApplications
 );
 
 module.exports = router;
