@@ -154,6 +154,8 @@ class ApplicationApprovalEventPublisher {
     paymentType,
     payrollNo,
     paymentFrequency,
+    userId,
+    userEmail,
     correlationId,
   }) {
     try {
@@ -165,7 +167,6 @@ class ApplicationApprovalEventPublisher {
       const result = await publisher.publish(
         MEMBERSHIP_EVENTS.SUBSCRIPTION_UPSERT_REQUESTED,
         {
-          tenantId,
           profileId,
           applicationId,
           membershipCategory,
@@ -173,6 +174,8 @@ class ApplicationApprovalEventPublisher {
           paymentType,
           payrollNo,
           paymentFrequency,
+          userId: userId || null,
+          userEmail: userEmail || null,
         },
         {
           tenantId,
