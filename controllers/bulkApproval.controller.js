@@ -302,6 +302,15 @@ async function approveSingleApplication({
     const sub = effective.subscriptionDetails || {};
     const dateJoined = sub.dateJoined ?? new Date();
     try {
+      // Get userId and userEmail from profile for subscription creation
+      const profileWithUser = await Profile.findById(profile._id).session(session);
+      const userIdForSubscription = profileWithUser?.userId 
+        ? String(profileWithUser.userId) 
+        : null;
+      const userEmailForSubscription = effective.contactInfo?.personalEmail 
+        || effective.contactInfo?.workEmail 
+        || null;
+      
       await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested(
         {
           tenantId,
@@ -315,6 +324,8 @@ async function approveSingleApplication({
           paymentType: sub.paymentType ?? null,
           payrollNo: sub.payrollNo ?? null,
           paymentFrequency: sub.paymentFrequency ?? null,
+          userId: userIdForSubscription,
+          userEmail: userEmailForSubscription,
           correlationId: crypto.randomUUID(),
         }
       );

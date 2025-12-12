@@ -276,6 +276,16 @@ async function approveApplication({
     // Use dateJoined from the current approval (subscription details), fallback to current date
     // Always use the dateJoined from the approval, not from profile.firstJoinedDate
     const dateJoined = sub.dateJoined ?? new Date();
+    
+    // Get userId and userEmail from profile for subscription creation
+    const profileWithUser = await Profile.findById(profile._id).session(session);
+    const userIdForSubscription = profileWithUser?.userId 
+      ? String(profileWithUser.userId) 
+      : null;
+    const userEmailForSubscription = effective.contactInfo?.personalEmail 
+      || effective.contactInfo?.workEmail 
+      || null;
+    
     await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested({
       tenantId,
       profileId: String(profile._id),
@@ -288,6 +298,8 @@ async function approveApplication({
       paymentType: sub.paymentType ?? null,
       payrollNo: sub.payrollNo ?? null,
       paymentFrequency: sub.paymentFrequency ?? null,
+      userId: userIdForSubscription,
+      userEmail: userEmailForSubscription,
       correlationId: crypto.randomUUID(),
     });
 
