@@ -154,6 +154,8 @@ class ApplicationApprovalEventPublisher {
     paymentType,
     payrollNo,
     paymentFrequency,
+    userId,
+    userEmail,
     correlationId,
   }) {
     try {
@@ -162,17 +164,23 @@ class ApplicationApprovalEventPublisher {
         { tenantId, profileId, applicationId }
       );
 
+      // Ensure dateJoined is properly serialized (convert Date object to ISO string if needed)
+      const dateJoinedSerialized = dateJoined instanceof Date 
+        ? dateJoined.toISOString() 
+        : dateJoined;
+      
       const result = await publisher.publish(
         MEMBERSHIP_EVENTS.SUBSCRIPTION_UPSERT_REQUESTED,
         {
-          tenantId,
           profileId,
           applicationId,
           membershipCategory,
-          dateJoined,
+          dateJoined: dateJoinedSerialized,
           paymentType,
           payrollNo,
           paymentFrequency,
+          userId: userId || null,
+          userEmail: userEmail || null,
         },
         {
           tenantId,

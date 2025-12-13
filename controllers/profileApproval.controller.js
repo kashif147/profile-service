@@ -345,11 +345,40 @@ async function approveApplication(req, res, next) {
     }
 
     // Publish subscription upsert request for subscription-service
+    console.log("🔔 [approveApplication] Starting subscription upsert event publishing...");
     const sub = effective.subscriptionDetails || {};
+    console.log("🔔 [approveApplication] Subscription details from effective:", {
+      hasDateJoined: !!sub.dateJoined,
+      dateJoined: sub.dateJoined,
+      paymentType: sub.paymentType,
+      paymentFrequency: sub.paymentFrequency,
+      membershipCategory: sub.membershipCategory,
+    });
+    
     // Use dateJoined from the current approval (subscription details), fallback to current date
     // Always use the dateJoined from the approval, not from profile.firstJoinedDate
     const dateJoined = sub.dateJoined ?? new Date();
+    console.log("🔔 [approveApplication] Using dateJoined:", dateJoined);
+    
+    // Get userId and userEmail from profile for subscription creation
+    const profileWithUser = await Profile.findById(profile._id).session(session);
+    const userIdForSubscription = profileWithUser?.userId 
+      ? String(profileWithUser.userId) 
+      : null;
+    const userEmailForSubscription = effective.contactInfo?.personalEmail 
+      || effective.contactInfo?.workEmail 
+      || null;
+    
+    console.log("🔔 [approveApplication] User info for subscription:", {
+      userId: userIdForSubscription,
+      userEmail: userEmailForSubscription,
+      profileId: String(profile._id),
+      applicationId,
+      tenantId,
+    });
+    
     try {
+      console.log("📤 [approveApplication] Publishing subscription upsert requested event...");
       await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested(
         {
           tenantId,
@@ -363,13 +392,20 @@ async function approveApplication(req, res, next) {
           paymentType: sub.paymentType ?? null,
           payrollNo: sub.payrollNo ?? null,
           paymentFrequency: sub.paymentFrequency ?? null,
+          userId: userIdForSubscription,
+          userEmail: userEmailForSubscription,
           correlationId: crypto.randomUUID(),
         }
       );
+      console.log("✅ [approveApplication] Subscription upsert requested event published successfully");
     } catch (publishError) {
       console.error(
-        "[approveApplication] Failed to publish subscription upsert requested event:",
-        publishError.message
+        "❌ [approveApplication] Failed to publish subscription upsert requested event:",
+        {
+          message: publishError.message,
+          stack: publishError.stack,
+          error: publishError,
+        }
       );
       // Continue with approval even if publishing fails
     }
