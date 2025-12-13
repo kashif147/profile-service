@@ -124,7 +124,7 @@ app.use(express.json({ limit: "200mb" }));
 
 app.use(loggerMiddleware);
 
-app.use(corsMiddleware);
+// app.use(corsMiddleware);
 
 app.use(
   session({
@@ -195,7 +195,7 @@ app.use(function (req, res, next) {
   });
 });
 
-app.use(corsErrorHandler);
+// app.use(corsErrorHandler);
 app.use(responseMiddleware.errorHandler);
 
 process.on("SIGINT", async () => {
