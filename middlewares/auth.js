@@ -1,5 +1,7 @@
 const jwt = require("jsonwebtoken");
 const { AppError } = require("../errors/AppError");
+const { gatewaySecurity } = require("@membership/policy-middleware/security");
+const { validateGatewayRequest } = gatewaySecurity;
 
 /**
  * Unified JWT Authentication Middleware
@@ -11,24 +13,136 @@ const { AppError } = require("../errors/AppError");
 const authenticate = async (req, res, next) => {
   try {
     console.log("=== AUTH MIDDLEWARE START ===");
-    console.log("JWT_SECRET exists:", !!process.env.JWT_SECRET);
     console.log("AUTH_BYPASS_ENABLED:", process.env.AUTH_BYPASS_ENABLED);
-    console.log("Request headers:", req.headers);
+    console.log("Request headers:", Object.keys(req.headers));
 
-    // Check if auth bypass is enabled
-    // NOTE: Bypass should NEVER be used for authentication endpoints (sign-in/sign-up)
-    // Even with bypass enabled, we must validate tokens to extract real user/tenant context
+    // 1) Check for gateway-verified JWT (trust gateway headers with validation)
+    const jwtVerified = req.headers["x-jwt-verified"];
+    const authSource = req.headers["x-auth-source"];
+
+    if (jwtVerified === "true" && authSource === "gateway") {
+      // Validate gateway request (signature, IP, format)
+      const validation = validateGatewayRequest(req);
+      if (!validation.valid) {
+        console.warn("Gateway header validation failed:", validation.reason);
+        const authError = AppError.unauthorized("Invalid gateway request", {
+          tokenError: true,
+          validationError: validation.reason,
+        });
+        return res.status(authError.status).json({
+          error: {
+            message: authError.message,
+            code: authError.code,
+            status: authError.status,
+            tokenError: authError.tokenError,
+            validationError: authError.validationError,
+          },
+        });
+      }
+
+      // Gateway has verified JWT and forwarded claims as headers
+      const userId = req.headers["x-user-id"];
+      const tenantId = req.headers["x-tenant-id"];
+      const userEmail = req.headers["x-user-email"];
+      const userType = req.headers["x-user-type"];
+      const userRolesStr = req.headers["x-user-roles"] || "[]";
+      const userPermissionsStr = req.headers["x-user-permissions"] || "[]";
+
+      if (!userId || !tenantId) {
+        const authError = AppError.badRequest(
+          "Missing required authentication headers",
+          {
+            tokenError: true,
+            missingHeaders: true,
+          }
+        );
+        return res.status(authError.status).json({
+          error: {
+            message: authError.message,
+            code: authError.code,
+            status: authError.status,
+            tokenError: authError.tokenError,
+            missingHeaders: authError.missingHeaders,
+          },
+        });
+      }
+
+      let roles = [];
+      let permissions = [];
+
+      try {
+        const rolesArray = JSON.parse(userRolesStr);
+        roles = Array.isArray(rolesArray)
+          ? rolesArray
+              .map((role) => (typeof role === "string" ? role : role?.code))
+              .filter(Boolean)
+          : [];
+      } catch (e) {
+        console.warn("Failed to parse x-user-roles header:", e.message);
+      }
+
+      try {
+        permissions = JSON.parse(userPermissionsStr);
+        if (!Array.isArray(permissions)) permissions = [];
+      } catch (e) {
+        console.warn("Failed to parse x-user-permissions header:", e.message);
+      }
+
+      // Set request context with tenant isolation
+      req.ctx = {
+        tenantId,
+        userId,
+        roles,
+        permissions,
+      };
+
+      // Attach user info to request for backward compatibility
+      req.user = {
+        sub: userId,
+        id: userId,
+        tenantId,
+        email: userEmail,
+        userType,
+        roles,
+        permissions,
+      };
+
+      req.userId = userId;
+      req.tenantId = tenantId;
+      req.roles = roles;
+      req.permissions = permissions;
+
+      console.log("=== AUTH MIDDLEWARE SUCCESS (Gateway) ===");
+      console.log("Request context set:", {
+        userId: req.userId,
+        tenantId: req.tenantId,
+        userType: req.user?.userType,
+      });
+      return next();
+    }
+
+    // 2) Check if auth bypass is enabled (legacy support)
     if (process.env.AUTH_BYPASS_ENABLED === "true") {
-      console.log("=== AUTH BYPASS ENABLED - Will skip authorization but still validate token ===");
-      
+      console.log(
+        "=== AUTH BYPASS ENABLED - Will skip authorization but still validate token ==="
+      );
+
       // Check if this is an authentication endpoint - bypass should NEVER be used for these
-      const authEndpoints = ['/login', '/signin', '/signup', '/register', '/auth'];
-      const isAuthEndpoint = authEndpoints.some(endpoint => 
+      const authEndpoints = [
+        "/login",
+        "/signin",
+        "/signup",
+        "/register",
+        "/auth",
+      ];
+      const isAuthEndpoint = authEndpoints.some((endpoint) =>
         req.path.toLowerCase().includes(endpoint.toLowerCase())
       );
-      
+
       if (isAuthEndpoint) {
-        console.error("=== SECURITY ERROR: Bypass attempted on authentication endpoint ===");
+        console.error(
+          "=== SECURITY ERROR: Bypass attempted on authentication endpoint ==="
+        );
         console.error("Path:", req.path);
         const authError = AppError.badRequest(
           "Authentication bypass is not allowed for authentication endpoints",
@@ -49,17 +163,16 @@ const authenticate = async (req, res, next) => {
       }
 
       // For non-auth endpoints, still validate token but skip authorization checks
-      // This ensures we extract real user/tenant context from the token
       const authHeader = req.headers.authorization || req.headers.Authorization;
-      
+
       if (authHeader && authHeader.startsWith("Bearer ")) {
         const token = authHeader.substring(7);
         try {
           const decoded = jwt.verify(token, process.env.JWT_SECRET);
-          
-          // Extract tenantId from token
-          const tenantId = decoded.tenantId || decoded.tid || decoded.extension_tenantId;
-          
+
+          const tenantId =
+            decoded.tenantId || decoded.tid || decoded.extension_tenantId;
+
           if (!tenantId) {
             const authError = AppError.badRequest(
               "Invalid token: missing tenantId",
@@ -79,7 +192,6 @@ const authenticate = async (req, res, next) => {
             });
           }
 
-          // Set request context from actual token (not hardcoded bypass values)
           req.ctx = {
             tenantId: tenantId,
             userId: decoded.sub || decoded.id,
@@ -94,11 +206,6 @@ const authenticate = async (req, res, next) => {
           req.permissions = decoded.permissions || [];
 
           console.log("=== AUTH BYPASS: Using token context ===");
-          console.log("Request context set from token:", {
-            userId: req.userId,
-            tenantId: req.tenantId,
-            userType: req.user?.userType,
-          });
           return next();
         } catch (error) {
           console.error("JWT Verification Error during bypass:", error.message);
@@ -117,7 +224,6 @@ const authenticate = async (req, res, next) => {
           });
         }
       } else {
-        // No token provided even with bypass enabled - require token
         const authError = AppError.badRequest("Authorization header required", {
           tokenError: true,
           missingHeader: true,
@@ -134,6 +240,7 @@ const authenticate = async (req, res, next) => {
       }
     }
 
+    // 3) Legacy Bearer JWT flow (fallback for direct service calls)
     const authHeader = req.headers.authorization || req.headers.Authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -153,7 +260,7 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer '
+    const token = authHeader.substring(7);
     console.log("Token (first 20 chars):", token.substring(0, 20) + "...");
 
     if (!process.env.JWT_SECRET) {
@@ -169,11 +276,9 @@ const authenticate = async (req, res, next) => {
       userType: decoded.userType,
     });
 
-    // Extract tenantId from token - support both tid and tenantId claims
     const tenantId =
       decoded.tenantId || decoded.tid || decoded.extension_tenantId;
 
-    // Validate tenantId is present in token
     if (!tenantId) {
       const authError = AppError.badRequest("Invalid token: missing tenantId", {
         tokenError: true,
@@ -190,20 +295,19 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    // Validate userType is present in token (warn if missing but don't block)
     if (!decoded.userType) {
-      console.warn("WARNING: JWT token missing userType claim. This may cause authorization failures.");
+      console.warn(
+        "WARNING: JWT token missing userType claim. This may cause authorization failures."
+      );
     }
 
-    // Set request context with tenant isolation
     req.ctx = {
       tenantId: tenantId,
-      userId: decoded.sub || decoded.id, // Support both sub and id claims
+      userId: decoded.sub || decoded.id,
       roles: decoded.roles || [],
       permissions: decoded.permissions || [],
     };
 
-    // Attach user info to request for backward compatibility
     req.user = decoded;
     req.userId = decoded.sub || decoded.id;
     req.tenantId = tenantId;

@@ -40,7 +40,7 @@ POLICY_SERVICE_URL=https://userserviceshell-aqf6f0b8fqgmagch.canadacentral-01.az
 POLICY_CACHE_TIMEOUT=300000
 POLICY_TIMEOUT=5000
 POLICY_RETRIES=3
-REDIS_URL=redis://admin:Letme1nplz@Redis@user-service-redis.redis.cache.windows.net:6380/0
+REDIS_URL=rediss://admin:Letme1nplz@user-service-redis.redis.cache.windows.net:6380/0
 REDIS_ENABLED=true
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
 ```
@@ -100,6 +100,32 @@ curl -H "Authorization: Bearer <token>" https://<your-app>.azurewebsites.net/api
 ```
 ALLOWED_ORIGINS=https://your-frontend.azurewebsites.net,http://localhost:3000
 ```
+
+### Issue: Redis WRONGPASS invalid username-password pair
+
+**Fix:** Check your Redis URL format in Azure Application Settings:
+
+1. **Correct format for Azure Redis Cache (SSL port 6380):**
+   ```
+   REDIS_URL=rediss://username:password@hostname:6380/0
+   ```
+   - Use `rediss://` (double 's') for SSL/TLS connections
+   - Remove any extra text like `@Redis@` from the URL
+   - Verify username and password match your Azure Redis Cache credentials
+
+2. **Alternative: Use separate environment variables:**
+   ```
+   REDIS_HOST=user-service-redis.redis.cache.windows.net
+   REDIS_PORT=6380
+   REDIS_USERNAME=admin
+   REDIS_PASSWORD=Letme1nplz
+   REDIS_DB=0
+   ```
+
+3. **If Redis is not required, disable it:**
+   ```
+   REDIS_ENABLED=false
+   ```
 
 ## Verify Deployment
 
