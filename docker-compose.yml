@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  profile-service:
+    build: .
+    container_name: profile-service
+    ports:
+      - "4002:4002"
+    restart: always
+    networks:
+      - shared-net
+
+networks:
+  shared-net:
+    external: true
+    name: gateway_app-net
