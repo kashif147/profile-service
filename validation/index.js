@@ -141,6 +141,7 @@ module.exports.subscription_details_create = Joi.object({
     otherScheme: Joi.boolean().optional().default(false),
     recuritedBy: Joi.string().optional().default(null),
     recuritedByMembershipNo: Joi.string().optional().default(null),
+    confirmedRecruiterProfileId: Joi.string().optional().default(null),
     primarySection: Joi.string().optional().default(null),
     otherPrimarySection: Joi.string().optional().default(null),
     secondarySection: Joi.string().optional().default(null),
@@ -170,6 +171,7 @@ module.exports.subscription_details_update = Joi.object({
     otherScheme: Joi.boolean().optional().default(false),
     recuritedBy: Joi.string().optional().default(null),
     recuritedByMembershipNo: Joi.string().optional().default(null),
+    confirmedRecruiterProfileId: Joi.string().optional().default(null),
     primarySection: Joi.string().optional().default(null),
     otherPrimarySection: Joi.string().optional().default(null),
     secondarySection: Joi.string().optional().default(null),
@@ -185,4 +187,62 @@ module.exports.subscription_details_update = Joi.object({
       .valid(...Object.values(PAYMENT_FREQUENCY))
       .optional(),
   }),
+});
+
+// Universal Search Query Validation
+// POST API - All parameters must be in request body
+// 'page' is mandatory and must be the first parameter
+module.exports.universal_search_query = Joi.object({
+  // Page type - REQUIRED and must be first parameter
+  page: Joi.string().valid("profile", "application").required(),
+  // Search term (Reg No or Surname)
+  search: Joi.string().optional().allow(""),
+  q: Joi.string().optional().allow(""),
+  // Email filter
+  email: Joi.string().email().optional().allow(""),
+  // Application Status (for applications)
+  applicationStatus: Joi.alternatives()
+    .try(
+      Joi.string().valid(...Object.values(APPLICATION_STATUS)),
+      Joi.array().items(Joi.string().valid(...Object.values(APPLICATION_STATUS)))
+    )
+    .optional(),
+  status: Joi.alternatives()
+    .try(
+      Joi.string().valid(...Object.values(APPLICATION_STATUS)),
+      Joi.array().items(Joi.string().valid(...Object.values(APPLICATION_STATUS)))
+    )
+    .optional(),
+  // Membership Category
+  membershipCategory: Joi.alternatives()
+    .try(Joi.string(), Joi.array().items(Joi.string()))
+    .optional(),
+  // Date filters
+  submissionDateFrom: Joi.date().iso().optional(),
+  submissionDateTo: Joi.date().iso().optional(),
+  createdAtFrom: Joi.date().iso().optional(),
+  createdAtTo: Joi.date().iso().optional(),
+  updatedAtFrom: Joi.date().iso().optional(),
+  updatedAtTo: Joi.date().iso().optional(),
+  // Professional details filters
+  grade: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
+  primarySection: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
+  section: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
+  workLocation: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
+  branch: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
+  region: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
+  // Contact filters
+  mobileNo: Joi.string().optional().allow(""),
+  mobileNumber: Joi.string().optional().allow(""),
+  // Status filters
+  isActive: Joi.alternatives().try(Joi.boolean(), Joi.string().valid("true", "false")).optional(),
+  deleted: Joi.alternatives().try(Joi.boolean(), Joi.string().valid("true", "false")).optional(),
+  // Pagination
+  pageNum: Joi.number().integer().min(1).optional().default(1),
+  pageNumber: Joi.number().integer().min(1).optional().default(1),
+  limit: Joi.number().integer().min(1).max(1000).optional().default(100),
+  // Sorting
+  sortBy: Joi.string().optional().default("updatedAt"),
+  sortOrder: Joi.string().valid("asc", "desc").optional().default("desc"),
+  order: Joi.string().valid("asc", "desc").optional(),
 });

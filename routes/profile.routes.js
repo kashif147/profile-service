@@ -10,6 +10,9 @@ router.use(authenticate);
 
 router.get("/", profileController.getAllProfiles);
 router.get("/search", profileController.searchProfiles);
+router.get("/my-profile", profileController.getMyProfile); 
+router.get("/corn-market/new", profileController.getCornMarketNew);
+router.get("/corn-market/graduate", profileController.getCornMarketGraduate); 
 router.get("/:profileId", profileController.getProfileById);
 router.put("/:profileId", profileController.updateProfile);
 router.delete("/:profileId", profileController.softDeleteProfile);

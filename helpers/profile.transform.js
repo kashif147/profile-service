@@ -73,7 +73,7 @@ const additionalInformationKeys = [
   "otherScheme",
 ];
 
-const recruitmentKeys = ["recuritedBy", "recuritedByMembershipNo"];
+const recruitmentKeys = ["recuritedBy", "recuritedByMembershipNo", "confirmedRecruiterProfileId"];
 
 function pickSection(source = {}, keys = []) {
   const section = {};
@@ -124,7 +124,10 @@ function flattenProfilePayload(effective = {}) {
     payload.additionalInformation = additionalInformation;
   }
 
-	const recruitmentDetails = pickSection(effective.recruitmentDetails || {}, recruitmentKeys);
+	// Recruitment details can come from either effective.recruitmentDetails or effective.subscriptionDetails
+	const recruitmentFromDetails = pickSection(effective.recruitmentDetails || {}, recruitmentKeys);
+	const recruitmentFromSubscription = pickSection(effective.subscriptionDetails || {}, recruitmentKeys);
+	const recruitmentDetails = { ...recruitmentFromDetails, ...recruitmentFromSubscription };
   if (hasValues(recruitmentDetails)) {
     payload.recruitmentDetails = recruitmentDetails;
   }

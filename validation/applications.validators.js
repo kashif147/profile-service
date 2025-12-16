@@ -39,12 +39,6 @@ const ProposedPatch = z
   .array(PatchOp)
   .nonempty({ message: "proposedPatch cannot be empty" });
 
-// Optional version for approve endpoint (can be undefined or non-empty array)
-const ProposedPatchOptional = z
-  .array(PatchOp)
-  .nonempty({ message: "proposedPatch cannot be empty" })
-  .optional();
-
 // Minimal submission object (flexible, but must be an object)
 const Submission = z.record(z.any());
 
@@ -76,31 +70,35 @@ const ReviewDraftBody = z
 
 // Approve:
 // Path A: overlayId + overlayVersion
-// Path B: submission + proposedPatch (single-step approval)
+// Path B: submission (approval with no changes)
+// Path C: submission + proposedPatch (approval with changes)
 const ApproveBody = z
   .object({
     overlayId: z.string().min(1).optional(),
     overlayVersion: z.number().int().nonnegative().optional(),
     submission: Submission.optional(),
-    proposedPatch: ProposedPatchOptional,
+    proposedPatch: z.array(PatchOp).optional(),
   })
   .superRefine((data, ctx) => {
     const hasOverlay =
       !!data.overlayId || typeof data.overlayVersion === "number";
-    const hasPatch = !!data.submission && !!data.proposedPatch;
+    const hasSubmission = !!data.submission;
+    const hasPatch = !!data.proposedPatch;
+    const hasSubmissionWithPatch = hasSubmission && hasPatch;
+    const hasSubmissionOnly = hasSubmission && !hasPatch;
 
-    if (hasOverlay && hasPatch) {
+    if (hasOverlay && (hasSubmission || hasPatch)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "Provide either overlayId+overlayVersion OR submission+proposedPatch, not both.",
+          "Provide either overlayId+overlayVersion OR submission (with optional proposedPatch), not both.",
       });
     }
-    if (!hasOverlay && !hasPatch) {
+    if (!hasOverlay && !hasSubmission) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "Missing approval input. Provide overlayId+overlayVersion OR submission+proposedPatch.",
+          "Missing approval input. Provide overlayId+overlayVersion OR submission (with optional proposedPatch).",
       });
     }
     if (data.overlayId && typeof data.overlayVersion !== "number") {
@@ -113,6 +111,7 @@ const ApproveBody = z
   });
 
 // Reject: requires reason; overlay optional; optionally echo submission+proposedPatch for audit
+// proposedPatch is optional and only needed when changes were made
 const RejectBody = z
   .object({
     reason: z.string().min(2).max(500),
@@ -120,7 +119,7 @@ const RejectBody = z
     overlayId: z.string().min(1).optional(),
     overlayVersion: z.number().int().nonnegative().optional(),
     submission: Submission.optional(),
-    proposedPatch: ProposedPatch.optional(),
+    proposedPatch: z.array(PatchOp).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.overlayId && typeof data.overlayVersion !== "number") {
@@ -132,8 +131,17 @@ const RejectBody = z
     }
   });
 
+// Bulk approval: array of application IDs
+const BulkApprovalBody = z.object({
+  applicationIds: z
+    .array(z.string().min(1))
+    .min(1, { message: "At least one application ID is required" })
+    .max(1000, { message: "Maximum 1000 applications can be approved at once" }),
+});
+
 module.exports = {
   ReviewDraftBody,
   ApproveBody,
   RejectBody,
+  BulkApprovalBody,
 };

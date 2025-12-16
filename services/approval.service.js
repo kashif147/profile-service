@@ -24,19 +24,28 @@ const { loadSubmission } = require("./submission.service.js");
 const { ApplicationApprovalEventPublisher } = require("../rabbitMQ/index.js");
 const { APPLICATION_STATUS } = require("../constants/enums.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
-const { generateMembershipNumber } = require("../helpers/membership.number.generator.js");
+const {
+  generateMembershipNumber,
+} = require("../helpers/membership.number.generator.js");
 
 function deepClone(o) {
   return JSON.parse(JSON.stringify(o));
 }
 
-function normalizeSubscriptionDetails(subscriptionDetails = {}, professional = {}) {
+function normalizeSubscriptionDetails(
+  subscriptionDetails = {},
+  professional = {}
+) {
   const normalized = { ...subscriptionDetails };
   if (
     normalized.membershipCategory == null &&
     professional?.membershipCategory != null
   ) {
     normalized.membershipCategory = professional.membershipCategory;
+  }
+  // Ensure dateJoined is set - use current date if not provided
+  if (!normalized.dateJoined) {
+    normalized.dateJoined = new Date();
   }
   return normalized;
 }
@@ -74,6 +83,14 @@ async function approveApplication({
       effective.subscriptionDetails,
       effective.professionalDetails
     );
+
+    // Log dateJoined for debugging
+    console.log("[approveApplication service] dateJoined check:", {
+      beforeNormalize: effective.subscriptionDetails?.dateJoined,
+      afterNormalize: normalizedSubscriptionDetails?.dateJoined,
+      hasDateJoined: !!normalizedSubscriptionDetails?.dateJoined,
+    });
+
     effective = {
       ...effective,
       subscriptionDetails: normalizedSubscriptionDetails,
@@ -113,10 +130,14 @@ async function approveApplication({
     } else {
       // Create new profile (first-ever membership): set initial fields via upsert
       const now = new Date();
-      
+      // Use dateJoined from approval if available, otherwise use current date
+      const firstJoinedDate = effective.subscriptionDetails?.dateJoined
+        ? new Date(effective.subscriptionDetails.dateJoined)
+        : now;
+
       // Generate membership number for new profile
       const membershipNumber = await generateMembershipNumber();
-      
+
       await Profile.updateOne(
         { tenantId, normalizedEmail },
         {
@@ -127,7 +148,7 @@ async function approveApplication({
             tenantId,
             normalizedEmail,
             membershipNumber: membershipNumber, // Auto-generated membership number for new profile
-            firstJoinedDate: now,
+            firstJoinedDate: firstJoinedDate,
             submissionDate: now,
             currentSubscriptionId: null,
             hasHistory: false,
@@ -135,8 +156,12 @@ async function approveApplication({
         },
         { upsert: true, session }
       );
-      profile = await Profile.findOne({ tenantId, normalizedEmail }).session(session);
-      console.log(`✅ Generated membership number ${membershipNumber} for new profile ${profile._id}`);
+      profile = await Profile.findOne({ tenantId, normalizedEmail }).session(
+        session
+      );
+      console.log(
+        `✅ Generated membership number ${membershipNumber} for new profile ${profile._id}`
+      );
     }
 
     // 2) Update PersonalDetails with effective personal/contact AND approval metadata
@@ -165,9 +190,15 @@ async function approveApplication({
     }
 
     if (effective.subscriptionDetails) {
+      // Ensure dateJoined is set - use from effective or current date
+      const subscriptionDetailsToSave = {
+        ...effective.subscriptionDetails,
+        dateJoined: effective.subscriptionDetails.dateJoined ?? new Date(),
+      };
+
       await SubscriptionDetails.findOneAndUpdate(
         { applicationId: applicationId },
-        { $set: { subscriptionDetails: effective.subscriptionDetails } },
+        { $set: { subscriptionDetails: subscriptionDetailsToSave } },
         { upsert: true, new: true, runValidators: true, session }
       );
       // Do not update Profile.currentSubscriptionId or hasHistory here.
@@ -185,13 +216,16 @@ async function approveApplication({
     // 4) Publish events using dedicated publisher
     const subscriptionAttributes = {
       payrollNo: effective.subscriptionDetails?.payrollNo ?? null,
-      otherIrishTradeUnion: !!effective.subscriptionDetails?.otherIrishTradeUnion,
+      otherIrishTradeUnion:
+        !!effective.subscriptionDetails?.otherIrishTradeUnion,
       otherIrishTradeUnionName:
         effective.subscriptionDetails?.otherIrishTradeUnionName ?? null,
       otherScheme: !!effective.subscriptionDetails?.otherScheme,
       recuritedBy: effective.subscriptionDetails?.recuritedBy ?? null,
       recuritedByMembershipNo:
         effective.subscriptionDetails?.recuritedByMembershipNo ?? null,
+      confirmedRecruiterProfileId:
+        effective.subscriptionDetails?.confirmedRecruiterProfileId ?? null,
       primarySection: effective.subscriptionDetails?.primarySection ?? null,
       otherPrimarySection:
         effective.subscriptionDetails?.otherPrimarySection ?? null,
@@ -206,7 +240,8 @@ async function approveApplication({
       valueAddedServices: !!effective.subscriptionDetails?.valueAddedServices,
       termsAndConditions:
         effective.subscriptionDetails?.termsAndConditions !== false,
-      membershipCategory: effective.subscriptionDetails?.membershipCategory ?? null,
+      membershipCategory:
+        effective.subscriptionDetails?.membershipCategory ?? null,
       membershipStatus: effective.subscriptionDetails?.membershipStatus ?? null,
       dateJoined: effective.subscriptionDetails?.dateJoined ?? null,
       submissionDate: effective.subscriptionDetails?.submissionDate ?? null,
@@ -238,6 +273,19 @@ async function approveApplication({
 
     // Publish subscription upsert request for subscription-service
     const sub = effective.subscriptionDetails || {};
+    // Use dateJoined from the current approval (subscription details), fallback to current date
+    // Always use the dateJoined from the approval, not from profile.firstJoinedDate
+    const dateJoined = sub.dateJoined ?? new Date();
+    
+    // Get userId and userEmail from profile for subscription creation
+    const profileWithUser = await Profile.findById(profile._id).session(session);
+    const userIdForSubscription = profileWithUser?.userId 
+      ? String(profileWithUser.userId) 
+      : null;
+    const userEmailForSubscription = effective.contactInfo?.personalEmail 
+      || effective.contactInfo?.workEmail 
+      || null;
+    
     await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested({
       tenantId,
       profileId: String(profile._id),
@@ -246,10 +294,12 @@ async function approveApplication({
         sub.membershipCategory ??
         effective.professionalDetails?.membershipCategory ??
         null,
-      dateJoined: sub.dateJoined ?? null,
+      dateJoined: dateJoined,
       paymentType: sub.paymentType ?? null,
       payrollNo: sub.payrollNo ?? null,
       paymentFrequency: sub.paymentFrequency ?? null,
+      userId: userIdForSubscription,
+      userEmail: userEmailForSubscription,
       correlationId: crypto.randomUUID(),
     });
 

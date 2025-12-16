@@ -16,38 +16,122 @@ const authenticate = async (req, res, next) => {
     console.log("Request headers:", req.headers);
 
     // Check if auth bypass is enabled
+    // NOTE: Bypass should NEVER be used for authentication endpoints (sign-in/sign-up)
+    // Even with bypass enabled, we must validate tokens to extract real user/tenant context
     if (process.env.AUTH_BYPASS_ENABLED === "true") {
-      console.log("=== AUTH BYPASS ENABLED - SKIPPING JWT VERIFICATION ===");
+      console.log("=== AUTH BYPASS ENABLED - Will skip authorization but still validate token ===");
+      
+      // Check if this is an authentication endpoint - bypass should NEVER be used for these
+      const authEndpoints = ['/login', '/signin', '/signup', '/register', '/auth'];
+      const isAuthEndpoint = authEndpoints.some(endpoint => 
+        req.path.toLowerCase().includes(endpoint.toLowerCase())
+      );
+      
+      if (isAuthEndpoint) {
+        console.error("=== SECURITY ERROR: Bypass attempted on authentication endpoint ===");
+        console.error("Path:", req.path);
+        const authError = AppError.badRequest(
+          "Authentication bypass is not allowed for authentication endpoints",
+          {
+            tokenError: true,
+            securityError: true,
+          }
+        );
+        return res.status(authError.status).json({
+          error: {
+            message: authError.message,
+            code: authError.code,
+            status: authError.status,
+            tokenError: authError.tokenError,
+            securityError: authError.securityError,
+          },
+        });
+      }
 
-      // Set default bypass context
-      req.ctx = {
-        tenantId: "bypass-tenant",
-        userId: "bypass-user",
-        roles: ["SU"], // Super User role for bypass
-        permissions: ["*"], // All permissions for bypass
-      };
+      // For non-auth endpoints, still validate token but skip authorization checks
+      // This ensures we extract real user/tenant context from the token
+      const authHeader = req.headers.authorization || req.headers.Authorization;
+      
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const token = authHeader.substring(7);
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          
+          // Extract tenantId from token
+          const tenantId = decoded.tenantId || decoded.tid || decoded.extension_tenantId;
+          
+          if (!tenantId) {
+            const authError = AppError.badRequest(
+              "Invalid token: missing tenantId",
+              {
+                tokenError: true,
+                missingTenantId: true,
+              }
+            );
+            return res.status(authError.status).json({
+              error: {
+                message: authError.message,
+                code: authError.code,
+                status: authError.status,
+                tokenError: authError.tokenError,
+                missingTenantId: authError.missingTenantId,
+              },
+            });
+          }
 
-      // Attach user info for backward compatibility
-      req.user = {
-        sub: "bypass-user",
-        id: "bypass-user",
-        tenantId: "bypass-tenant",
-        userType: "CRM", // Default to CRM for bypass
-        roles: ["SU"],
-        permissions: ["*"],
-      };
-      req.userId = "bypass-user";
-      req.tenantId = "bypass-tenant";
-      req.roles = ["SU"];
-      req.permissions = ["*"];
+          // Set request context from actual token (not hardcoded bypass values)
+          req.ctx = {
+            tenantId: tenantId,
+            userId: decoded.sub || decoded.id,
+            roles: decoded.roles || [],
+            permissions: decoded.permissions || [],
+          };
 
-      console.log("=== AUTH BYPASS SUCCESS ===");
-      console.log("Bypass context set:", {
-        userId: req.userId,
-        tenantId: req.tenantId,
-        userType: req.user?.userType,
-      });
-      return next();
+          req.user = decoded;
+          req.userId = decoded.sub || decoded.id;
+          req.tenantId = tenantId;
+          req.roles = decoded.roles || [];
+          req.permissions = decoded.permissions || [];
+
+          console.log("=== AUTH BYPASS: Using token context ===");
+          console.log("Request context set from token:", {
+            userId: req.userId,
+            tenantId: req.tenantId,
+            userType: req.user?.userType,
+          });
+          return next();
+        } catch (error) {
+          console.error("JWT Verification Error during bypass:", error.message);
+          const authError = AppError.badRequest("Invalid token", {
+            tokenError: true,
+            jwtError: error.message,
+          });
+          return res.status(authError.status).json({
+            error: {
+              message: authError.message,
+              code: authError.code,
+              status: authError.status,
+              tokenError: authError.tokenError,
+              jwtError: authError.jwtError,
+            },
+          });
+        }
+      } else {
+        // No token provided even with bypass enabled - require token
+        const authError = AppError.badRequest("Authorization header required", {
+          tokenError: true,
+          missingHeader: true,
+        });
+        return res.status(authError.status).json({
+          error: {
+            message: authError.message,
+            code: authError.code,
+            status: authError.status,
+            tokenError: authError.tokenError,
+            missingHeader: authError.missingHeader,
+          },
+        });
+      }
     }
 
     const authHeader = req.headers.authorization || req.headers.Authorization;

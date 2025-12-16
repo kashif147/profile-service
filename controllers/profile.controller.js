@@ -1,10 +1,12 @@
 const mongoose = require("mongoose");
 const Profile = require("../models/profile.model.js");
+const Subscription = require("../models/subscription.model.js");
 const { AppError } = require("../errors/AppError");
 const {
   normalizeEmail,
   pickPrimaryEmail,
 } = require("../helpers/profileLookup.service.js");
+const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 
 const allowedUpdateFields = new Set([
   "personalInfo",
@@ -306,10 +308,221 @@ async function softDeleteProfile(req, res, next) {
   }
 }
 
+/**
+ * Get profile ID and membership number for portal user
+ * GET /api/profile/me
+ * Returns: { profileId, membershipNumber }
+ */
+async function getMyProfile(req, res, next) {
+  try {
+    const { userId, userType } = extractUserAndCreatorContext(req);
+
+    // Only allow PORTAL users
+    if (userType !== "PORTAL") {
+      return next(
+        AppError.forbidden("This endpoint is only available for Portal users")
+      );
+    }
+
+    if (!userId) {
+      return next(AppError.badRequest("User ID is required"));
+    }
+
+    // Convert userId string to ObjectId if it's a valid ObjectId
+    let userIdObjectId;
+    if (mongoose.Types.ObjectId.isValid(userId)) {
+      userIdObjectId = new mongoose.Types.ObjectId(userId);
+    } else {
+      return next(AppError.badRequest("Invalid user ID format"));
+    }
+
+    // Find profile by userId
+    const profile = await Profile.findOne({
+      userId: userIdObjectId,
+    })
+      .select("_id membershipNumber")
+      .lean();
+
+    if (!profile) {
+      return res.status(200).json({
+        data: null,
+        message: "Profile not found",
+      });
+    }
+
+    return res.success({
+      profileId: profile._id,
+      membershipNumber: profile.membershipNumber,
+    });
+  } catch (error) {
+    console.error("ProfileController [getMyProfile] Error:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch profile information"
+      )
+    );
+  }
+}
+
+
+async function getCornMarketNew(req, res, next) {
+  try {
+    const { userType } = extractUserAndCreatorContext(req);
+
+    // Only allow CRM users
+    if (userType !== "CRM") {
+      return next(
+        AppError.forbidden("This endpoint is only available for CRM users")
+      );
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 100;
+    const skip = (page - 1) * limit;
+
+    // Find subscriptions with membershipStatus = "new"
+    const subscriptions = await Subscription.find({
+      "subscriptionDetails.membershipStatus": "new",
+      deleted: false,
+      isActive: true,
+    })
+      .select("userId")
+      .lean();
+
+    // Extract unique userIds
+    const userIds = [
+      ...new Set(
+        subscriptions
+          .map((sub) => sub.userId)
+          .filter((id) => id !== null && id !== undefined)
+      ),
+    ];
+
+    if (userIds.length === 0) {
+      return res.success({
+        count: 0,
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+        results: [],
+      });
+    }
+
+    // Find profiles matching these userIds
+    const query = {
+      userId: { $in: userIds },
+    };
+
+    const [profiles, total] = await Promise.all([
+      Profile.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Profile.countDocuments(query),
+    ]);
+
+    return res.success({
+      count: profiles.length,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      results: profiles,
+    });
+  } catch (error) {
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch corn market new profiles"
+      )
+    );
+  }
+}
+
+
+async function getCornMarketGraduate(req, res, next) {
+  try {
+    const { userType } = extractUserAndCreatorContext(req);
+
+    // Only allow CRM users
+    if (userType !== "CRM") {
+      return next(
+        AppError.forbidden("This endpoint is only available for CRM users")
+      );
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 100;
+    const skip = (page - 1) * limit;
+
+    // Find subscriptions with membershipStatus = "graduate"
+    const subscriptions = await Subscription.find({
+      "subscriptionDetails.membershipStatus": "graduate",
+      deleted: false,
+      isActive: true,
+    })
+      .select("userId")
+      .lean();
+
+    // Extract unique userIds
+    const userIds = [
+      ...new Set(
+        subscriptions
+          .map((sub) => sub.userId)
+          .filter((id) => id !== null && id !== undefined)
+      ),
+    ];
+
+    if (userIds.length === 0) {
+      return res.success({
+        count: 0,
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+        results: [],
+      });
+    }
+
+    // Find profiles matching these userIds
+    const query = {
+      userId: { $in: userIds },
+    };
+
+    const [profiles, total] = await Promise.all([
+      Profile.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Profile.countDocuments(query),
+    ]);
+
+    return res.success({
+      count: profiles.length,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      results: profiles,
+    });
+  } catch (error) {
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch corn market graduate profiles"
+      )
+    );
+  }
+}
+
 module.exports = {
   getAllProfiles,
   searchProfiles,
   getProfileById,
   updateProfile,
   softDeleteProfile,
+  getMyProfile,
+  getCornMarketNew,
+  getCornMarketGraduate,
 };

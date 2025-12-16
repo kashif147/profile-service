@@ -16,6 +16,7 @@ const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
+const { APPLICATION_STATUS } = require("../constants/enums.js");
 const {
   publishDomainEvent,
   APPLICATION_REVIEW_EVENTS,
@@ -36,6 +37,7 @@ const subAttrs = (s = {}) => ({
   otherScheme: !!s?.otherScheme,
   recuritedBy: s?.recuritedBy ?? null,
   recuritedByMembershipNo: s?.recuritedByMembershipNo ?? null,
+  confirmedRecruiterProfileId: s?.confirmedRecruiterProfileId ?? null,
   primarySection: s?.primarySection ?? null,
   otherPrimarySection: s?.otherPrimarySection ?? null,
   secondarySection: s?.secondarySection ?? null,
@@ -69,6 +71,10 @@ const normalizeSubscription = (subscriptionDetails = {}, professional = {}) => {
     professional?.membershipCategory != null
   ) {
     normalized.membershipCategory = professional.membershipCategory;
+  }
+  // Ensure dateJoined is set - use current date if not provided
+  if (!normalized.dateJoined) {
+    normalized.dateJoined = new Date();
   }
   return normalized;
 };
@@ -138,10 +144,14 @@ async function approveApplication(req, res, next) {
           .json({ error: "CONFLICT", message: "Overlay version conflict" });
       }
       patchToApply = overlay.proposedPatch ?? [];
-    } else if (submission && proposedPatch) {
-      validatePatchPaths(proposedPatch);
-      patchToApply = proposedPatch;
-    } // else impossible due to validator
+    } else if (submission) {
+      // submission provided - proposedPatch is optional (empty array if not provided)
+      if (proposedPatch) {
+        validatePatchPaths(proposedPatch);
+        patchToApply = proposedPatch;
+      }
+      // else patchToApply remains [] (no changes)
+    }
 
     // Apply patch to authoritative submission
     let effective;
@@ -163,6 +173,14 @@ async function approveApplication(req, res, next) {
       effective.subscriptionDetails,
       effective.professionalDetails
     );
+
+    // Log dateJoined for debugging
+    console.log("[approveApplication] dateJoined check:", {
+      beforeNormalize: effective.subscriptionDetails?.dateJoined,
+      afterNormalize: normalizedSubscriptionDetails?.dateJoined,
+      hasDateJoined: !!normalizedSubscriptionDetails?.dateJoined,
+    });
+
     effective = {
       ...effective,
       subscriptionDetails: normalizedSubscriptionDetails,
@@ -182,15 +200,24 @@ async function approveApplication(req, res, next) {
       normalizedEmail,
     }).session(session);
 
+    // Get userId and userType from effective (from submission data)
+    const userId = effective?.userId || null;
+    const userType = effective?.userType || null;
+
     let profile;
     if (existingProfile) {
       // Update existing profile - keep existing membership number
+      const updateFields = { ...flattenedProfileFields };
+
+      // Set userId for portal users when updating existing profile (only if not already set)
+      if (userType === "PORTAL" && userId && !existingProfile.userId) {
+        updateFields.userId = userId;
+      }
+
       await Profile.updateOne(
         { _id: existingProfile._id },
         {
-          $set: {
-            ...flattenedProfileFields,
-          },
+          $set: updateFields,
         },
         { session }
       );
@@ -205,12 +232,17 @@ async function approveApplication(req, res, next) {
       });
 
       // Update Profile with approved data
+      const updateFields = { ...flattenedProfileFields };
+
+      // Ensure userId is set for portal users (preserve if already set during creation)
+      if (userType === "PORTAL" && userId) {
+        updateFields.userId = userId;
+      }
+
       await Profile.updateOne(
         { _id: profile._id },
         {
-          $set: {
-            ...flattenedProfileFields,
-          },
+          $set: updateFields,
         },
         { session }
       );
@@ -242,9 +274,15 @@ async function approveApplication(req, res, next) {
     }
 
     if (effective.subscriptionDetails) {
+      // Ensure dateJoined is set - use from effective or current date
+      const subscriptionDetailsToSave = {
+        ...effective.subscriptionDetails,
+        dateJoined: effective.subscriptionDetails.dateJoined ?? new Date(),
+      };
+
       await SubscriptionDetails.findOneAndUpdate(
         { applicationId: applicationId },
-        { $set: { subscriptionDetails: effective.subscriptionDetails } },
+        { $set: { subscriptionDetails: subscriptionDetailsToSave } },
         { upsert: true, new: true, runValidators: true, session }
       );
       // Do not update Profile.currentSubscriptionId or hasHistory here.
@@ -272,7 +310,9 @@ async function approveApplication(req, res, next) {
           personalInfo: effective.personalInfo,
           contactInfo: effective.contactInfo,
           professionalDetails: effective.professionalDetails,
-          subscriptionDetails: pickSubForContract(effective.subscriptionDetails),
+          subscriptionDetails: pickSubForContract(
+            effective.subscriptionDetails
+          ),
         },
         subscriptionAttributes: subAttrs(effective.subscriptionDetails),
         tenantId,
@@ -306,21 +346,38 @@ async function approveApplication(req, res, next) {
 
     // Publish subscription upsert request for subscription-service
     const sub = effective.subscriptionDetails || {};
+    // Use dateJoined from the current approval (subscription details), fallback to current date
+    // Always use the dateJoined from the approval, not from profile.firstJoinedDate
+    const dateJoined = sub.dateJoined ?? new Date();
+    
+    // Get userId and userEmail from profile for subscription creation
+    const profileWithUser = await Profile.findById(profile._id).session(session);
+    const userIdForSubscription = profileWithUser?.userId 
+      ? String(profileWithUser.userId) 
+      : null;
+    const userEmailForSubscription = effective.contactInfo?.personalEmail 
+      || effective.contactInfo?.workEmail 
+      || null;
+    
     try {
-      await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested({
-        tenantId,
-        profileId: String(profile._id),
-        applicationId,
-        membershipCategory:
-          sub.membershipCategory ??
-          effective.professionalDetails?.membershipCategory ??
-          null,
-        dateJoined: sub.dateJoined ?? null,
-        paymentType: sub.paymentType ?? null,
-        payrollNo: sub.payrollNo ?? null,
-        paymentFrequency: sub.paymentFrequency ?? null,
-        correlationId: crypto.randomUUID(),
-      });
+      await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested(
+        {
+          tenantId,
+          profileId: String(profile._id),
+          applicationId,
+          membershipCategory:
+            sub.membershipCategory ??
+            effective.professionalDetails?.membershipCategory ??
+            null,
+          dateJoined: dateJoined,
+          paymentType: sub.paymentType ?? null,
+          payrollNo: sub.payrollNo ?? null,
+          paymentFrequency: sub.paymentFrequency ?? null,
+          userId: userIdForSubscription,
+          userEmail: userEmailForSubscription,
+          correlationId: crypto.randomUUID(),
+        }
+      );
     } catch (publishError) {
       console.error(
         "[approveApplication] Failed to publish subscription upsert requested event:",
@@ -402,6 +459,24 @@ async function rejectApplication(req, res, next) {
       }
     }
 
+    // Update PersonalDetails with rejection status and details
+    await PersonalDetails.updateOne(
+      { applicationId: applicationId },
+      {
+        $set: {
+          applicationStatus: APPLICATION_STATUS.REJECTED,
+          "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
+          "approvalDetails.approvedAt": new Date(),
+          "approvalDetails.rejectionReason": reason,
+          "approvalDetails.comments": notes ?? null,
+        },
+      },
+      { session }
+    );
+
+    // Note: ProfessionalDetails and SubscriptionDetails are kept as-is (not deleted)
+    // No Profile is created for rejected applications
+
     // Publish rejection event for portal-service
     await publishDomainEvent(
       APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_REJECTED,
@@ -409,6 +484,7 @@ async function rejectApplication(req, res, next) {
         applicationId,
         reviewerId,
         reason,
+        notes,
       },
       { tenantId, correlationId: crypto.randomUUID() }
     );
