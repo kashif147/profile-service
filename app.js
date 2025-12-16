@@ -6,7 +6,7 @@ if (process.env.NODE_ENV === "staging") {
   require("dotenv").config({ path: ".env.development" });
 }
 // Production uses Azure Application Settings
-
+//
 // Suppress Application Insights warnings if not configured
 // Azure App Service auto-injects Application Insights, but warnings appear if key is missing
 if (
