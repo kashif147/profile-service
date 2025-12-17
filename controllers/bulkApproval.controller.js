@@ -373,8 +373,6 @@ async function bulkApproveApplications(req, res, next) {
   }
 
   const results = [];
-  const session = await mongoose.startSession();
-  session.startTransaction();
 
   try {
     // Process each application independently
@@ -416,9 +414,6 @@ async function bulkApproveApplications(req, res, next) {
       }
     }
 
-    // Commit the outer transaction (though each app has its own)
-    await session.commitTransaction();
-
     const successCount = results.filter((r) => r.success).length;
     const failureCount = results.filter((r) => !r.success).length;
 
@@ -430,7 +425,6 @@ async function bulkApproveApplications(req, res, next) {
       results: results,
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error("[bulkApproveApplications] Error:", {
       message: error.message,
       stack: error.stack,
@@ -441,8 +435,6 @@ async function bulkApproveApplications(req, res, next) {
       error: "BULK_APPROVAL_ERROR",
       message: error.message,
     });
-  } finally {
-    session.endSession();
   }
 }
 
