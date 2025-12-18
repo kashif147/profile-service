@@ -246,3 +246,37 @@ module.exports.universal_search_query = Joi.object({
   sortOrder: Joi.string().valid("asc", "desc").optional().default("desc"),
   order: Joi.string().valid("asc", "desc").optional(),
 });
+
+module.exports.profile_update = Joi.object({
+  personalInfo: Joi.object({
+    title: Joi.string().optional().default(null),
+    surname: Joi.string().optional().default(null),
+    forename: Joi.string().optional().default(null),
+    gender: Joi.string().optional().default(null),
+    dateOfBirth: Joi.date().iso().optional().default(null),
+    countryPrimaryQualification: Joi.string().optional().default(null),
+  }).optional(),
+  contactInfo: Joi.object({
+    preferredAddress: Joi.string()
+      .valid(...Object.values(PREFERRED_ADDRESS))
+      .optional()
+      .default(null),
+    eircode: Joi.string().optional().default(null),
+    buildingOrHouse: Joi.string().optional().default(null),
+    streetOrRoad: Joi.string().optional().default(null),
+    areaOrTown: Joi.string().optional().default(null),
+    countyCityOrPostCode: Joi.string().optional().default(null),
+    country: Joi.string().optional().default(null),
+    mobileNumber: Joi.string().optional().default(null),
+    telephoneNumber: Joi.string().optional().allow(null).default(null),
+    preferredEmail: Joi.string()
+      .valid(...Object.values(PREFERRED_EMAIL))
+      .optional()
+      .default(null),
+    personalEmail: Joi.string().optional().default(null),
+    workEmail: Joi.string().optional().default(null),
+  }).optional(),
+  preferences: Joi.object({
+    consent: Joi.boolean().optional().default(true),
+  }).optional(),
+});
