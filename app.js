@@ -73,6 +73,9 @@ const { defaultPolicyMiddleware } = require("./middlewares/policy.middleware");
 
 var app = express();
 
+// Disable ETag generation to prevent 304 responses
+app.set("etag", false);
+
 app.use(responseMiddleware);
 
 mongooseConnection()
