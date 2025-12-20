@@ -115,11 +115,21 @@ function flattenProfilePayload(effective = {}) {
     payload.cornMarket = cornMarket;
   }
 
-	const additionalInformationSource = effective.additionalInformation || {};
-  const additionalInformation = pickSection(
-    additionalInformationSource,
+	// AdditionalInformation can come from either effective.additionalInformation or effective.subscriptionDetails
+	// membershipStatus is typically stored in subscriptionDetails.membershipStatus
+	const additionalInformationFromSource = pickSection(
+    effective.additionalInformation || {},
     additionalInformationKeys
   );
+	const additionalInformationFromSubscription = pickSection(
+    effective.subscriptionDetails || {},
+    additionalInformationKeys
+  );
+	// Merge: subscriptionDetails takes precedence (it's the source of truth)
+	const additionalInformation = { 
+    ...additionalInformationFromSource, 
+    ...additionalInformationFromSubscription 
+  };
   if (hasValues(additionalInformation)) {
     payload.additionalInformation = additionalInformation;
   }
