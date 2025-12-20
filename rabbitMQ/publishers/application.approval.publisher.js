@@ -156,6 +156,7 @@ class ApplicationApprovalEventPublisher {
     paymentFrequency,
     userId,
     userEmail,
+    reviewerId, // CRM user ID for meta.createdBy and meta.updatedBy
     correlationId,
   }) {
     try {
@@ -181,6 +182,7 @@ class ApplicationApprovalEventPublisher {
           paymentFrequency,
           userId: userId || null,
           userEmail: userEmail || null,
+          reviewerId: reviewerId || null, // Pass reviewerId to subscription service
         },
         {
           tenantId,

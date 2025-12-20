@@ -106,8 +106,15 @@ const ProfileSchema = new mongoose.Schema(
         default: null,
       },
     },
+    batchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Batch",
+      default: null,
+      index: true,
+    },
   },
   { timestamps: true, versionKey: "profileVersion" }
 );
 ProfileSchema.index({ tenantId: 1, normalizedEmail: 1 }, { unique: true });
+ProfileSchema.index({ batchId: 1 });
 module.exports = mongoose.model("Profile", ProfileSchema);
