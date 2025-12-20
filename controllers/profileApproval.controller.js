@@ -375,6 +375,7 @@ async function approveApplication(req, res, next) {
           paymentFrequency: sub.paymentFrequency ?? null,
           userId: userIdForSubscription,
           userEmail: userEmailForSubscription,
+          reviewerId: reviewerId, // Pass reviewerId (CRM user ID) for meta fields
           correlationId: crypto.randomUUID(),
         }
       );

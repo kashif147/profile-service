@@ -10,5 +10,6 @@ router.use("/transfer-request", require("./transfer.request.routes"));
 router.use("/corn-market", require("./corn.market.routes"));
 router.use("/recruit-list", require("./recruit.a.friend.routes"));
 router.use("/universal", require("./universal.search.routes"));
+router.use("/batches", require("./batch.routes"));
 
 module.exports = router;

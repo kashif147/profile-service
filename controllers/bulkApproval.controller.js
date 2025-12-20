@@ -84,6 +84,7 @@ async function approveSingleApplication({
   tenantId,
   reviewerId,
   session,
+  bulkDateJoined = null, // Optional dateJoined from bulk approval request
 }) {
   try {
     // First check if application exists in database
@@ -300,7 +301,10 @@ async function approveSingleApplication({
 
     // Publish subscription upsert request
     const sub = effective.subscriptionDetails || {};
-    const dateJoined = sub.dateJoined ?? new Date();
+    // For bulk approval, use bulkDateJoined if provided, otherwise use subscription's dateJoined, fallback to current date
+    const dateJoined = bulkDateJoined 
+      ? (bulkDateJoined instanceof Date ? bulkDateJoined : new Date(bulkDateJoined))
+      : (sub.dateJoined ?? new Date());
     try {
       // Get userId and userEmail from profile for subscription creation
       const profileWithUser = await Profile.findById(profile._id).session(session);
@@ -326,6 +330,7 @@ async function approveSingleApplication({
           paymentFrequency: sub.paymentFrequency ?? null,
           userId: userIdForSubscription,
           userEmail: userEmailForSubscription,
+          reviewerId: reviewerId, // Pass reviewerId (CRM user ID) for meta fields
           correlationId: crypto.randomUUID(),
         }
       );
@@ -353,7 +358,7 @@ async function approveSingleApplication({
 }
 
 async function bulkApproveApplications(req, res, next) {
-  const { applicationIds } = req.body;
+  const { applicationIds, processingDate } = req.body;
   const tenantId = req.tenantId;
   const reviewerId = req.user?.id;
 
@@ -372,6 +377,11 @@ async function bulkApproveApplications(req, res, next) {
     });
   }
 
+  // Parse processingDate if provided (convert string to Date if needed)
+  const bulkDateJoined = processingDate 
+    ? (processingDate instanceof Date ? processingDate : new Date(processingDate))
+    : null;
+
   const results = [];
 
   try {
@@ -389,6 +399,7 @@ async function bulkApproveApplications(req, res, next) {
             tenantId,
             reviewerId,
             session: appSession,
+            bulkDateJoined, // Pass bulkDateJoined to use for all subscriptions
           });
 
           await appSession.commitTransaction();
