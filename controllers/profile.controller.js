@@ -88,10 +88,16 @@ async function searchProfiles(req, res, next) {
       return next(AppError.badRequest("Search query is required"));
     }
 
+    if (searchTerm.length < 3) {
+      return next(
+        AppError.badRequest("Search query must be at least 3 characters")
+      );
+    }
+
     const conditions = [];
     const regex = new RegExp(escapeRegex(searchTerm), "i");
 
-    conditions.push({ membershipNumber: searchTerm });
+    conditions.push({ membershipNumber: regex });
 
     const normalized = normalizeEmail(searchTerm);
     if (normalized) {
@@ -236,9 +242,17 @@ async function updateProfile(req, res, next) {
       const preferences = { ...existingPreferences, ...updates.preferences };
 
       // Check if consent is being explicitly set in the request
-      if ("consent" in updates.preferences && typeof updates.preferences.consent === "boolean") {
+      if (
+        "consent" in updates.preferences &&
+        typeof updates.preferences.consent === "boolean"
+      ) {
         const consentValue = updates.preferences.consent;
-        const consentFields = ["smsConsent", "emailConsent", "postalConsent", "appConsent"];
+        const consentFields = [
+          "smsConsent",
+          "emailConsent",
+          "postalConsent",
+          "appConsent",
+        ];
 
         // Only set individual consent fields if they're not explicitly provided in the request
         for (const field of consentFields) {
@@ -364,7 +378,6 @@ async function getMyProfile(req, res, next) {
   }
 }
 
-
 async function getCornMarketNew(req, res, next) {
   try {
     const { userType } = extractUserAndCreatorContext(req);
@@ -439,7 +452,6 @@ async function getCornMarketNew(req, res, next) {
     );
   }
 }
-
 
 async function getCornMarketGraduate(req, res, next) {
   try {
