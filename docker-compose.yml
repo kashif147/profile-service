@@ -4,6 +4,9 @@ services:
   profile-service:
     container_name: profile-service
     build: .
+    env_file:
+      - /home/deploy/config/.env.common
+      - .env.staging
     ports:
       - "4002:4002"
     restart: always
