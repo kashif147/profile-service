@@ -137,10 +137,18 @@ async function approveSingleApplication({
       effective.professionalDetails
     );
 
+    // For bulk approval, use bulkDateJoined if provided (this will be used for profile.firstJoinedDate)
+    if (bulkDateJoined) {
+      normalizedSubscriptionDetails.dateJoined = bulkDateJoined instanceof Date 
+        ? bulkDateJoined 
+        : new Date(bulkDateJoined);
+    }
+
     // Log dateJoined for debugging (same as single approval)
     console.log(`[bulkApproval] dateJoined check for ${applicationId}:`, {
       beforeNormalize: effective.subscriptionDetails?.dateJoined,
       afterNormalize: normalizedSubscriptionDetails?.dateJoined,
+      bulkDateJoined: bulkDateJoined,
       hasDateJoined: !!normalizedSubscriptionDetails?.dateJoined,
     });
 
