@@ -265,13 +265,13 @@ async function getAllBatches(req, res, next) {
     }));
 
     return res.success({
-      batches: batchesWithCount,
       pagination: {
         page,
         limit,
         total,
         totalPages: Math.ceil(total / limit),
       },
+      batches: batchesWithCount,
     });
   } catch (error) {
     console.error("Error fetching batches:", error);
