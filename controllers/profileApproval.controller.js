@@ -186,67 +186,24 @@ async function approveApplication(req, res, next) {
       subscriptionDetails: normalizedSubscriptionDetails,
     };
 
-    // Flatten payload for profile storage (no embedded objects)
-    const flattenedProfileFields = flattenProfilePayload(effective);
-
     // Find existing profile or create new one
+    // Check if profile exists before calling findOrCreateProfileByEmail to determine isExistingProfile
     const email =
       effective.contactInfo?.personalEmail || effective.contactInfo?.workEmail;
     if (!email) throw new Error("No email found in effective data");
-
     const normalizedEmail = email.toLowerCase();
-    let existingProfile = await Profile.findOne({
+    const existingProfile = await Profile.findOne({
       tenantId,
       normalizedEmail,
     }).session(session);
-
-    // Get userId and userType from effective (from submission data)
-    const userId = effective?.userId || null;
-    const userType = effective?.userType || null;
-
-    let profile;
-    if (existingProfile) {
-      // Update existing profile - keep existing membership number
-      const updateFields = { ...flattenedProfileFields };
-
-      // Set userId for portal users when updating existing profile (only if not already set)
-      if (userType === "PORTAL" && userId && !existingProfile.userId) {
-        updateFields.userId = userId;
-      }
-
-      await Profile.updateOne(
-        { _id: existingProfile._id },
-        {
-          $set: updateFields,
-        },
-        { session }
-      );
-      profile = existingProfile;
-    } else {
-      // Create new profile - will get new membership number
-      profile = await findOrCreateProfileByEmail({
-        tenantId,
-        effective,
-        reviewerId,
-        session,
-      });
-
-      // Update Profile with approved data
-      const updateFields = { ...flattenedProfileFields };
-
-      // Ensure userId is set for portal users (preserve if already set during creation)
-      if (userType === "PORTAL" && userId) {
-        updateFields.userId = userId;
-      }
-
-      await Profile.updateOne(
-        { _id: profile._id },
-        {
-          $set: updateFields,
-        },
-        { session }
-      );
-    }
+    
+    // findOrCreateProfileByEmail handles both creation and update with all necessary fields
+    const profile = await findOrCreateProfileByEmail({
+      tenantId,
+      effective,
+      reviewerId,
+      session,
+    });
 
     // Update main application models with approved data
     if (effective.personalInfo) {
