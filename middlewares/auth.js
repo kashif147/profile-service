@@ -3,11 +3,16 @@ const { AppError } = require("../errors/AppError");
 const { validateGatewayRequest } = require("@membership/policy-middleware/security");
 
 /**
- * Unified JWT Authentication Middleware
- * Handles JWT token verification and sets request context
- *
- * This middleware ONLY verifies JWT tokens and extracts user context.
- * All authorization decisions are made by the user-service PDP.
+ * AUTHENTICATION MIDDLEWARE ONLY
+ * 
+ * This middleware handles authentication (verifying user identity).
+ * It does NOT handle authorization (permission checks).
+ * 
+ * For authorization, use policy-middleware:
+ * const { defaultPolicyMiddleware } = require("../middlewares/policy.middleware");
+ * router.get("/resource", defaultPolicyMiddleware.requirePermission("resource", "action"), handler);
+ * 
+ * All authorization decisions are made by user-service /policy/evaluate endpoint.
  */
 const authenticate = async (req, res, next) => {
   try {
@@ -363,116 +368,15 @@ function hasRole(userRoles, requiredRole) {
 }
 
 /**
- * Role-based Authorization Middleware
- * Requires user to have any of the specified roles
- *
- * Note: This is a simple role check. For complex authorization,
- * use the policy middleware that delegates to user-service PDP.
+ * AUTHORIZATION FUNCTIONS REMOVED
+ * 
+ * requireRole and requirePermission have been removed.
+ * All authorization must be done via policy-middleware to maintain single source of truth.
+ * 
+ * Use policy-middleware for authorization:
+ * const { defaultPolicyMiddleware } = require("../middlewares/policy.middleware");
+ * router.get("/resource", defaultPolicyMiddleware.requirePermission("resource", "action"), handler);
  */
-const requireRole = (requiredRoles) => {
-  return (req, res, next) => {
-    if (!req.ctx || !req.ctx.roles) {
-      const authError = AppError.badRequest("Authentication required", {
-        authError: true,
-        missingRoles: true,
-      });
-      return res.status(authError.status).json({
-        error: {
-          message: authError.message,
-          code: authError.code,
-          status: authError.status,
-          authError: authError.authError,
-          missingRoles: authError.missingRoles,
-        },
-      });
-    }
-
-    // Super User has access to everything
-    if (req.ctx.roles && req.ctx.roles.includes("SU")) {
-      return next();
-    }
-
-    const hasRequiredRole = hasAnyRole(req.ctx.roles, requiredRoles);
-
-    if (!hasRequiredRole) {
-      const forbiddenError = AppError.badRequest("Insufficient permissions", {
-        forbidden: true,
-        userRoles: req.ctx.roles,
-        requiredRoles: requiredRoles,
-      });
-      return res.status(forbiddenError.status).json({
-        error: {
-          message: forbiddenError.message,
-          code: forbiddenError.code,
-          status: forbiddenError.status,
-          forbidden: forbiddenError.forbidden,
-          userRoles: forbiddenError.userRoles,
-          requiredRoles: forbiddenError.requiredRoles,
-        },
-      });
-    }
-
-    next();
-  };
-};
-
-/**
- * Permission-based Authorization Middleware
- * Requires user to have any of the specified permissions
- *
- * Note: This is a simple permission check. For complex authorization,
- * use the policy middleware that delegates to user-service PDP.
- */
-const requirePermission = (requiredPermissions) => {
-  return (req, res, next) => {
-    if (!req.ctx || !req.ctx.permissions) {
-      const authError = AppError.badRequest("Authentication required", {
-        authError: true,
-        missingPermissions: true,
-      });
-      return res.status(authError.status).json({
-        error: {
-          message: authError.message,
-          code: authError.code,
-          status: authError.status,
-          authError: authError.authError,
-          missingPermissions: authError.missingPermissions,
-        },
-      });
-    }
-
-    // Super User has all permissions
-    if (req.ctx.roles && req.ctx.roles.includes("SU")) {
-      return next();
-    }
-
-    const hasRequiredPermission = requiredPermissions.some(
-      (permission) =>
-        req.ctx.permissions.includes(permission) ||
-        req.ctx.permissions.includes("*")
-    );
-
-    if (!hasRequiredPermission) {
-      const forbiddenError = AppError.badRequest("Insufficient permissions", {
-        forbidden: true,
-        userPermissions: req.ctx.permissions,
-        requiredPermissions: requiredPermissions,
-      });
-      return res.status(forbiddenError.status).json({
-        error: {
-          message: forbiddenError.message,
-          code: forbiddenError.code,
-          status: forbiddenError.status,
-          forbidden: forbiddenError.forbidden,
-          userPermissions: forbiddenError.userPermissions,
-          requiredPermissions: forbiddenError.requiredPermissions,
-        },
-      });
-    }
-
-    next();
-  };
-};
 
 /**
  * Tenant Enforcement Middleware
@@ -513,16 +417,14 @@ const addTenantMatch = (tenantId) => {
 
 // Export all middleware functions
 module.exports = {
-  // Core authentication
+  // Core authentication ONLY - no authorization logic here
   authenticate,
   ensureAuthenticated: authenticate, // Alias for backward compatibility
 
-  // Authorization middleware (simple checks only)
-  requireRole,
-  requirePermission,
+  // Tenant enforcement (authentication context, not authorization)
   requireTenant,
 
-  // Utility functions
+  // Utility functions (for backward compatibility, but prefer policy-middleware)
   hasRole,
   hasAnyRole,
 
