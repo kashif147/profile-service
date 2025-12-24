@@ -73,10 +73,7 @@ exports.getSubscriptionDetails = async (req, res, next) => {
       );
     
     if (!subscriptionDetails) {
-      return res.status(200).json({
-        data: null,
-        message: "Not found"
-      });
+      return res.notFoundRecord("Subscription details not found");
     }
     
     return res.success(subscriptionDetails);
@@ -85,11 +82,11 @@ exports.getSubscriptionDetails = async (req, res, next) => {
       "SubscriptionDetailsController [getSubscriptionDetails] Error:",
       error
     );
+    if (error.message === "Application not found") {
+      return next(AppError.notFound("Application not found"));
+    }
     if (error.message === "Subscription details not found") {
-      return res.status(200).json({
-        data: null,
-        message: "Not found"
-      });
+      return res.notFoundRecord("Subscription details not found");
     }
     return next(error);
   }
@@ -128,7 +125,7 @@ exports.updateSubscriptionDetails = async (req, res, next) => {
       return next(AppError.badRequest("Validation error: " + error.message));
     }
     if (error.message === "Subscription details not found") {
-      return next(AppError.notFound("Subscription details not found"));
+      return res.notFoundRecord("Subscription details not found");
     }
     return next(error);
   }
@@ -156,7 +153,7 @@ exports.deleteSubscriptionDetails = async (req, res, next) => {
       error
     );
     if (error.message === "Subscription details not found") {
-      return next(AppError.notFound("Subscription details not found"));
+      return res.notFoundRecord("Subscription details not found");
     }
     return next(error);
   }

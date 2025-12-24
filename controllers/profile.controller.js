@@ -210,7 +210,7 @@ async function updateProfile(req, res, next) {
     });
 
     if (!profile) {
-      return next(AppError.notFound("Profile not found"));
+      return res.notFoundRecord("Profile not found");
     }
 
     // Prevent tenant updates
@@ -302,7 +302,7 @@ async function softDeleteProfile(req, res, next) {
     });
 
     if (!profile) {
-      return next(AppError.notFound("Profile not found"));
+      return res.notFoundRecord("Profile not found");
     }
 
     profile.isActive = false;

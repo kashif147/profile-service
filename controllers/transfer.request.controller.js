@@ -49,7 +49,7 @@ exports.submitTransferRequest = async (req, res, next) => {
     console.log("User ID:---------------------------------  ", userId);
 
     if (!profile) {
-      return next(AppError.notFound("Profile not found for this user"));
+      return res.notFoundRecord("Profile not found for this user");
     }
 
     // Check if there's already a pending request
@@ -374,9 +374,7 @@ exports.reviewTransferRequest = async (req, res, next) => {
     });
 
     if (!transferRequest) {
-      return next(
-        AppError.notFound("Transfer request not found or already processed")
-      );
+      return res.notFoundRecord("Transfer request not found or already processed");
     }
 
     const isApprove = action.toUpperCase() === "APPROVE";

@@ -132,10 +132,7 @@ exports.getPersonalDetails = async (req, res, next) => {
     );
 
     if (!personalDetails) {
-      return res.status(200).json({
-        data: null,
-        message: "Not found"
-      });
+      return res.notFoundRecord("Personal details not found");
     }
 
     console.log("=== getPersonalDetails SUCCESS ===");
@@ -147,10 +144,7 @@ exports.getPersonalDetails = async (req, res, next) => {
     );
     console.error("Error stack:", error.stack);
     if (error.message === "Personal details not found") {
-      return res.status(200).json({
-        data: null,
-        message: "Not found"
-      });
+      return res.notFoundRecord("Personal details not found");
     }
     return next(error);
   }
@@ -192,7 +186,7 @@ exports.updatePersonalDetails = async (req, res, next) => {
     } catch (err) {
       // Cleanly map specific business errors to AppError
       if (err.message && err.message === 'Personal details not found') {
-        return next(AppError.notFound('Personal details not found'));
+        return res.notFoundRecord("Personal details not found");
       } else if (err.name === 'ValidationError') {
         return next(AppError.badRequest('Mongoose model validation error: ' + err.message));
       } else if (err.code === 'PERMISSION_DENIED') {
@@ -233,7 +227,7 @@ exports.deletePersonalDetails = async (req, res, next) => {
       error
     );
     if (error.message === "Personal details not found") {
-      return next(AppError.notFound("Personal details not found"));
+      return res.notFoundRecord("Personal details not found");
     }
     return next(error);
   }
@@ -266,10 +260,7 @@ exports.getMyPersonalDetails = async (req, res, next) => {
 
     if (!personalDetails) {
       console.log("No personal details found for user:", userId);
-      return res.status(200).json({
-        data: null,
-        message: "Not found"
-      });
+      return res.notFoundRecord("Personal details not found");
     }
 
       console.log("=== getMyPersonalDetails SUCCESS ===");
@@ -277,11 +268,7 @@ exports.getMyPersonalDetails = async (req, res, next) => {
     } else if (userType === "CRM") {
       // CRM users don't have userId - return not found instead of blocking
       console.log("CRM user called getMyPersonalDetails - no userId available");
-      return next(
-        AppError.notFound(
-          "Personal details not found. CRM users should use GET /api/personal-details/:applicationId endpoint"
-        )
-      );
+      return res.notFoundRecord("Personal details not found");
     } else {
       return next(
         AppError.badRequest(
@@ -298,10 +285,7 @@ exports.getMyPersonalDetails = async (req, res, next) => {
     );
     console.error("Error stack:", error.stack);
     if (error.message === "Personal details not found") {
-      return res.status(200).json({
-        data: null,
-        message: "Not found"
-      });
+      return res.notFoundRecord("Personal details not found");
     }
     return next(error);
   }
@@ -329,10 +313,7 @@ exports.getApplicationStatus = async (req, res, next) => {
       error
     );
     if (error.message === "Personal details not found") {
-      return res.status(200).json({
-        data: null,
-        message: "Not found"
-      });
+      return res.notFoundRecord("Personal details not found");
     }
     return next(error);
   }

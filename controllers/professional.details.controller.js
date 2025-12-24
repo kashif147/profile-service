@@ -83,10 +83,7 @@ exports.getProfessionalDetails = async (req, res, next) => {
       );
     
     if (!professionalDetails) {
-      return res.status(200).json({
-        data: null,
-        message: "Not found"
-      });
+      return res.notFoundRecord("Professional details not found");
     }
     
     return res.success(professionalDetails);
@@ -95,11 +92,11 @@ exports.getProfessionalDetails = async (req, res, next) => {
       "ProfessionalDetailsController [getProfessionalDetails] Error:",
       error
     );
+    if (error.message === "Application not found") {
+      return next(AppError.notFound("Application not found"));
+    }
     if (error.message === "Professional details not found") {
-      return res.status(200).json({
-        data: null,
-        message: "Not found"
-      });
+      return res.notFoundRecord("Professional details not found");
     }
     return next(error);
   }
@@ -138,7 +135,7 @@ exports.updateProfessionalDetails = async (req, res, next) => {
       return next(AppError.badRequest("Validation error: " + error.message));
     }
     if (error.message === "Professional details not found") {
-      return next(AppError.notFound("Professional details not found"));
+      return res.notFoundRecord("Professional details not found");
     }
     return next(error);
   }
@@ -166,7 +163,7 @@ exports.deleteProfessionalDetails = async (req, res, next) => {
       error
     );
     if (error.message === "Professional details not found") {
-      return next(AppError.notFound("Professional details not found"));
+      return res.notFoundRecord("Professional details not found");
     }
     return next(error);
   }
@@ -186,19 +183,13 @@ exports.getMyProfessionalDetails = async (req, res, next) => {
         await professionalDetailsService.getMyProfessionalDetails(userId);
 
       if (!professionalDetails) {
-        return res.status(200).json({
-          data: null,
-          message: "Not found"
-        });
+        return res.notFoundRecord("Professional details not found");
       }
 
       return res.success(professionalDetails);
     } else if (userType === "CRM") {
       // CRM users don't have userId - return not found instead of blocking
-      return res.status(200).json({
-        data: null,
-        message: "Not found"
-      });
+      return res.notFoundRecord("Professional details not found");
     } else {
       return next(
         AppError.badRequest(
@@ -214,7 +205,7 @@ exports.getMyProfessionalDetails = async (req, res, next) => {
       error
     );
     if (error.message === "Professional details not found") {
-      return next(AppError.notFound("Professional details not found"));
+      return res.notFoundRecord("Professional details not found");
     }
     return next(error);
   }

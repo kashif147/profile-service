@@ -81,7 +81,20 @@ class ProfessionalDetailsService {
         throw AppError.badRequest("Application ID is required");
       }
 
+      // Validate parent resource: check if application exists
+      const personalDetails = await personalDetailsHandler.getApplicationById(
+        applicationId
+      );
+      if (!personalDetails) {
+        throw AppError.notFound("Application not found");
+      }
+
       const professionalDetails = await professionalDetailsHandler.getApplicationById(applicationId);
+      
+      // If application exists but professional details don't, return null (will be handled as 200 OK with null)
+      if (!professionalDetails) {
+        return null;
+      }
       
       // Validate user permissions for PORTAL users
       if (userType !== "CRM") {
