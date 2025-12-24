@@ -28,7 +28,10 @@ class UniversalSearchService {
 
     if (pageType === "profile") {
       // Profile search conditions
-      conditions.push({ membershipNumber: searchTerm });
+      // Membership number: partial match with minimum 3 characters
+      if (searchTerm.length >= 3) {
+        conditions.push({ membershipNumber: regex });
+      }
       
       if (normalized) {
         conditions.push({ normalizedEmail: normalized });
