@@ -124,8 +124,8 @@ async function createBatch(req, res, next) {
       return next(AppError.badRequest("Batch name is required"));
     }
 
-    if (!type || !["new", "graduate"].includes(type)) {
-      return next(AppError.badRequest("Type must be either 'new' or 'graduate'"));
+    if (!type || !["new", "graduate", "recruitAFriend"].includes(type)) {
+      return next(AppError.badRequest("Type must be either 'new', 'graduate', or 'recruitAFriend'"));
     }
 
     if (!date) {
@@ -138,19 +138,22 @@ async function createBatch(req, res, next) {
 
     // Build query based on type
     let query = {
-      "preferences.valueAddedServices": true,
       batchId: null, // Only profiles not in any batch
     };
 
     if (type === "new") {
+      query["preferences.valueAddedServices"] = true;
       query["additionalInformation.membershipStatus"] = "new";
       query["cornMarket.inmoRewards"] = true;
     } else if (type === "graduate") {
+      query["preferences.valueAddedServices"] = true;
       query["additionalInformation.membershipStatus"] = "graduate";
       query.$or = [
         { "cornMarket.incomeProtectionScheme": true },
         { "cornMarket.exclusiveDiscountsAndOffers": true },
       ];
+    } else if (type === "recruitAFriend") {
+      query["recruitmentDetails.confirmedRecruiterProfileId"] = { $ne: null };
     }
 
     // Find matching profiles with all needed fields
@@ -491,19 +494,22 @@ async function refreshBatch(req, res, next) {
 
     // Build query based on batch type
     let query = {
-      "preferences.valueAddedServices": true,
       batchId: null, // Only profiles not in any batch
     };
 
     if (batch.type === "new") {
+      query["preferences.valueAddedServices"] = true;
       query["additionalInformation.membershipStatus"] = "new";
       query["cornMarket.inmoRewards"] = true;
     } else if (batch.type === "graduate") {
+      query["preferences.valueAddedServices"] = true;
       query["additionalInformation.membershipStatus"] = "graduate";
       query.$or = [
         { "cornMarket.incomeProtectionScheme": true },
         { "cornMarket.exclusiveDiscountsAndOffers": true },
       ];
+    } else if (batch.type === "recruitAFriend") {
+      query["recruitmentDetails.confirmedRecruiterProfileId"] = { $ne: null };
     }
 
     // Find matching profiles with all needed fields
