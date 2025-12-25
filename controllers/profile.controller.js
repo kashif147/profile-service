@@ -155,9 +155,10 @@ async function searchProfiles(req, res, next) {
     const conditions = [];
     const regex = new RegExp(escapeRegex(searchTerm), "i");
 
-    // Membership number: partial match with minimum 3 characters
+    // Membership number: match from first 3 characters (starts with)
     if (searchTerm.length >= 3) {
-      conditions.push({ membershipNumber: regex });
+      const membershipNumberRegex = new RegExp(`^${escapeRegex(searchTerm)}`, "i");
+      conditions.push({ membershipNumber: membershipNumberRegex });
     }
 
     const normalized = normalizeEmail(searchTerm);
