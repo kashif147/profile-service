@@ -36,6 +36,8 @@ async function initEventSystem() {
       url: process.env.RABBIT_URL,
       logger: console,
       prefetch: 10,
+      connectionName: "profile-service",
+      serviceName: "profile-service",
     });
     console.log("✅ Event system initialized with middleware");
   } catch (error) {
