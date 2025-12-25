@@ -96,12 +96,7 @@ module.exports.errorHandler = (error, req, res, next) => {
   }
 
   // Default server error
-  console.error(`ERROR: [${req.method}-${req.url}]`, error);
-  console.error("Error message:", error.message);
-  console.error("Error stack:", error.stack);
-  if (error.name) {
-    console.error("Error name:", error.name);
-  }
+  console.log(`ERROR: [${req.method}-${req.url}] ${error}`);
   res.status(500).json({
     success: false,
     error: {

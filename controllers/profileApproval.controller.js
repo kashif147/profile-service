@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 const jsonPatch = require("fast-json-patch");
 const { applyPatch } = jsonPatch;
+const { AppError } = require("../errors/AppError");
 
 // Helper function to handle bypass user ObjectId conversion
 function getReviewerIdForDb(reviewerId) {
@@ -135,13 +136,11 @@ async function approveApplication(req, res, next) {
       }).session(session);
       if (!overlay) {
         await session.abortTransaction();
-        return res.status(404).json({ error: "OVERLAY_NOT_FOUND" });
+        return next(AppError.notFound("Overlay not found"));
       }
       if (overlay.overlayVersion !== overlayVersion) {
         await session.abortTransaction();
-        return res
-          .status(409)
-          .json({ error: "CONFLICT", message: "Overlay version conflict" });
+        return next(AppError.conflict("Overlay version conflict"));
       }
       patchToApply = overlay.proposedPatch ?? [];
     } else if (submission) {
@@ -163,10 +162,7 @@ async function approveApplication(req, res, next) {
       ).newDocument;
     } catch {
       await session.abortTransaction();
-      return res.status(409).json({
-        error: "STALE_SUBMISSION",
-        message: "Submission changed; refresh and reapply changes.",
-      });
+      return next(AppError.conflict("Submission changed; refresh and reapply changes."));
     }
 
     const normalizedSubscriptionDetails = normalizeSubscription(
@@ -392,13 +388,11 @@ async function rejectApplication(req, res, next) {
       }).session(session);
       if (!overlay) {
         await session.abortTransaction();
-        return res.status(404).json({ error: "OVERLAY_NOT_FOUND" });
+        return next(AppError.notFound("Overlay not found"));
       }
       if (overlay.overlayVersion !== overlayVersion) {
         await session.abortTransaction();
-        return res
-          .status(409)
-          .json({ error: "CONFLICT", message: "Overlay version conflict" });
+        return next(AppError.conflict("Overlay version conflict"));
       }
       overlay.status = "decided";
       overlay.decision = "rejected";

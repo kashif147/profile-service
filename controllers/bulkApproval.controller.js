@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 const jsonPatch = require("fast-json-patch");
 const { applyPatch } = jsonPatch;
+const { AppError } = require("../errors/AppError");
 
 // Helper function to handle bypass user ObjectId conversion
 function getReviewerIdForDb(reviewerId) {
@@ -372,18 +373,12 @@ async function bulkApproveApplications(req, res, next) {
   const reviewerId = req.user?.id;
 
   if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
-    return res.status(400).json({
-      error: "INVALID_REQUEST",
-      message: "applicationIds must be a non-empty array",
-    });
+    return next(AppError.badRequest("applicationIds must be a non-empty array"));
   }
 
   // Limit batch size
   if (applicationIds.length > 1000) {
-    return res.status(400).json({
-      error: "BATCH_SIZE_EXCEEDED",
-      message: "Maximum 1000 applications can be approved at once",
-    });
+    return next(AppError.badRequest("Maximum 1000 applications can be approved at once"));
   }
 
   // Parse processingDate if provided (convert string to Date if needed)
@@ -453,10 +448,7 @@ async function bulkApproveApplications(req, res, next) {
       tenantId,
       reviewerId,
     });
-    return res.status(500).json({
-      error: "BULK_APPROVAL_ERROR",
-      message: error.message,
-    });
+    return next(error);
   }
 }
 
