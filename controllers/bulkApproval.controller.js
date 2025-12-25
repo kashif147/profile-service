@@ -84,6 +84,7 @@ async function approveSingleApplication({
   tenantId,
   reviewerId,
   session,
+  bulkDateJoined = null, // Optional dateJoined from bulk approval request
 }) {
   try {
     // First check if application exists in database
@@ -100,7 +101,9 @@ async function approveSingleApplication({
       };
     }
 
-    const { submission: serverSubmission } = await loadSubmission(applicationId);
+    const { submission: serverSubmission } = await loadSubmission(
+      applicationId
+    );
 
     // Determine patch source - same logic as single approval
     // For bulk approval, we check for open overlay first, then use submission as-is
@@ -268,7 +271,9 @@ async function approveSingleApplication({
           personalInfo: effective.personalInfo,
           contactInfo: effective.contactInfo,
           professionalDetails: effective.professionalDetails,
-          subscriptionDetails: pickSubForContract(effective.subscriptionDetails),
+          subscriptionDetails: pickSubForContract(
+            effective.subscriptionDetails
+          ),
         },
         subscriptionAttributes: subAttrs(effective.subscriptionDetails),
         tenantId,
@@ -300,17 +305,25 @@ async function approveSingleApplication({
 
     // Publish subscription upsert request
     const sub = effective.subscriptionDetails || {};
-    const dateJoined = sub.dateJoined ?? new Date();
+    // For bulk approval, use bulkDateJoined if provided, otherwise use subscription's dateJoined, fallback to current date
+    const dateJoined = bulkDateJoined
+      ? bulkDateJoined instanceof Date
+        ? bulkDateJoined
+        : new Date(bulkDateJoined)
+      : sub.dateJoined ?? new Date();
     try {
       // Get userId and userEmail from profile for subscription creation
-      const profileWithUser = await Profile.findById(profile._id).session(session);
-      const userIdForSubscription = profileWithUser?.userId 
-        ? String(profileWithUser.userId) 
+      const profileWithUser = await Profile.findById(profile._id).session(
+        session
+      );
+      const userIdForSubscription = profileWithUser?.userId
+        ? String(profileWithUser.userId)
         : null;
-      const userEmailForSubscription = effective.contactInfo?.personalEmail 
-        || effective.contactInfo?.workEmail 
-        || null;
-      
+      const userEmailForSubscription =
+        effective.contactInfo?.personalEmail ||
+        effective.contactInfo?.workEmail ||
+        null;
+
       await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested(
         {
           tenantId,
@@ -326,6 +339,7 @@ async function approveSingleApplication({
           paymentFrequency: sub.paymentFrequency ?? null,
           userId: userIdForSubscription,
           userEmail: userEmailForSubscription,
+          reviewerId: reviewerId, // Pass reviewerId (CRM user ID) for meta fields
           correlationId: crypto.randomUUID(),
         }
       );
@@ -353,7 +367,7 @@ async function approveSingleApplication({
 }
 
 async function bulkApproveApplications(req, res, next) {
-  const { applicationIds } = req.body;
+  const { applicationIds, processingDate } = req.body;
   const tenantId = req.tenantId;
   const reviewerId = req.user?.id;
 
@@ -372,9 +386,14 @@ async function bulkApproveApplications(req, res, next) {
     });
   }
 
+  // Parse processingDate if provided (convert string to Date if needed)
+  const bulkDateJoined = processingDate
+    ? processingDate instanceof Date
+      ? processingDate
+      : new Date(processingDate)
+    : null;
+
   const results = [];
-  const session = await mongoose.startSession();
-  session.startTransaction();
 
   try {
     // Process each application independently
@@ -391,6 +410,7 @@ async function bulkApproveApplications(req, res, next) {
             tenantId,
             reviewerId,
             session: appSession,
+            bulkDateJoined, // Pass bulkDateJoined to use for all subscriptions
           });
 
           await appSession.commitTransaction();
@@ -416,9 +436,6 @@ async function bulkApproveApplications(req, res, next) {
       }
     }
 
-    // Commit the outer transaction (though each app has its own)
-    await session.commitTransaction();
-
     const successCount = results.filter((r) => r.success).length;
     const failureCount = results.filter((r) => !r.success).length;
 
@@ -430,7 +447,6 @@ async function bulkApproveApplications(req, res, next) {
       results: results,
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error("[bulkApproveApplications] Error:", {
       message: error.message,
       stack: error.stack,
@@ -441,8 +457,6 @@ async function bulkApproveApplications(req, res, next) {
       error: "BULK_APPROVAL_ERROR",
       message: error.message,
     });
-  } finally {
-    session.endSession();
   }
 }
 

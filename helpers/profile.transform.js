@@ -73,7 +73,11 @@ const additionalInformationKeys = [
   "otherScheme",
 ];
 
-const recruitmentKeys = ["recuritedBy", "recuritedByMembershipNo", "confirmedRecruiterProfileId"];
+const recruitmentKeys = [
+  "recuritedBy",
+  "recuritedByMembershipNo",
+  "confirmedRecruiterProfileId",
+];
 
 function pickSection(source = {}, keys = []) {
   const section = {};
@@ -115,19 +119,38 @@ function flattenProfilePayload(effective = {}) {
     payload.cornMarket = cornMarket;
   }
 
-	const additionalInformationSource = effective.additionalInformation || {};
-  const additionalInformation = pickSection(
-    additionalInformationSource,
+  // AdditionalInformation can come from either effective.additionalInformation or effective.subscriptionDetails
+  // membershipStatus is typically stored in subscriptionDetails.membershipStatus
+  const additionalInformationFromSource = pickSection(
+    effective.additionalInformation || {},
     additionalInformationKeys
   );
+  const additionalInformationFromSubscription = pickSection(
+    effective.subscriptionDetails || {},
+    additionalInformationKeys
+  );
+  // Merge: subscriptionDetails takes precedence (it's the source of truth)
+  const additionalInformation = {
+    ...additionalInformationFromSource,
+    ...additionalInformationFromSubscription,
+  };
   if (hasValues(additionalInformation)) {
     payload.additionalInformation = additionalInformation;
   }
 
-	// Recruitment details can come from either effective.recruitmentDetails or effective.subscriptionDetails
-	const recruitmentFromDetails = pickSection(effective.recruitmentDetails || {}, recruitmentKeys);
-	const recruitmentFromSubscription = pickSection(effective.subscriptionDetails || {}, recruitmentKeys);
-	const recruitmentDetails = { ...recruitmentFromDetails, ...recruitmentFromSubscription };
+  // Recruitment details can come from either effective.recruitmentDetails or effective.subscriptionDetails
+  const recruitmentFromDetails = pickSection(
+    effective.recruitmentDetails || {},
+    recruitmentKeys
+  );
+  const recruitmentFromSubscription = pickSection(
+    effective.subscriptionDetails || {},
+    recruitmentKeys
+  );
+  const recruitmentDetails = {
+    ...recruitmentFromDetails,
+    ...recruitmentFromSubscription,
+  };
   if (hasValues(recruitmentDetails)) {
     payload.recruitmentDetails = recruitmentDetails;
   }

@@ -1,5 +1,11 @@
 const Joi = require("joi");
-const { APPLICATION_STATUS, PREFERRED_ADDRESS, PREFERRED_EMAIL, PAYMENT_TYPE, PAYMENT_FREQUENCY } = require("../constants/enums");
+const {
+  APPLICATION_STATUS,
+  PREFERRED_ADDRESS,
+  PREFERRED_EMAIL,
+  PAYMENT_TYPE,
+  PAYMENT_FREQUENCY,
+} = require("../constants/enums");
 
 module.exports.personal_details_create = Joi.object({
   personalInfo: Joi.object({
@@ -73,12 +79,19 @@ module.exports.personal_details_update = Joi.object({
 
 module.exports.application_status_query = Joi.object({
   type: Joi.alternatives()
-    .try(Joi.string().valid(...Object.values(APPLICATION_STATUS)), Joi.array().items(Joi.string().valid(...Object.values(APPLICATION_STATUS))))
+    .try(
+      Joi.string().valid(...Object.values(APPLICATION_STATUS)),
+      Joi.array().items(
+        Joi.string().valid(...Object.values(APPLICATION_STATUS))
+      )
+    )
     .optional(),
 });
 
 module.exports.application_approve = Joi.object({
-  applicationStatus: Joi.string().valid(APPLICATION_STATUS.APPROVED, APPLICATION_STATUS.REJECTED).required(),
+  applicationStatus: Joi.string()
+    .valid(APPLICATION_STATUS.APPROVED, APPLICATION_STATUS.REJECTED)
+    .required(),
   comments: Joi.string().optional(),
 });
 //
@@ -204,13 +217,17 @@ module.exports.universal_search_query = Joi.object({
   applicationStatus: Joi.alternatives()
     .try(
       Joi.string().valid(...Object.values(APPLICATION_STATUS)),
-      Joi.array().items(Joi.string().valid(...Object.values(APPLICATION_STATUS)))
+      Joi.array().items(
+        Joi.string().valid(...Object.values(APPLICATION_STATUS))
+      )
     )
     .optional(),
   status: Joi.alternatives()
     .try(
       Joi.string().valid(...Object.values(APPLICATION_STATUS)),
-      Joi.array().items(Joi.string().valid(...Object.values(APPLICATION_STATUS)))
+      Joi.array().items(
+        Joi.string().valid(...Object.values(APPLICATION_STATUS))
+      )
     )
     .optional(),
   // Membership Category
@@ -225,18 +242,34 @@ module.exports.universal_search_query = Joi.object({
   updatedAtFrom: Joi.date().iso().optional(),
   updatedAtTo: Joi.date().iso().optional(),
   // Professional details filters
-  grade: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
-  primarySection: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
-  section: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
-  workLocation: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
-  branch: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
-  region: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).optional(),
+  grade: Joi.alternatives()
+    .try(Joi.string(), Joi.array().items(Joi.string()))
+    .optional(),
+  primarySection: Joi.alternatives()
+    .try(Joi.string(), Joi.array().items(Joi.string()))
+    .optional(),
+  section: Joi.alternatives()
+    .try(Joi.string(), Joi.array().items(Joi.string()))
+    .optional(),
+  workLocation: Joi.alternatives()
+    .try(Joi.string(), Joi.array().items(Joi.string()))
+    .optional(),
+  branch: Joi.alternatives()
+    .try(Joi.string(), Joi.array().items(Joi.string()))
+    .optional(),
+  region: Joi.alternatives()
+    .try(Joi.string(), Joi.array().items(Joi.string()))
+    .optional(),
   // Contact filters
   mobileNo: Joi.string().optional().allow(""),
   mobileNumber: Joi.string().optional().allow(""),
   // Status filters
-  isActive: Joi.alternatives().try(Joi.boolean(), Joi.string().valid("true", "false")).optional(),
-  deleted: Joi.alternatives().try(Joi.boolean(), Joi.string().valid("true", "false")).optional(),
+  isActive: Joi.alternatives()
+    .try(Joi.boolean(), Joi.string().valid("true", "false"))
+    .optional(),
+  deleted: Joi.alternatives()
+    .try(Joi.boolean(), Joi.string().valid("true", "false"))
+    .optional(),
   // Pagination
   pageNum: Joi.number().integer().min(1).optional().default(1),
   pageNumber: Joi.number().integer().min(1).optional().default(1),
@@ -245,4 +278,38 @@ module.exports.universal_search_query = Joi.object({
   sortBy: Joi.string().optional().default("updatedAt"),
   sortOrder: Joi.string().valid("asc", "desc").optional().default("desc"),
   order: Joi.string().valid("asc", "desc").optional(),
+});
+
+module.exports.profile_update = Joi.object({
+  personalInfo: Joi.object({
+    title: Joi.string().optional().default(null),
+    surname: Joi.string().optional().default(null),
+    forename: Joi.string().optional().default(null),
+    gender: Joi.string().optional().default(null),
+    dateOfBirth: Joi.date().iso().optional().default(null),
+    countryPrimaryQualification: Joi.string().optional().default(null),
+  }).optional(),
+  contactInfo: Joi.object({
+    preferredAddress: Joi.string()
+      .valid(...Object.values(PREFERRED_ADDRESS))
+      .optional()
+      .default(null),
+    eircode: Joi.string().optional().default(null),
+    buildingOrHouse: Joi.string().optional().default(null),
+    streetOrRoad: Joi.string().optional().default(null),
+    areaOrTown: Joi.string().optional().default(null),
+    countyCityOrPostCode: Joi.string().optional().default(null),
+    country: Joi.string().optional().default(null),
+    mobileNumber: Joi.string().optional().default(null),
+    telephoneNumber: Joi.string().optional().allow(null).default(null),
+    preferredEmail: Joi.string()
+      .valid(...Object.values(PREFERRED_EMAIL))
+      .optional()
+      .default(null),
+    personalEmail: Joi.string().optional().default(null),
+    workEmail: Joi.string().optional().default(null),
+  }).optional(),
+  preferences: Joi.object({
+    consent: Joi.boolean().optional().default(true),
+  }).optional(),
 });

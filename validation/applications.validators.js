@@ -131,12 +131,15 @@ const RejectBody = z
     }
   });
 
-// Bulk approval: array of application IDs
+// Bulk approval: array of application IDs and optional processingDate for all subscriptions
 const BulkApprovalBody = z.object({
   applicationIds: z
     .array(z.string().min(1))
     .min(1, { message: "At least one application ID is required" })
-    .max(1000, { message: "Maximum 1000 applications can be approved at once" }),
+    .max(1000, {
+      message: "Maximum 1000 applications can be approved at once",
+    }),
+  processingDate: z.union([z.string(), z.date()]).optional(), // Optional processingDate for all subscriptions in bulk approval
 });
 
 module.exports = {

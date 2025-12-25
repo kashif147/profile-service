@@ -186,67 +186,24 @@ async function approveApplication(req, res, next) {
       subscriptionDetails: normalizedSubscriptionDetails,
     };
 
-    // Flatten payload for profile storage (no embedded objects)
-    const flattenedProfileFields = flattenProfilePayload(effective);
-
     // Find existing profile or create new one
+    // Check if profile exists before calling findOrCreateProfileByEmail to determine isExistingProfile
     const email =
       effective.contactInfo?.personalEmail || effective.contactInfo?.workEmail;
     if (!email) throw new Error("No email found in effective data");
-
     const normalizedEmail = email.toLowerCase();
-    let existingProfile = await Profile.findOne({
+    const existingProfile = await Profile.findOne({
       tenantId,
       normalizedEmail,
     }).session(session);
 
-    // Get userId and userType from effective (from submission data)
-    const userId = effective?.userId || null;
-    const userType = effective?.userType || null;
-
-    let profile;
-    if (existingProfile) {
-      // Update existing profile - keep existing membership number
-      const updateFields = { ...flattenedProfileFields };
-
-      // Set userId for portal users when updating existing profile (only if not already set)
-      if (userType === "PORTAL" && userId && !existingProfile.userId) {
-        updateFields.userId = userId;
-      }
-
-      await Profile.updateOne(
-        { _id: existingProfile._id },
-        {
-          $set: updateFields,
-        },
-        { session }
-      );
-      profile = existingProfile;
-    } else {
-      // Create new profile - will get new membership number
-      profile = await findOrCreateProfileByEmail({
-        tenantId,
-        effective,
-        reviewerId,
-        session,
-      });
-
-      // Update Profile with approved data
-      const updateFields = { ...flattenedProfileFields };
-
-      // Ensure userId is set for portal users (preserve if already set during creation)
-      if (userType === "PORTAL" && userId) {
-        updateFields.userId = userId;
-      }
-
-      await Profile.updateOne(
-        { _id: profile._id },
-        {
-          $set: updateFields,
-        },
-        { session }
-      );
-    }
+    // findOrCreateProfileByEmail handles both creation and update with all necessary fields
+    const profile = await findOrCreateProfileByEmail({
+      tenantId,
+      effective,
+      reviewerId,
+      session,
+    });
 
     // Update main application models with approved data
     if (effective.personalInfo) {
@@ -345,40 +302,24 @@ async function approveApplication(req, res, next) {
     }
 
     // Publish subscription upsert request for subscription-service
-    console.log("🔔 [approveApplication] Starting subscription upsert event publishing...");
     const sub = effective.subscriptionDetails || {};
-    console.log("🔔 [approveApplication] Subscription details from effective:", {
-      hasDateJoined: !!sub.dateJoined,
-      dateJoined: sub.dateJoined,
-      paymentType: sub.paymentType,
-      paymentFrequency: sub.paymentFrequency,
-      membershipCategory: sub.membershipCategory,
-    });
-    
     // Use dateJoined from the current approval (subscription details), fallback to current date
     // Always use the dateJoined from the approval, not from profile.firstJoinedDate
     const dateJoined = sub.dateJoined ?? new Date();
-    console.log("🔔 [approveApplication] Using dateJoined:", dateJoined);
-    
+
     // Get userId and userEmail from profile for subscription creation
-    const profileWithUser = await Profile.findById(profile._id).session(session);
-    const userIdForSubscription = profileWithUser?.userId 
-      ? String(profileWithUser.userId) 
+    const profileWithUser = await Profile.findById(profile._id).session(
+      session
+    );
+    const userIdForSubscription = profileWithUser?.userId
+      ? String(profileWithUser.userId)
       : null;
-    const userEmailForSubscription = effective.contactInfo?.personalEmail 
-      || effective.contactInfo?.workEmail 
-      || null;
-    
-    console.log("🔔 [approveApplication] User info for subscription:", {
-      userId: userIdForSubscription,
-      userEmail: userEmailForSubscription,
-      profileId: String(profile._id),
-      applicationId,
-      tenantId,
-    });
-    
+    const userEmailForSubscription =
+      effective.contactInfo?.personalEmail ||
+      effective.contactInfo?.workEmail ||
+      null;
+
     try {
-      console.log("📤 [approveApplication] Publishing subscription upsert requested event...");
       await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested(
         {
           tenantId,
@@ -394,18 +335,14 @@ async function approveApplication(req, res, next) {
           paymentFrequency: sub.paymentFrequency ?? null,
           userId: userIdForSubscription,
           userEmail: userEmailForSubscription,
+          reviewerId: reviewerId, // Pass reviewerId (CRM user ID) for meta fields
           correlationId: crypto.randomUUID(),
         }
       );
-      console.log("✅ [approveApplication] Subscription upsert requested event published successfully");
     } catch (publishError) {
       console.error(
-        "❌ [approveApplication] Failed to publish subscription upsert requested event:",
-        {
-          message: publishError.message,
-          stack: publishError.stack,
-          error: publishError,
-        }
+        "[approveApplication] Failed to publish subscription upsert requested event:",
+        publishError.message
       );
       // Continue with approval even if publishing fails
     }
