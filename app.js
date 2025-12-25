@@ -157,13 +157,7 @@ app.get("/", (req, res) => {
 
 // Health check endpoint (no auth required)
 app.get("/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    service: "profile-service",
-    timestamp: new Date().toISOString(),
-    port: process.env.PORT || 4000,
-    environment: process.env.NODE_ENV || "development",
-  });
+  res.status(200).json({ status: "UP" });
 });
 
 // API documentation endpoint (no auth required)
