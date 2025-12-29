@@ -76,7 +76,7 @@ function formatProfileSnapshot(profile, subscriptionStartMap, batchType) {
     addressPostcode: contact.eircode || null,
     email: contact.personalEmail || contact.workEmail || null,
     mobileNumber: contact.mobileNumber || null,
-    newMember: batchType === "new",
+    newMember: batchType === "inmo-rewards",
     reward: cornMarket.inmoRewards || false,
     // Fields from "graduate" format
     membershipNumber: profile.membershipNumber || null,
@@ -105,15 +105,6 @@ function formatProfileSnapshot(profile, subscriptionStartMap, batchType) {
   };
 }
 
-function mapFrontendTypeToInternalType(frontendType) {
-  const typeMapping = {
-    "inmo-rewards": "new",
-    "recruit-friend": "graduate",
-    "new-graduate": "graduate",
-  };
-  return typeMapping[frontendType] || null;
-}
-
 /**
  * Create a new batch and store profile snapshots
  */
@@ -132,12 +123,12 @@ async function createBatch(req, res, next) {
       return next(AppError.badRequest("Batch name is required"));
     }
 
-    // Map frontend type to internal type
-    const internalType = mapFrontendTypeToInternalType(type);
-    if (!internalType) {
+    // Validate type - use frontend types directly
+    const validTypes = ["inmo-rewards", "new-graduate", "recruit-friend"];
+    if (!validTypes.includes(type)) {
       return next(
         AppError.badRequest(
-          "Type must be either 'inmo-rewards', 'recruit-friend', or 'new-graduate'"
+          "Type must be either 'inmo-rewards', 'new-graduate', or 'recruit-friend'"
         )
       );
     }
@@ -150,61 +141,51 @@ async function createBatch(req, res, next) {
       return next(AppError.badRequest("User ID is required"));
     }
 
-    // Build query based on internal type
+    // Build query based on frontend type
     let query = {
       batchId: null, // Only profiles not in any batch
     };
 
-    if (internalType === "new") {
+    if (type === "inmo-rewards") {
       query["preferences.valueAddedServices"] = true;
       query["additionalInformation.membershipStatus"] = "new";
       query["cornMarket.inmoRewards"] = true;
-    } else if (internalType === "graduate") {
+    } else if (type === "new-graduate") {
       query["preferences.valueAddedServices"] = true;
       query["additionalInformation.membershipStatus"] = "graduate";
       query.$or = [
         { "cornMarket.incomeProtectionScheme": true },
         { "cornMarket.exclusiveDiscountsAndOffers": true },
       ];
-    } else if (internalType === "recruitAFriend") {
+    } else if (type === "recruit-friend") {
       query["recruitmentDetails.confirmedRecruiterProfileId"] = { $ne: null };
     }
 
     // Find matching profiles with all needed fields
     const matchingProfiles = await Profile.find(query).lean();
 
-    if (matchingProfiles.length === 0) {
-      return res.status(201).json({
-        success: true,
-        message: "Batch created successfully (no matching profiles)",
-        data: {
-          name: name.trim(),
-          type: internalType,
-          date: new Date(date),
-          profileCount: 0,
-          profiles: [],
-        },
-      });
+    const profileIds = matchingProfiles.map((profile) => profile._id);
+    let profileSnapshots = [];
+
+    // Only fetch subscription data and create snapshots if profiles exist
+    if (matchingProfiles.length > 0) {
+      // Fetch subscription startDates for all profiles
+      const profileIdStrings = profileIds.map((id) => id.toString());
+      const subscriptionStartMap = await fetchSubscriptionStartDates(
+        profileIdStrings,
+        req.headers.authorization
+      );
+
+      // Create profile snapshots (all fields stored in batch)
+      profileSnapshots = matchingProfiles.map((profile) =>
+        formatProfileSnapshot(profile, subscriptionStartMap, type)
+      );
     }
 
-    const profileIds = matchingProfiles.map((profile) => profile._id);
-
-    // Fetch subscription startDates for all profiles
-    const profileIdStrings = profileIds.map((id) => id.toString());
-    const subscriptionStartMap = await fetchSubscriptionStartDates(
-      profileIdStrings,
-      req.headers.authorization
-    );
-
-    // Create profile snapshots (all fields stored in batch)
-    const profileSnapshots = matchingProfiles.map((profile) =>
-      formatProfileSnapshot(profile, subscriptionStartMap, internalType)
-    );
-
-    // Create the batch with embedded profile data
+    // Create the batch with embedded profile data (even if empty)
     const batch = new Batch({
       name: name.trim(),
-      type: internalType, // Store internal type in database
+      type: type, // Store frontend type directly in database
       date: new Date(date),
       profileIds: profileIds,
       profiles: profileSnapshots, // Store snapshot of all profile fields
@@ -216,10 +197,12 @@ async function createBatch(req, res, next) {
     const savedBatch = await batch.save();
 
     // Update profiles with batchId (for reference, but batch has snapshot)
-    await Profile.updateMany(
-      { _id: { $in: profileIds } },
-      { $set: { batchId: savedBatch._id } }
-    );
+    if (profileIds.length > 0) {
+      await Profile.updateMany(
+        { _id: { $in: profileIds } },
+        { $set: { batchId: savedBatch._id } }
+      );
+    }
 
     return res.status(201).json({
       success: true,
@@ -260,15 +243,11 @@ async function getAllBatches(req, res, next) {
       query.isActive = req.query.isActive === "true";
     }
 
-    // Optional filter by type (map frontend type to internal type)
+    // Optional filter by type (use frontend types directly)
     if (req.query.type) {
-      const mappedType = mapFrontendTypeToInternalType(req.query.type);
-      if (mappedType) {
-        query.type = mappedType;
-      } else {
-        // If invalid frontend type provided, filter will not match anything
-        // But we'll still process the request with no type filter
-        // Alternatively, we could return an error - for now, we'll just ignore invalid types
+      const validTypes = ["inmo-rewards", "new-graduate", "recruit-friend"];
+      if (validTypes.includes(req.query.type)) {
+        query.type = req.query.type;
       }
     }
 
@@ -326,7 +305,7 @@ async function getBatchById(req, res, next) {
     // Filter fields based on batch type
     let formattedProfiles = batch.profiles || [];
 
-    if (batch.type === "new") {
+    if (batch.type === "inmo-rewards") {
       // Return only "new" format fields
       formattedProfiles = formattedProfiles.map((p) => ({
         membershipNo: p.membershipNo,
@@ -344,7 +323,7 @@ async function getBatchById(req, res, next) {
         newMember: p.newMember,
         reward: p.reward,
       }));
-    } else if (batch.type === "graduate") {
+    } else if (batch.type === "new-graduate") {
       // Return only "graduate" format fields
       formattedProfiles = formattedProfiles.map((p) => ({
         membershipNumber: p.membershipNumber,
@@ -501,18 +480,18 @@ async function refreshBatch(req, res, next) {
       batchId: null, // Only profiles not in any batch
     };
 
-    if (batch.type === "new") {
+    if (batch.type === "inmo-rewards") {
       query["preferences.valueAddedServices"] = true;
       query["additionalInformation.membershipStatus"] = "new";
       query["cornMarket.inmoRewards"] = true;
-    } else if (batch.type === "graduate") {
+    } else if (batch.type === "new-graduate") {
       query["preferences.valueAddedServices"] = true;
       query["additionalInformation.membershipStatus"] = "graduate";
       query.$or = [
         { "cornMarket.incomeProtectionScheme": true },
         { "cornMarket.exclusiveDiscountsAndOffers": true },
       ];
-    } else if (batch.type === "recruitAFriend") {
+    } else if (batch.type === "recruit-friend") {
       query["recruitmentDetails.confirmedRecruiterProfileId"] = { $ne: null };
     }
 
@@ -524,17 +503,22 @@ async function refreshBatch(req, res, next) {
     // Remove batchId from old profiles
     await Profile.updateMany({ batchId: batchId }, { $set: { batchId: null } });
 
-    // Fetch subscription startDates
-    const profileIdStrings = profileIds.map((id) => id.toString());
-    const subscriptionStartMap = await fetchSubscriptionStartDates(
-      profileIdStrings,
-      req.headers.authorization
-    );
+    let profileSnapshots = [];
 
-    // Create new profile snapshots
-    const profileSnapshots = matchingProfiles.map((profile) =>
-      formatProfileSnapshot(profile, subscriptionStartMap, batch.type)
-    );
+    // Only fetch subscription data and create snapshots if profiles exist
+    if (matchingProfiles.length > 0) {
+      // Fetch subscription startDates
+      const profileIdStrings = profileIds.map((id) => id.toString());
+      const subscriptionStartMap = await fetchSubscriptionStartDates(
+        profileIdStrings,
+        req.headers.authorization
+      );
+
+      // Create new profile snapshots
+      profileSnapshots = matchingProfiles.map((profile) =>
+        formatProfileSnapshot(profile, subscriptionStartMap, batch.type)
+      );
+    }
 
     // Update batch with new profile IDs and snapshots
     batch.profileIds = profileIds;

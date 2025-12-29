@@ -10,7 +10,7 @@ const BatchSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["new", "graduate", "recruitAFriend"],
+      enum: ["inmo-rewards", "new-graduate", "recruit-friend"],
       required: true,
     },
     date: {
