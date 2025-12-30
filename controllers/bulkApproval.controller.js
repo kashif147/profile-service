@@ -272,9 +272,7 @@ async function approveSingleApplication({
           personalInfo: effective.personalInfo,
           contactInfo: effective.contactInfo,
           professionalDetails: effective.professionalDetails,
-          subscriptionDetails: pickSubForContract(
-            effective.subscriptionDetails
-          ),
+          subscriptionDetails: effective.subscriptionDetails, // Send full subscriptionDetails to preserve all fields (inmoRewards, valueAddedServices, etc.)
         },
         subscriptionAttributes: subAttrs(effective.subscriptionDetails),
         tenantId,
