@@ -58,7 +58,7 @@ const UserSchema = new mongoose.Schema({
 // Compound indexes for tenant isolation
 UserSchema.index({ tenantId: 1, userEmail: 1 }, { unique: true });
 UserSchema.index({ tenantId: 1, userId: 1 }, { unique: true, sparse: true }); // Unique email per tenant
-UserSchema.index({ tenantId: 1, userMicrosoftId: 1 }, { unique: true }); // Unique Microsoft ID per tenant
+//UserSchema.index({ tenantId: 1, userMicrosoftId: 1 }, { unique: true }); // Unique Microsoft ID per tenant
 // UserSchema.index({ tenantId: 1, userSubject: 1 }, { unique: true }); // Unique subject per tenant
 
 // Index for refresh token lookups

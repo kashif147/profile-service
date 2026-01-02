@@ -28,6 +28,10 @@ const {
   handleCrmUserCreated,
   handleCrmUserUpdated,
 } = require("./listeners/user.crm.listener.js");
+const {
+  handlePortalUserCreated,
+  handlePortalUserUpdated,
+} = require("./listeners/user.portal.listener.js");
 
 // Initialize event system
 async function initEventSystem() {
@@ -185,13 +189,13 @@ async function setupConsumers() {
     await consumer.consume(MEMBERSHIP_QUEUE, { prefetch: 10 });
     console.log("✅ Membership events consumer ready:", MEMBERSHIP_QUEUE);
 
-    // 4. User events queue (user.events exchange) - for CRM user events
+    // 4. User events queue (user.events exchange) - for CRM and Portal user events
     const USER_QUEUE = "profile.user.events";
     console.log("🔧 [SETUP] Creating user queue...");
     console.log("   Queue:", USER_QUEUE);
     console.log("   Exchange: user.events");
     console.log(
-      "   Routing Keys: user.crm.created.v1, user.crm.updated.v1"
+      "   Routing Keys: user.crm.created.v1, user.crm.updated.v1, user.portal.created.v1, user.portal.updated.v1"
     );
 
     await consumer.createQueue(USER_QUEUE, {
@@ -202,6 +206,8 @@ async function setupConsumers() {
     await consumer.bindQueue(USER_QUEUE, "user.events", [
       "user.crm.created.v1",
       "user.crm.updated.v1",
+      "user.portal.created.v1",
+      "user.portal.updated.v1",
     ]);
 
     consumer.registerHandler(
@@ -215,6 +221,20 @@ async function setupConsumers() {
       "user.crm.updated.v1",
       async (payload, context) => {
         await handleCrmUserUpdated(payload);
+      }
+    );
+
+    consumer.registerHandler(
+      "user.portal.created.v1",
+      async (payload, context) => {
+        await handlePortalUserCreated(payload);
+      }
+    );
+
+    consumer.registerHandler(
+      "user.portal.updated.v1",
+      async (payload, context) => {
+        await handlePortalUserUpdated(payload);
       }
     );
 
