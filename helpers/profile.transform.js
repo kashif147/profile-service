@@ -109,12 +109,40 @@ function flattenProfilePayload(effective = {}) {
   if (hasValues(professionalDetails))
     payload.professionalDetails = professionalDetails;
 
-  const preferences = pickSection(effective.preferences, preferencesKeys);
+  // Preferences can come from either effective.preferences or effective.subscriptionDetails
+  // valueAddedServices is typically stored in subscriptionDetails.valueAddedServices
+  const preferencesFromSource = pickSection(
+    effective.preferences || {},
+    preferencesKeys
+  );
+  const preferencesFromSubscription = pickSection(
+    effective.subscriptionDetails || {},
+    preferencesKeys
+  );
+  // Merge: subscriptionDetails takes precedence (it's the source of truth)
+  const preferences = {
+    ...preferencesFromSource,
+    ...preferencesFromSubscription,
+  };
   if (hasValues(preferences)) {
     payload.preferences = preferences;
   }
 
-  const cornMarket = pickSection(effective.cornMarket, cornmarketKeys);
+  // CornMarket can come from either effective.cornMarket or effective.subscriptionDetails
+  // inmoRewards, exclusiveDiscountsAndOffers, incomeProtectionScheme are typically stored in subscriptionDetails
+  const cornMarketFromSource = pickSection(
+    effective.cornMarket || {},
+    cornmarketKeys
+  );
+  const cornMarketFromSubscription = pickSection(
+    effective.subscriptionDetails || {},
+    cornmarketKeys
+  );
+  // Merge: subscriptionDetails takes precedence (it's the source of truth)
+  const cornMarket = {
+    ...cornMarketFromSource,
+    ...cornMarketFromSubscription,
+  };
   if (hasValues(cornMarket)) {
     payload.cornMarket = cornMarket;
   }

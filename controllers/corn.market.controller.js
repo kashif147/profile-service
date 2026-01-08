@@ -41,7 +41,12 @@ async function getCornMarketProfiles(req, res, next) {
     };
 
     const [profiles, total] = await Promise.all([
-      Profile.find(query).sort({ updatedAt: -1 }).skip(skip).limit(limit).lean(),
+      Profile.find(query)
+        .populate("crmUserId", "userFullName")
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
       Profile.countDocuments(query),
     ]);
 

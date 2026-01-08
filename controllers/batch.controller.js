@@ -1,5 +1,6 @@
 const Batch = require("../models/batch.model.js");
 const Profile = require("../models/profile.model.js");
+const User = require("../models/user.model.js");
 const { AppError } = require("../errors/AppError");
 const axios = require("axios");
 
@@ -256,10 +257,28 @@ async function getAllBatches(req, res, next) {
       Batch.countDocuments(query),
     ]);
 
-    const batchesWithCount = batches.map((batch) => ({
-      ...batch,
-      profileCount: batch.profileIds ? batch.profileIds.length : 0,
-    }));
+    // Get unique creator user IDs
+    const creatorIds = [...new Set(batches.map((batch) => batch.createdBy).filter(Boolean))];
+    
+    // Fetch users by userId (createdBy is the userId string)
+    const users = await User.find({
+      userId: { $in: creatorIds },
+      tenantId: req.tenantId || req.user?.tenantId,
+    })
+      .select("userId userFullName")
+      .lean();
+
+    // Create a map for quick lookup
+    const userMap = new Map(users.map((user) => [user.userId, user.userFullName]));
+
+    const batchesWithCount = batches.map((batch) => {
+      const createdByName = userMap.get(batch.createdBy) || batch.createdBy;
+      return {
+        ...batch,
+        profileCount: batch.profileIds ? batch.profileIds.length : 0,
+        createdBy: createdByName,
+      };
+    });
 
     return res.success({
       pagination: {
@@ -299,6 +318,21 @@ async function getBatchById(req, res, next) {
 
     if (!batch) {
       return next(AppError.notFound("Batch not found"));
+    }
+
+    // Fetch creator user information
+    let createdBy = batch.createdBy;
+    if (batch.createdBy) {
+      const creator = await User.findOne({
+        userId: batch.createdBy,
+        tenantId: req.tenantId || req.user?.tenantId,
+      })
+        .select("userFullName")
+        .lean();
+      
+      if (creator && creator.userFullName) {
+        createdBy = creator.userFullName;
+      }
     }
 
     // Return profiles from batch snapshot (original data at creation time)
@@ -354,6 +388,7 @@ async function getBatchById(req, res, next) {
       ...batch,
       profileCount: batch.profiles ? batch.profiles.length : 0,
       profiles: formattedProfiles,
+      createdBy: createdBy,
     });
   } catch (error) {
     console.error("Error fetching batch:", error);

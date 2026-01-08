@@ -121,6 +121,7 @@ async function getAllProfiles(req, res, next) {
 
     const [profiles, total] = await Promise.all([
       Profile.find(query)
+        .populate("crmUserId", "userFullName")
         .sort({ updatedAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -210,6 +211,7 @@ async function searchProfiles(req, res, next) {
     };
 
     const results = await Profile.find(query)
+      .populate("crmUserId", "userFullName")
       .sort({ updatedAt: -1 })
       .limit(25)
       .lean();
@@ -237,7 +239,9 @@ async function getProfileById(req, res, next) {
     const profile = await Profile.findOne({
       _id: profileId,
       tenantId,
-    }).lean();
+    })
+      .populate("crmUserId", "userFullName")
+      .lean();
 
     if (!profile) {
       return res.status(200).json({
@@ -272,7 +276,8 @@ async function updateProfile(req, res, next) {
     const profile = await Profile.findOne({
       _id: profileId,
       tenantId,
-    });
+    })
+      .populate("crmUserId", "userFullName");
 
     if (!profile) {
       return next(AppError.notFound("Profile not found"));
@@ -334,7 +339,11 @@ async function updateProfile(req, res, next) {
 
     await profile.save();
 
-    return res.success(profile.toObject());
+    const populatedProfile = await Profile.findById(profile._id)
+      .populate("crmUserId", "userFullName")
+      .lean();
+
+    return res.success(populatedProfile);
   } catch (error) {
     if (error.name === "ValidationError") {
       return next(AppError.badRequest(error.message));
@@ -364,7 +373,8 @@ async function softDeleteProfile(req, res, next) {
     const profile = await Profile.findOne({
       _id: profileId,
       tenantId,
-    });
+    })
+      .populate("crmUserId", "userFullName");
 
     if (!profile) {
       return next(AppError.notFound("Profile not found"));
@@ -375,10 +385,15 @@ async function softDeleteProfile(req, res, next) {
 
     await profile.save();
 
+    const populatedProfile = await Profile.findById(profile._id)
+      .populate("crmUserId", "userFullName")
+      .lean();
+
     return res.success({
       profileId: profile._id,
       isActive: profile.isActive,
       deactivatedAt: profile.deactivatedAt,
+      crmUserId: populatedProfile.crmUserId,
     });
   } catch (error) {
     return next(
@@ -511,7 +526,11 @@ async function updateMyProfile(req, res, next) {
     profile.set(updates);
     await profile.save();
 
-    return res.success(profile.toObject());
+    const populatedProfile = await Profile.findById(profile._id)
+      .populate("crmUserId", "userFullName")
+      .lean();
+
+    return res.success(populatedProfile);
   } catch (error) {
     console.error("ProfileController [updateMyProfile] Error:", error);
     if (error.isJoi)
@@ -583,6 +602,7 @@ async function getCornMarketNew(req, res, next) {
 
     const [profiles, total] = await Promise.all([
       Profile.find(query)
+        .populate("crmUserId", "userFullName")
         .sort({ updatedAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -658,6 +678,7 @@ async function getCornMarketGraduate(req, res, next) {
 
     const [profiles, total] = await Promise.all([
       Profile.find(query)
+        .populate("crmUserId", "userFullName")
         .sort({ updatedAt: -1 })
         .skip(skip)
         .limit(limit)

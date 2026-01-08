@@ -250,6 +250,9 @@ async function approveApplication(req, res, next) {
       await overlay.save({ session });
     }
 
+    // Get updated profile to include crmUserId in events
+    const updatedProfile = await Profile.findById(profile._id).session(session);
+
     // Publish events using dedicated publisher
     // Wrap in try-catch to prevent approval failure if publishing fails
     try {
@@ -259,6 +262,7 @@ async function approveApplication(req, res, next) {
         profileId: String(profile._id),
         applicationStatus: "APPROVED",
         isExistingProfile: !!existingProfile,
+        crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
         effective: {
           personalInfo: effective.personalInfo,
           contactInfo: effective.contactInfo,
@@ -282,6 +286,7 @@ async function approveApplication(req, res, next) {
         applicationId,
         profileId: String(profile._id),
         isExistingProfile: !!existingProfile,
+        crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
         effective,
         subscriptionAttributes: subAttrs(effective.subscriptionDetails),
         tenantId,

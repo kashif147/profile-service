@@ -60,6 +60,7 @@ async function findOrCreateProfileByEmail({
           normalizedEmail: nEmail,
           ...flattenedProfileFields,
           membershipNumber: membershipNumber, // Auto-generated membership number for new profile
+          crmUserId: getReviewerIdForDb(reviewerId), // ID of the CRM user who approved this profile
           applicationStatus: "APPROVED",
           approvalDetails: {
             approvedBy: getReviewerIdForDb(reviewerId),
@@ -74,6 +75,7 @@ async function findOrCreateProfileByEmail({
     // Update profile fields conservatively: fill if blank, refresh core payloads
     const $set = {
       ...flattenedProfileFields,
+      crmUserId: getReviewerIdForDb(reviewerId), // ID of the CRM user who approved this profile
       applicationStatus: "APPROVED",
       "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
       "approvalDetails.approvedAt": new Date(),

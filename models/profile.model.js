@@ -10,6 +10,12 @@ const ProfileSchema = new mongoose.Schema(
       required: false,
       default: null,
     }, // Azure B2C ID
+    crmUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+      default: null,
+    }, // ID of the CRM user who approved this profile
     // email: { type: String, required: true },
     normalizedEmail: { type: String, required: true },
     membershipNumber: { type: String, unique: true, sparse: true }, // Auto-generated membership number

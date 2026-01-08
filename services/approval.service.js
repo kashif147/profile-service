@@ -119,6 +119,7 @@ async function approveApplication({
       // Update existing profile - keep existing membership number
       const profileUpdate = {
         ...flattenedProfileFields,
+        crmUserId: getReviewerIdForDb(reviewerId),
       };
 
       await Profile.updateOne(
@@ -143,6 +144,7 @@ async function approveApplication({
         {
           $set: {
             ...flattenedProfileFields,
+            crmUserId: getReviewerIdForDb(reviewerId),
           },
           $setOnInsert: {
             tenantId,
@@ -249,12 +251,16 @@ async function approveApplication({
       reasonLeft: effective.subscriptionDetails?.reasonLeft ?? null,
     };
 
+    // Get the updated profile to include crmUserId and userId in events
+    const updatedProfile = await Profile.findById(profile._id).session(session);
+
     await ApplicationApprovalEventPublisher.publishApplicationApproved({
       applicationId,
       reviewerId,
       profileId: String(profile._id),
       applicationStatus: APPLICATION_STATUS.APPROVED,
       isExistingProfile: !!existingProfile,
+      crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
       effective,
       subscriptionAttributes,
       tenantId,
@@ -265,6 +271,7 @@ async function approveApplication({
       applicationId,
       profileId: String(profile._id),
       isExistingProfile: !!existingProfile,
+      crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
       effective,
       subscriptionAttributes,
       tenantId,
@@ -278,9 +285,8 @@ async function approveApplication({
     const dateJoined = sub.dateJoined ?? new Date();
     
     // Get userId and userEmail from profile for subscription creation
-    const profileWithUser = await Profile.findById(profile._id).session(session);
-    const userIdForSubscription = profileWithUser?.userId 
-      ? String(profileWithUser.userId) 
+    const userIdForSubscription = updatedProfile?.userId 
+      ? String(updatedProfile.userId) 
       : null;
     const userEmailForSubscription = effective.contactInfo?.personalEmail 
       || effective.contactInfo?.workEmail 
@@ -300,6 +306,7 @@ async function approveApplication({
       paymentFrequency: sub.paymentFrequency ?? null,
       userId: userIdForSubscription,
       userEmail: userEmailForSubscription,
+      reviewerId: reviewerId,
       correlationId: crypto.randomUUID(),
     });
 

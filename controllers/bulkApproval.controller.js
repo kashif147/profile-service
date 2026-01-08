@@ -180,6 +180,9 @@ async function approveSingleApplication({
         updateFields.userId = userId;
       }
 
+      // Set crmUserId (the user who approved this profile)
+      updateFields.crmUserId = getReviewerIdForDb(reviewerId);
+
       await Profile.updateOne(
         { _id: existingProfile._id },
         {
@@ -204,6 +207,9 @@ async function approveSingleApplication({
       if (userType === "PORTAL" && userId) {
         updateFields.userId = userId;
       }
+
+      // Set crmUserId (the user who approved this profile)
+      updateFields.crmUserId = getReviewerIdForDb(reviewerId);
 
       await Profile.updateOne(
         { _id: profile._id },
@@ -260,6 +266,9 @@ async function approveSingleApplication({
       await overlay.save({ session });
     }
 
+    // Get updated profile to include crmUserId in events
+    const updatedProfile = await Profile.findById(profile._id).session(session);
+
     // Publish events (wrapped in try-catch to not fail approval if publishing fails)
     try {
       await ApplicationApprovalEventPublisher.publishApplicationApproved({
@@ -268,6 +277,7 @@ async function approveSingleApplication({
         profileId: String(profile._id),
         applicationStatus: "APPROVED",
         isExistingProfile: !!existingProfile,
+        crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
         effective: {
           personalInfo: effective.personalInfo,
           contactInfo: effective.contactInfo,
@@ -290,6 +300,7 @@ async function approveSingleApplication({
         applicationId,
         profileId: String(profile._id),
         isExistingProfile: !!existingProfile,
+        crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
         effective,
         subscriptionAttributes: subAttrs(effective.subscriptionDetails),
         tenantId,

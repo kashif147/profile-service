@@ -309,6 +309,7 @@ class UniversalSearchService {
 
     const [results, total] = await Promise.all([
       Profile.find(mongoQuery)
+        .populate("crmUserId", "userFullName")
         .sort(sortObj)
         .skip(skip)
         .limit(pagination.limit)
