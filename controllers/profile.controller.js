@@ -704,12 +704,12 @@ async function getCornMarketGraduate(req, res, next) {
 }
 
 /**
- * Public API: Check if profile exists with given email
- * No authentication required
+ * Check if profile exists with given email
+ * Requires authentication (CRM or Portal users allowed)
  */
 async function checkEmailExists(req, res, next) {
   try {
-    const { email } = req.body;
+    const { email } = req.query;
 
     if (!email) {
       return next(AppError.badRequest("Email is required"));

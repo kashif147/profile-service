@@ -5,10 +5,10 @@ const profileController = require("../controllers/profile.controller.js");
 const { authenticate } = require("../middlewares/auth");
 
 router.post("/validate", profileValidationController.validateProfile);
-router.post("/check-email", profileController.checkEmailExists);
 
 router.use(authenticate);
 
+router.get("/check-email", profileController.checkEmailExists);
 router.get("/", profileController.getAllProfiles);
 router.get("/search", profileController.searchProfiles);
 router.get("/my-profile", profileController.getMyProfile);
