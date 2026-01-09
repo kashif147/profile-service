@@ -1,5 +1,8 @@
 const User = require("../../models/user.model.js");
 const Profile = require("../../models/profile.model.js");
+const PersonalDetails = require("../../models/personal.details.model.js");
+const ProfessionalDetails = require("../../models/professional.details.model.js");
+const SubscriptionDetails = require("../../models/subscription.model.js");
 
 /**
  * Handle Portal user created event
@@ -90,6 +93,88 @@ async function handlePortalUserCreated(payload) {
         console.log(
           `ℹ️ No profile found for Portal user ${userEmail || userMemberNumber}, userId will be set when profile is created`
         );
+      }
+
+      // 4. Find PersonalDetails by email and update userId
+      if (userEmail) {
+        const normalizedEmail = userEmail.toLowerCase();
+        const personalDetails = await PersonalDetails.findOne({
+          $or: [
+            { "contactInfo.personalEmail": new RegExp(`^${normalizedEmail}$`, "i") },
+            { "contactInfo.workEmail": new RegExp(`^${normalizedEmail}$`, "i") },
+          ],
+          "meta.deleted": { $ne: true },
+        });
+
+        if (personalDetails) {
+          console.log(
+            `📋 Found PersonalDetails for Portal user ${userEmail}, linking userId...`
+          );
+
+          // Update PersonalDetails with userId if not already set
+          if (!personalDetails.userId || String(personalDetails.userId) !== String(userId)) {
+            await PersonalDetails.updateOne(
+              { _id: personalDetails._id },
+              { $set: { userId: userId } }
+            );
+            console.log(
+              `✅ Linked Portal user ${userId} to PersonalDetails: ${personalDetails._id}`
+            );
+          } else {
+            console.log(
+              `ℹ️ PersonalDetails already linked to Portal user ${userId}`
+            );
+          }
+
+          // 5. Get applicationId from PersonalDetails and update ProfessionalDetails
+          // Always check and update ProfessionalDetails and SubscriptionDetails, even if PersonalDetails was already linked
+          if (personalDetails.applicationId) {
+            const professionalDetails = await ProfessionalDetails.findOne({
+              applicationId: personalDetails.applicationId,
+            });
+
+            if (professionalDetails) {
+              if (!professionalDetails.userId || String(professionalDetails.userId) !== String(userId)) {
+                await ProfessionalDetails.updateOne(
+                  { _id: professionalDetails._id },
+                  { $set: { userId: userId } }
+                );
+                console.log(
+                  `✅ Linked Portal user ${userId} to ProfessionalDetails: ${professionalDetails._id} (via applicationId: ${personalDetails.applicationId})`
+                );
+              } else {
+                console.log(
+                  `ℹ️ ProfessionalDetails already linked to Portal user ${userId}`
+                );
+              }
+            }
+
+            // 6. Update SubscriptionDetails by applicationId
+            const subscriptionDetails = await SubscriptionDetails.findOne({
+              applicationId: personalDetails.applicationId,
+            });
+
+            if (subscriptionDetails) {
+              if (!subscriptionDetails.userId || String(subscriptionDetails.userId) !== String(userId)) {
+                await SubscriptionDetails.updateOne(
+                  { _id: subscriptionDetails._id },
+                  { $set: { userId: userId } }
+                );
+                console.log(
+                  `✅ Linked Portal user ${userId} to SubscriptionDetails: ${subscriptionDetails._id} (via applicationId: ${personalDetails.applicationId})`
+                );
+              } else {
+                console.log(
+                  `ℹ️ SubscriptionDetails already linked to Portal user ${userId}`
+                );
+              }
+            }
+          }
+        } else {
+          console.log(
+            `ℹ️ No PersonalDetails found for Portal user ${userEmail}`
+          );
+        }
       }
     }
   } catch (error) {
@@ -196,6 +281,88 @@ async function handlePortalUserUpdated(payload) {
           );
           console.log(
             `✅ Linked Portal user ${userId} to existing profile: ${profileByEmailOrMember._id}`
+          );
+        }
+      }
+
+      // 4. Find PersonalDetails by email and update userId
+      if (userEmail) {
+        const normalizedEmail = userEmail.toLowerCase();
+        const personalDetails = await PersonalDetails.findOne({
+          $or: [
+            { "contactInfo.personalEmail": new RegExp(`^${normalizedEmail}$`, "i") },
+            { "contactInfo.workEmail": new RegExp(`^${normalizedEmail}$`, "i") },
+          ],
+          "meta.deleted": { $ne: true },
+        });
+
+        if (personalDetails) {
+          console.log(
+            `📋 Found PersonalDetails for Portal user ${userEmail}, linking userId...`
+          );
+
+          // Update PersonalDetails with userId if not already set
+          if (!personalDetails.userId || String(personalDetails.userId) !== String(userId)) {
+            await PersonalDetails.updateOne(
+              { _id: personalDetails._id },
+              { $set: { userId: userId } }
+            );
+            console.log(
+              `✅ Linked Portal user ${userId} to PersonalDetails: ${personalDetails._id}`
+            );
+          } else {
+            console.log(
+              `ℹ️ PersonalDetails already linked to Portal user ${userId}`
+            );
+          }
+
+          // 5. Get applicationId from PersonalDetails and update ProfessionalDetails
+          // Always check and update ProfessionalDetails and SubscriptionDetails, even if PersonalDetails was already linked
+          if (personalDetails.applicationId) {
+            const professionalDetails = await ProfessionalDetails.findOne({
+              applicationId: personalDetails.applicationId,
+            });
+
+            if (professionalDetails) {
+              if (!professionalDetails.userId || String(professionalDetails.userId) !== String(userId)) {
+                await ProfessionalDetails.updateOne(
+                  { _id: professionalDetails._id },
+                  { $set: { userId: userId } }
+                );
+                console.log(
+                  `✅ Linked Portal user ${userId} to ProfessionalDetails: ${professionalDetails._id} (via applicationId: ${personalDetails.applicationId})`
+                );
+              } else {
+                console.log(
+                  `ℹ️ ProfessionalDetails already linked to Portal user ${userId}`
+                );
+              }
+            }
+
+            // 6. Update SubscriptionDetails by applicationId
+            const subscriptionDetails = await SubscriptionDetails.findOne({
+              applicationId: personalDetails.applicationId,
+            });
+
+            if (subscriptionDetails) {
+              if (!subscriptionDetails.userId || String(subscriptionDetails.userId) !== String(userId)) {
+                await SubscriptionDetails.updateOne(
+                  { _id: subscriptionDetails._id },
+                  { $set: { userId: userId } }
+                );
+                console.log(
+                  `✅ Linked Portal user ${userId} to SubscriptionDetails: ${subscriptionDetails._id} (via applicationId: ${personalDetails.applicationId})`
+                );
+              } else {
+                console.log(
+                  `ℹ️ SubscriptionDetails already linked to Portal user ${userId}`
+                );
+              }
+            }
+          }
+        } else {
+          console.log(
+            `ℹ️ No PersonalDetails found for Portal user ${userEmail}`
           );
         }
       }
