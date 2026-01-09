@@ -703,6 +703,54 @@ async function getCornMarketGraduate(req, res, next) {
   }
 }
 
+/**
+ * Public API: Check if profile exists with given email
+ * No authentication required
+ */
+async function checkEmailExists(req, res, next) {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return next(AppError.badRequest("Email is required"));
+    }
+
+    // Validate email format - must contain @ symbol
+    if (typeof email !== "string" || !email.includes("@")) {
+      return next(AppError.badRequest("Invalid email format. Email must contain @ symbol"));
+    }
+
+    // Normalize email (same as when profile is created)
+    // Converts to lowercase and trims whitespace
+    // Example: "John.Doe@EXAMPLE.COM" -> "john.doe@example.com"
+    const normalizedEmail = normalizeEmail(email);
+
+    // Check if profile exists by normalizedEmail (searches across all tenants)
+    const existingProfile = await Profile.findOne({
+      normalizedEmail: normalizedEmail,
+    }).lean();
+
+    if (existingProfile) {
+      return res.success({
+        status: true,
+        message: "Profile with this email already exists",
+      });
+    }
+
+    return res.success({
+      status: false,
+      message: "No profile with this email exists",
+    });
+  } catch (error) {
+    console.error("ProfileController [checkEmailExists] Error:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to check email existence"
+      )
+    );
+  }
+}
+
 module.exports = {
   getAllProfiles,
   searchProfiles,
@@ -713,4 +761,5 @@ module.exports = {
   updateMyProfile,
   getCornMarketNew,
   getCornMarketGraduate,
+  checkEmailExists,
 };

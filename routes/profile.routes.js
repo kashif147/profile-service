@@ -5,6 +5,7 @@ const profileController = require("../controllers/profile.controller.js");
 const { authenticate } = require("../middlewares/auth");
 
 router.post("/validate", profileValidationController.validateProfile);
+router.post("/check-email", profileController.checkEmailExists);
 
 router.use(authenticate);
 
