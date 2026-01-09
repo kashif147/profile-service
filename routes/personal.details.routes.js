@@ -8,6 +8,11 @@ router.post(
   defaultPolicyMiddleware.requirePermission("portal", "create"),
   personalDetailsController.createPersonalDetails
 );
+router.post(
+  "/check-email",
+  defaultPolicyMiddleware.requirePermission("portal", "read"),
+  personalDetailsController.checkEmailExists
+);
 router.get(
   "/",
   defaultPolicyMiddleware.requirePermission("portal", "read"),

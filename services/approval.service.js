@@ -54,7 +54,7 @@ async function approveApplication({
   applicationId,
   overlayId,
   overlayVersion,
-  reviewerId,
+  reviewerId, // ID of the user who is approving this application (the CRM user)
   tenantId,
 }) {
   const session = await mongoose.startSession();
@@ -119,8 +119,13 @@ async function approveApplication({
       // Update existing profile - keep existing membership number
       const profileUpdate = {
         ...flattenedProfileFields,
-        crmUserId: getReviewerIdForDb(reviewerId),
       };
+      
+      // Set crmUserId to the ID of the user who approved this application (reviewerId)
+      // Only set if reviewerId is provided (the CRM user who is approving/improving the profile)
+      if (reviewerId) {
+        profileUpdate.crmUserId = getReviewerIdForDb(reviewerId);
+      }
 
       await Profile.updateOne(
         { _id: existingProfile._id },
@@ -139,13 +144,21 @@ async function approveApplication({
       // Generate membership number for new profile
       const membershipNumber = await generateMembershipNumber();
 
+      // Build $set object for new profile creation
+      const profileSetFields = {
+        ...flattenedProfileFields,
+      };
+      
+      // Set crmUserId to the ID of the user who approved this application (reviewerId)
+      // Only set if reviewerId is provided (the CRM user who is approving/improving the profile)
+      if (reviewerId) {
+        profileSetFields.crmUserId = getReviewerIdForDb(reviewerId);
+      }
+
       await Profile.updateOne(
         { tenantId, normalizedEmail },
         {
-          $set: {
-            ...flattenedProfileFields,
-            crmUserId: getReviewerIdForDb(reviewerId),
-          },
+          $set: profileSetFields,
           $setOnInsert: {
             tenantId,
             normalizedEmail,

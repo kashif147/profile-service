@@ -379,7 +379,8 @@ async function approveSingleApplication({
 async function bulkApproveApplications(req, res, next) {
   const { applicationIds, processingDate } = req.body;
   const tenantId = req.tenantId;
-  const reviewerId = req.user?.id;
+  // Get reviewerId from req.user.id or fallback to req.userId (set by auth middleware)
+  const reviewerId = req.user?.id || req.userId;
 
   if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
     return next(AppError.badRequest("applicationIds must be a non-empty array"));

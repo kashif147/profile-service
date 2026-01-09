@@ -76,6 +76,11 @@ async function findOrCreateProfileByEmail({
       doc.userId = userId;
     }
 
+    // Set crmUserId when reviewerId is provided (CRM user approving the profile)
+    if (reviewerId) {
+      doc.crmUserId = getReviewerIdForDb(reviewerId);
+    }
+
     profile = await Profile.create([doc], { session }).then((x) => x[0]);
     console.log(
       `✅ Generated membership number ${membershipNumber} for new profile ${profile._id}`
@@ -95,6 +100,11 @@ async function findOrCreateProfileByEmail({
     // Set userId for portal users when updating existing profile (only if not already set)
     if (userType === "PORTAL" && userId && !profile.userId) {
       $set.userId = userId;
+    }
+
+    // Set crmUserId when reviewerId is provided (CRM user approving the profile)
+    if (reviewerId) {
+      $set.crmUserId = getReviewerIdForDb(reviewerId);
     }
 
     // Update normalizedEmail based on preferred email

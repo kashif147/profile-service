@@ -82,11 +82,14 @@ exports.getByUserId = (userId) =>
 exports.getByEmail = (email) =>
   new Promise(async (resolve, reject) => {
     try {
+      // Normalize email for case-insensitive comparison
+      const normalizedEmail = email.toLowerCase().trim();
       const result = await PersonalDetails.findOne({
         $or: [
-          { "contactInfo.personalEmail": email },
-          { "contactInfo.workEmail": email },
+          { "contactInfo.personalEmail": new RegExp(`^${normalizedEmail}$`, "i") },
+          { "contactInfo.workEmail": new RegExp(`^${normalizedEmail}$`, "i") },
         ],
+        "meta.deleted": { $ne: true },
       });
       resolve(result);
     } catch (error) {

@@ -3,6 +3,8 @@ const personalDetailsHandler = require("../handlers/personal.details.handler");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 const joischemas = require("../validation/index.js");
 const { AppError } = require("../errors/AppError");
+const Profile = require("../models/profile.model.js");
+const { normalizeEmail } = require("../helpers/profileLookup.service.js");
 
 exports.createPersonalDetails = async (req, res, next) => {
   try {
@@ -315,6 +317,101 @@ exports.getApplicationStatus = async (req, res, next) => {
     if (error.message === "Personal details not found") {
       return res.notFoundRecord("Personal details not found");
     }
+    return next(error);
+  }
+};
+
+exports.checkEmailExists = async (req, res, next) => {
+  try {
+    console.log("=== checkEmailExists START ===");
+    const { email } = req.body;
+    const tenantId = req.tenantId;
+
+    // Validate email is provided
+    if (!email) {
+      return next(AppError.badRequest("Email is required"));
+    }
+
+    // Validate email format (basic validation)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return next(AppError.badRequest("Invalid email format"));
+    }
+
+    // Normalize email for comparison (lowercase)
+    const normalizedEmail = normalizeEmail(email);
+
+    // Build query conditions for Profile lookup
+    const profileQuery = {
+      normalizedEmail: normalizedEmail,
+    };
+
+    // Add tenantId if available
+    if (tenantId) {
+      profileQuery.tenantId = tenantId;
+    }
+
+    // Check if profile exists (approved profiles)
+    const existingProfile = await Profile.findOne(profileQuery)
+      .select(
+        "personalInfo contactInfo membershipNumber _id isActive deactivatedAt"
+      )
+      .lean();
+
+    // Also check PersonalDetails (applications) for any pending/approved applications
+    const emailLower = normalizedEmail.toLowerCase();
+    const existingApplication = await personalDetailsHandler.getByEmail(
+      emailLower
+    );
+
+    // If profile exists, return profile information
+    if (existingProfile) {
+      console.log("=== checkEmailExists: Profile found ===");
+      return res.success({
+        exists: true,
+        status: false, // status false means profile already exists
+        message: "Profile with this email already exists",
+        profile: {
+          profileId: existingProfile._id,
+          membershipNumber: existingProfile.membershipNumber,
+          personalInfo: existingProfile.personalInfo,
+          contactInfo: existingProfile.contactInfo,
+          isActive: existingProfile.isActive,
+          deactivatedAt: existingProfile.deactivatedAt,
+        },
+        type: "PROFILE", // Indicates this is an approved profile
+      });
+    }
+
+    // If application exists but no profile yet
+    if (existingApplication) {
+      console.log("=== checkEmailExists: Application found ===");
+      return res.success({
+        exists: true,
+        status: false, // status false means application already exists
+        message: "Application with this email already exists",
+        application: {
+          applicationId: existingApplication.applicationId,
+          applicationStatus: existingApplication.applicationStatus,
+          personalInfo: existingApplication.personalInfo,
+          contactInfo: existingApplication.contactInfo,
+        },
+        type: "APPLICATION", // Indicates this is a pending application
+      });
+    }
+
+    // No profile or application found
+    console.log("=== checkEmailExists: No profile/application found ===");
+    return res.success({
+      exists: false,
+      status: true, // status true means no profile exists (safe to proceed)
+      message: "No profiles with this email already exist",
+    });
+  } catch (error) {
+    console.error(
+      "PersonalDetailsController [checkEmailExists] Error:",
+      error
+    );
     return next(error);
   }
 };

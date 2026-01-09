@@ -115,7 +115,17 @@ async function approveApplication(req, res, next) {
   const { applicationId } = req.params;
   const { overlayId, overlayVersion, submission, proposedPatch } = req.body;
   const tenantId = req.tenantId;
-  const reviewerId = req.user?.id;
+  
+  // reviewerId = ID of the user who is approving this application (the CRM user making the request)
+  // This comes from the authenticated user's ID in the request (set by auth middleware)
+  const reviewerId = req.user?.id || req.userId;
+  
+  // Log reviewerId for debugging
+  if (!reviewerId) {
+    console.warn("[approveApplication] WARNING: reviewerId (approver user ID) is missing. req.user:", req.user, "req.userId:", req.userId);
+  } else {
+    console.log("[approveApplication] reviewerId (approver user ID):", reviewerId, "userType:", req.user?.userType);
+  }
 
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -378,7 +388,10 @@ async function rejectApplication(req, res, next) {
     overlayVersion /* submission, proposedPatch optional for audit */,
   } = req.body;
   const tenantId = req.tenantId;
-  const reviewerId = req.user?.id;
+  
+  // reviewerId = ID of the user who is rejecting this application (the CRM user making the request)
+  // This comes from the authenticated user's ID in the request (set by auth middleware)
+  const reviewerId = req.user?.id || req.userId;
 
   const session = await mongoose.startSession();
   session.startTransaction();
