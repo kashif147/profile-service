@@ -158,3 +158,45 @@ exports.deleteSubscriptionDetails = async (req, res, next) => {
     return next(error);
   }
 };
+
+exports.getMySubscriptionDetails = async (req, res, next) => {
+  try {
+    const { userId, userType } = extractUserAndCreatorContext(req);
+
+    // For PORTAL users, get by userId
+    if (userType === "PORTAL") {
+      if (!userId) {
+        return next(AppError.badRequest("User ID is required"));
+      }
+
+      const subscriptionDetails =
+        await subscriptionDetailsService.getMySubscriptionDetails(userId);
+
+      if (!subscriptionDetails) {
+        return res.notFoundRecord("Subscription details not found");
+      }
+
+      return res.success(subscriptionDetails);
+    } else if (userType === "CRM") {
+      // CRM users don't have userId - return not found instead of blocking
+      return res.notFoundRecord("Subscription details not found");
+    } else {
+      return next(
+        AppError.badRequest(
+          `Invalid userType: ${
+            userType || "undefined"
+          }. Expected PORTAL or CRM.`
+        )
+      );
+    }
+  } catch (error) {
+    console.error(
+      "SubscriptionDetailsController [getMySubscriptionDetails] Error:",
+      error
+    );
+    if (error.message === "Subscription details not found") {
+      return res.notFoundRecord("Subscription details not found");
+    }
+    return next(error);
+  }
+};

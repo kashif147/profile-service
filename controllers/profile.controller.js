@@ -8,6 +8,9 @@ const {
 } = require("../helpers/profileLookup.service.js");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 const joischemas = require("../validation/index.js");
+const personalDetailsService = require("../services/personal.details.service.js");
+const professionalDetailsService = require("../services/professional.details.service.js");
+const subscriptionDetailsService = require("../services/subscription.details.service.js");
 
 /**
  * Apply derived fields (age, fullAddress, date conversions) to the payload.
@@ -704,7 +707,7 @@ async function getCornMarketGraduate(req, res, next) {
 }
 
 /**
- * Check if profile exists with given email
+ * Check if profile exists with given email and return basic profile details
  * Requires authentication (CRM or Portal users allowed)
  */
 async function checkEmailExists(req, res, next) {
@@ -731,21 +734,260 @@ async function checkEmailExists(req, res, next) {
     }).lean();
 
     if (existingProfile) {
+      // Return basic profile details
       return res.success({
-        status: true,
+        exists: true,
         message: "Profile with this email already exists",
+        profile: {
+          profileId: existingProfile._id,
+          membershipNumber: existingProfile.membershipNumber,
+          isActive: existingProfile.isActive,
+          personalInfo: {
+            title: existingProfile.personalInfo?.title,
+            forename: existingProfile.personalInfo?.forename,
+            surname: existingProfile.personalInfo?.surname,
+            dateOfBirth: existingProfile.personalInfo?.dateOfBirth,
+            age: existingProfile.personalInfo?.age,
+            gender: existingProfile.personalInfo?.gender,
+          },
+          contactInfo: {
+            mobileNumber: existingProfile.contactInfo?.mobileNumber,
+            telephoneNumber: existingProfile.contactInfo?.telephoneNumber,
+            preferredEmail: existingProfile.contactInfo?.preferredEmail,
+            personalEmail: existingProfile.contactInfo?.personalEmail,
+            workEmail: existingProfile.contactInfo?.workEmail,
+            fullAddress: existingProfile.contactInfo?.fullAddress,
+            country: existingProfile.contactInfo?.country,
+          },
+          professionalDetails: {
+            workLocation: existingProfile.professionalDetails?.workLocation,
+            branch: existingProfile.professionalDetails?.branch,
+            grade: existingProfile.professionalDetails?.grade,
+          },
+          submissionDate: existingProfile.submissionDate,
+          firstJoinedDate: existingProfile.firstJoinedDate,
+        },
       });
     }
 
     return res.success({
-      status: false,
+      exists: false,
       message: "No profile with this email exists",
+      profile: null,
     });
   } catch (error) {
     console.error("ProfileController [checkEmailExists] Error:", error);
     return next(
       AppError.internalServerError(
         error.message || "Failed to check email existence"
+      )
+    );
+  }
+}
+
+/**
+ * Get personal details for the logged-in PORTAL user
+ * GET /api/profile/my-personal-details
+ * Returns: Personal details for the user
+ */
+async function getMyPersonalDetails(req, res, next) {
+  try {
+    const { userId, userType } = extractUserAndCreatorContext(req);
+
+    // Only allow PORTAL users
+    if (userType !== "PORTAL") {
+      return next(
+        AppError.forbidden("This endpoint is only available for Portal users")
+      );
+    }
+
+    if (!userId) {
+      return next(AppError.badRequest("User ID is required"));
+    }
+
+    const personalDetails = await personalDetailsService.getMyPersonalDetails(
+      userId
+    );
+
+    if (!personalDetails) {
+      return res.status(200).json({
+        data: null,
+        message: "Personal details not found",
+      });
+    }
+
+    return res.success(personalDetails);
+  } catch (error) {
+    console.error("ProfileController [getMyPersonalDetails] Error:", error);
+    if (error.message === "Personal details not found") {
+      return res.status(200).json({
+        data: null,
+        message: "Personal details not found",
+      });
+    }
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch personal details"
+      )
+    );
+  }
+}
+
+/**
+ * Get professional details for the logged-in PORTAL user
+ * GET /api/profile/my-professional-details
+ * Returns: Professional details for the user
+ */
+async function getMyProfessionalDetails(req, res, next) {
+  try {
+    const { userId, userType } = extractUserAndCreatorContext(req);
+
+    // Only allow PORTAL users
+    if (userType !== "PORTAL") {
+      return next(
+        AppError.forbidden("This endpoint is only available for Portal users")
+      );
+    }
+
+    if (!userId) {
+      return next(AppError.badRequest("User ID is required"));
+    }
+
+    const professionalDetails =
+      await professionalDetailsService.getMyProfessionalDetails(userId);
+
+    if (!professionalDetails) {
+      return res.status(200).json({
+        data: null,
+        message: "Professional details not found",
+      });
+    }
+
+    return res.success(professionalDetails);
+  } catch (error) {
+    console.error("ProfileController [getMyProfessionalDetails] Error:", error);
+    if (error.message === "Professional details not found") {
+      return res.status(200).json({
+        data: null,
+        message: "Professional details not found",
+      });
+    }
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch professional details"
+      )
+    );
+  }
+}
+
+/**
+ * Get subscription details for the logged-in PORTAL user
+ * GET /api/profile/my-subscription-details
+ * Returns: Subscription details for the user
+ */
+async function getMySubscriptionDetails(req, res, next) {
+  try {
+    const { userId, userType } = extractUserAndCreatorContext(req);
+
+    // Only allow PORTAL users
+    if (userType !== "PORTAL") {
+      return next(
+        AppError.forbidden("This endpoint is only available for Portal users")
+      );
+    }
+
+    if (!userId) {
+      return next(AppError.badRequest("User ID is required"));
+    }
+
+    const subscriptionDetails =
+      await subscriptionDetailsService.getMySubscriptionDetails(userId);
+
+    if (!subscriptionDetails) {
+      return res.status(200).json({
+        data: null,
+        message: "Subscription details not found",
+      });
+    }
+
+    return res.success(subscriptionDetails);
+  } catch (error) {
+    console.error("ProfileController [getMySubscriptionDetails] Error:", error);
+    if (error.message === "Subscription details not found") {
+      return res.status(200).json({
+        data: null,
+        message: "Subscription details not found",
+      });
+    }
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch subscription details"
+      )
+    );
+  }
+}
+
+/**
+ * Get all details (personal, professional, subscription) for the logged-in PORTAL user
+ * GET /api/profile/my-details
+ * Returns: Combined personal, professional, and subscription details
+ */
+async function getMyAllDetails(req, res, next) {
+  try {
+    const { userId, userType } = extractUserAndCreatorContext(req);
+
+    // Only allow PORTAL users
+    if (userType !== "PORTAL") {
+      return next(
+        AppError.forbidden("This endpoint is only available for Portal users")
+      );
+    }
+
+    if (!userId) {
+      return next(AppError.badRequest("User ID is required"));
+    }
+
+    // Fetch all details in parallel
+    const [personalDetails, professionalDetails, subscriptionDetails] =
+      await Promise.allSettled([
+        personalDetailsService.getMyPersonalDetails(userId),
+        professionalDetailsService.getMyProfessionalDetails(userId),
+        subscriptionDetailsService.getMySubscriptionDetails(userId),
+      ]);
+
+    const result = {
+      personalDetails:
+        personalDetails.status === "fulfilled"
+          ? personalDetails.value
+          : null,
+      professionalDetails:
+        professionalDetails.status === "fulfilled"
+          ? professionalDetails.value
+          : null,
+      subscriptionDetails:
+        subscriptionDetails.status === "fulfilled"
+          ? subscriptionDetails.value
+          : null,
+    };
+
+    // If none of the details exist, return not found
+    if (
+      !result.personalDetails &&
+      !result.professionalDetails &&
+      !result.subscriptionDetails
+    ) {
+      return res.status(200).json({
+        data: null,
+        message: "No details found for this user",
+      });
+    }
+
+    return res.success(result);
+  } catch (error) {
+    console.error("ProfileController [getMyAllDetails] Error:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch user details"
       )
     );
   }
@@ -762,4 +1004,8 @@ module.exports = {
   getCornMarketNew,
   getCornMarketGraduate,
   checkEmailExists,
+  getMyPersonalDetails,
+  getMyProfessionalDetails,
+  getMySubscriptionDetails,
+  getMyAllDetails,
 };

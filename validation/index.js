@@ -313,3 +313,32 @@ module.exports.profile_update = Joi.object({
     consent: Joi.boolean().optional().default(true),
   }).optional(),
 });
+
+// Application Filter Template Validation
+module.exports.filter_template_create = Joi.object({
+  filters: Joi.object({
+    type: Joi.alternatives()
+      .try(
+        Joi.string().valid(...Object.values(APPLICATION_STATUS)),
+        Joi.array().items(
+          Joi.string().valid(...Object.values(APPLICATION_STATUS))
+        )
+      )
+      .optional(),
+  }).optional(),
+  isDefault: Joi.boolean().optional().default(false),
+});
+
+module.exports.filter_template_update = Joi.object({
+  filters: Joi.object({
+    type: Joi.alternatives()
+      .try(
+        Joi.string().valid(...Object.values(APPLICATION_STATUS)),
+        Joi.array().items(
+          Joi.string().valid(...Object.values(APPLICATION_STATUS))
+        )
+      )
+      .optional(),
+  }).optional(),
+  isDefault: Joi.boolean().optional(),
+});

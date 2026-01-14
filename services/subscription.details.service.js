@@ -409,6 +409,33 @@ class SubscriptionDetailsService {
       throw error;
     }
   }
+
+  /**
+   * Get my subscription details (for PORTAL users)
+   * @param {string} userId - User ID
+   * @returns {Promise<Object>} Subscription details
+   */
+  async getMySubscriptionDetails(userId) {
+    try {
+      if (!userId) {
+        throw AppError.badRequest("User ID is required");
+      }
+
+      const subscriptionDetails = await subscriptionDetailsHandler.getByUserId(userId);
+      
+      if (!subscriptionDetails) {
+        throw new Error("Subscription details not found");
+      }
+
+      return subscriptionDetails;
+    } catch (error) {
+      console.error(
+        "SubscriptionDetailsService [getMySubscriptionDetails] Error:",
+        error
+      );
+      throw error;
+    }
+  }
 }
 
 module.exports = new SubscriptionDetailsService();

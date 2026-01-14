@@ -9,6 +9,11 @@ router.post(
   subscriptionDetailsController.createSubscriptionDetails
 );
 router.get(
+  "/",
+  defaultPolicyMiddleware.requirePermission("portal", "read"),
+  subscriptionDetailsController.getMySubscriptionDetails
+);
+router.get(
   "/:applicationId",
   defaultPolicyMiddleware.requirePermission("portal", "read"),
   subscriptionDetailsController.getSubscriptionDetails
