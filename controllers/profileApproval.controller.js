@@ -264,6 +264,7 @@ async function approveApplication(req, res, next) {
     const updatedProfile = await Profile.findById(profile._id).session(session);
 
     // Publish events using dedicated publisher
+    const memberId = updatedProfile?.membershipNumber || null;
     // Wrap in try-catch to prevent approval failure if publishing fails
     try {
       await ApplicationApprovalEventPublisher.publishApplicationApproved({
@@ -273,6 +274,7 @@ async function approveApplication(req, res, next) {
         applicationStatus: "APPROVED",
         isExistingProfile: !!existingProfile,
         crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
+        memberId,
         effective: {
           personalInfo: effective.personalInfo,
           contactInfo: effective.contactInfo,
@@ -297,6 +299,7 @@ async function approveApplication(req, res, next) {
         profileId: String(profile._id),
         isExistingProfile: !!existingProfile,
         crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
+        memberId,
         effective,
         subscriptionAttributes: subAttrs(effective.subscriptionDetails),
         tenantId,

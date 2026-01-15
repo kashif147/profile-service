@@ -18,7 +18,13 @@ const ProfileSchema = new mongoose.Schema(
     }, // ID of the CRM user who approved this profile
     // email: { type: String, required: true },
     normalizedEmail: { type: String, required: true },
-    membershipNumber: { type: String, unique: true, sparse: true }, // Auto-generated membership number
+    membershipNumber: {
+      type: String,
+      required: true,
+      unique: true,
+      sparse: true,
+      trim: true,
+    }, // Auto-generated membership number
     firstJoinedDate: { type: Date, default: null }, // Date of first membership
     submissionDate: { type: Date, default: Date.now }, // Date of submission
     // NEW: Pointer to the current subscription

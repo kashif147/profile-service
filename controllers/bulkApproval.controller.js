@@ -24,6 +24,9 @@ const {
   findOrCreateProfileByEmail,
 } = require("../services/profileLookup.service.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
+const {
+  generateMembershipNumber,
+} = require("../helpers/membership.number.generator.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -175,6 +178,14 @@ async function approveSingleApplication({
       // Update existing profile - keep existing membership number
       const updateFields = { ...flattenedProfileFields };
 
+      if (!existingProfile.membershipNumber) {
+        const membershipNumber = await generateMembershipNumber();
+        updateFields.membershipNumber = membershipNumber;
+        console.log(
+          `✅ Generated membership number ${membershipNumber} for existing profile ${existingProfile._id}`
+        );
+      }
+
       // Set userId for portal users when updating existing profile (only if not already set)
       if (userType === "PORTAL" && userId && !existingProfile.userId) {
         updateFields.userId = userId;
@@ -270,6 +281,7 @@ async function approveSingleApplication({
     const updatedProfile = await Profile.findById(profile._id).session(session);
 
     // Publish events (wrapped in try-catch to not fail approval if publishing fails)
+    const memberId = updatedProfile?.membershipNumber || null;
     try {
       await ApplicationApprovalEventPublisher.publishApplicationApproved({
         applicationId,
@@ -278,6 +290,7 @@ async function approveSingleApplication({
         applicationStatus: "APPROVED",
         isExistingProfile: !!existingProfile,
         crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
+        memberId,
         effective: {
           personalInfo: effective.personalInfo,
           contactInfo: effective.contactInfo,
@@ -301,6 +314,7 @@ async function approveSingleApplication({
         profileId: String(profile._id),
         isExistingProfile: !!existingProfile,
         crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
+        memberId,
         effective,
         subscriptionAttributes: subAttrs(effective.subscriptionDetails),
         tenantId,

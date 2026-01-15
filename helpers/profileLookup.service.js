@@ -80,6 +80,14 @@ async function findOrCreateProfileByEmail({
       "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
       "approvalDetails.approvedAt": new Date(),
     };
+
+    if (!profile.membershipNumber) {
+      const membershipNumber = await generateMembershipNumber();
+      $set.membershipNumber = membershipNumber;
+      console.log(
+        `✅ Generated membership number ${membershipNumber} for existing profile ${profile._id}`
+      );
+    }
     
     // Update normalizedEmail based on preferred email
     const existingContactInfo = profile.contactInfo?.toObject ? profile.contactInfo.toObject() : (profile.contactInfo || {});

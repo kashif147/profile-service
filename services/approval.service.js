@@ -127,6 +127,14 @@ async function approveApplication({
         profileUpdate.crmUserId = getReviewerIdForDb(reviewerId);
       }
 
+      if (!existingProfile.membershipNumber) {
+        const membershipNumber = await generateMembershipNumber();
+        profileUpdate.membershipNumber = membershipNumber;
+        console.log(
+          `✅ Generated membership number ${membershipNumber} for existing profile ${existingProfile._id}`
+        );
+      }
+
       await Profile.updateOne(
         { _id: existingProfile._id },
         { $set: profileUpdate },
@@ -267,6 +275,8 @@ async function approveApplication({
     // Get the updated profile to include crmUserId and userId in events
     const updatedProfile = await Profile.findById(profile._id).session(session);
 
+    const memberId = updatedProfile?.membershipNumber || null;
+
     await ApplicationApprovalEventPublisher.publishApplicationApproved({
       applicationId,
       reviewerId,
@@ -274,6 +284,7 @@ async function approveApplication({
       applicationStatus: APPLICATION_STATUS.APPROVED,
       isExistingProfile: !!existingProfile,
       crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
+      memberId,
       effective,
       subscriptionAttributes,
       tenantId,
@@ -285,6 +296,7 @@ async function approveApplication({
       profileId: String(profile._id),
       isExistingProfile: !!existingProfile,
       crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
+      memberId,
       effective,
       subscriptionAttributes,
       tenantId,
