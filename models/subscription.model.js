@@ -7,6 +7,7 @@ const {
 
 const SubscriptionSchema = new mongoose.Schema(
   {
+    tenantId: { type: String, required: true, index: true },
     applicationId: { type: String, required: true },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -86,5 +87,7 @@ const SubscriptionSchema = new mongoose.Schema(
 
 // Index for frequently queried field
 SubscriptionSchema.index({ applicationId: 1 });
+SubscriptionSchema.index({ tenantId: 1, applicationId: 1 });
+SubscriptionSchema.index({ tenantId: 1, userId: 1 });
 
 module.exports = mongoose.model("subscriptionDetails", SubscriptionSchema);

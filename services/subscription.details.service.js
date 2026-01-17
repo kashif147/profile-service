@@ -18,7 +18,13 @@ class SubscriptionDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<Object>} Created subscription details
    */
-  async createSubscriptionDetails(data, applicationId, userId, userType) {
+  async createSubscriptionDetails(
+    data,
+    applicationId,
+    userId,
+    userType,
+    tenantId
+  ) {
     try {
       if (!data) {
         throw AppError.badRequest("Subscription details data is required");
@@ -30,7 +36,8 @@ class SubscriptionDetailsService {
 
       // Check if application exists
       const personalDetails = await personalDetailsHandler.getApplicationById(
-        applicationId
+        applicationId,
+        tenantId
       );
       if (!personalDetails) {
         throw AppError.notFound("Application not found");
@@ -38,7 +45,10 @@ class SubscriptionDetailsService {
 
       // Check if subscription details already exist
       const existingDetails =
-        await subscriptionDetailsHandler.getByApplicationId(applicationId);
+        await subscriptionDetailsHandler.getByApplicationId(
+          applicationId,
+          tenantId
+        );
       if (existingDetails) {
         throw AppError.conflict(
           "Subscription details already exist for this application, please update existing details"
@@ -55,7 +65,10 @@ class SubscriptionDetailsService {
       }
 
       const professionalDetails =
-        await professionalDetailsHandler.getApplicationById(applicationId);
+        await professionalDetailsHandler.getApplicationById(
+          applicationId,
+          tenantId
+        );
       const membershipCategoryFromProfessional =
         professionalDetails?.professionalDetails?.membershipCategory ?? null;
 
@@ -63,6 +76,7 @@ class SubscriptionDetailsService {
         ...data,
         applicationId: applicationId,
         userId: userId,
+        tenantId,
         meta: { createdBy: userId, userType },
       };
 
@@ -182,7 +196,8 @@ class SubscriptionDetailsService {
         );
         await personalDetailsHandler.updateApplicationStatus(
           applicationId,
-          APPLICATION_STATUS.SUBMITTED
+          APPLICATION_STATUS.SUBMITTED,
+          tenantId
         );
       } else if (userType === "PORTAL" && isUndergraduateStudent) {
         console.log(
@@ -190,7 +205,8 @@ class SubscriptionDetailsService {
         );
         await personalDetailsHandler.updateApplicationStatus(
           applicationId,
-          APPLICATION_STATUS.SUBMITTED
+          APPLICATION_STATUS.SUBMITTED,
+          tenantId
         );
       } else if (userType === "PORTAL" && !isUndergraduateStudent) {
         console.log(
@@ -220,7 +236,7 @@ class SubscriptionDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<Object>} Subscription details
    */
-  async getSubscriptionDetails(applicationId, userId, userType) {
+  async getSubscriptionDetails(applicationId, userId, userType, tenantId) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
@@ -228,7 +244,8 @@ class SubscriptionDetailsService {
 
       // Validate parent resource: check if application exists
       const personalDetails = await personalDetailsHandler.getApplicationById(
-        applicationId
+        applicationId,
+        tenantId
       );
       if (!personalDetails) {
         throw AppError.notFound("Application not found");
@@ -236,12 +253,14 @@ class SubscriptionDetailsService {
 
       if (userType === "CRM") {
         return await subscriptionDetailsHandler.getApplicationById(
-          applicationId
+          applicationId,
+          tenantId
         );
       } else {
         return await subscriptionDetailsHandler.getByUserIdAndApplicationId(
           userId,
-          applicationId
+          applicationId,
+          tenantId
         );
       }
     } catch (error) {
@@ -261,7 +280,13 @@ class SubscriptionDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<Object>} Updated subscription details
    */
-  async updateSubscriptionDetails(applicationId, updateData, userId, userType) {
+  async updateSubscriptionDetails(
+    applicationId,
+    updateData,
+    userId,
+    userType,
+    tenantId
+  ) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
@@ -308,14 +333,16 @@ class SubscriptionDetailsService {
       if (userType === "CRM") {
         result = await subscriptionDetailsHandler.updateByApplicationId(
           applicationId,
-          updatePayload
+          updatePayload,
+          tenantId
         );
       } else {
         result =
           await subscriptionDetailsHandler.updateByUserIdAndApplicationId(
             userId,
             applicationId,
-            updatePayload
+            updatePayload,
+            tenantId
           );
       }
 
@@ -336,7 +363,7 @@ class SubscriptionDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<Object>} Deleted subscription details
    */
-  async deleteSubscriptionDetails(applicationId, userId, userType) {
+  async deleteSubscriptionDetails(applicationId, userId, userType, tenantId) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
@@ -345,13 +372,15 @@ class SubscriptionDetailsService {
       let result;
       if (userType === "CRM") {
         result = await subscriptionDetailsHandler.deleteByApplicationId(
-          applicationId
+          applicationId,
+          tenantId
         );
       } else {
         result =
           await subscriptionDetailsHandler.deleteByUserIdAndApplicationId(
             userId,
-            applicationId
+            applicationId,
+            tenantId
           );
       }
 
@@ -370,14 +399,15 @@ class SubscriptionDetailsService {
    * @param {string} applicationId - Application ID
    * @returns {Promise<boolean>} True if exists, false otherwise
    */
-  async checkSubscriptionDetailsExist(applicationId) {
+  async checkSubscriptionDetailsExist(applicationId, tenantId) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
       }
 
       const details = await subscriptionDetailsHandler.getByApplicationId(
-        applicationId
+        applicationId,
+        tenantId
       );
       return !!details;
     } catch (error) {
@@ -394,13 +424,13 @@ class SubscriptionDetailsService {
    * @param {string} email - Email address
    * @returns {Promise<Object>} Subscription details
    */
-  async getSubscriptionDetailsByEmail(email) {
+  async getSubscriptionDetailsByEmail(email, tenantId) {
     try {
       if (!email) {
         throw AppError.badRequest("Email is required");
       }
 
-      return await subscriptionDetailsHandler.getByEmail(email);
+      return await subscriptionDetailsHandler.getByEmail(email, tenantId);
     } catch (error) {
       console.error(
         "SubscriptionDetailsService [getSubscriptionDetailsByEmail] Error:",
@@ -415,13 +445,16 @@ class SubscriptionDetailsService {
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Subscription details
    */
-  async getMySubscriptionDetails(userId) {
+  async getMySubscriptionDetails(userId, tenantId) {
     try {
       if (!userId) {
         throw AppError.badRequest("User ID is required");
       }
 
-      const subscriptionDetails = await subscriptionDetailsHandler.getByUserId(userId);
+      const subscriptionDetails = await subscriptionDetailsHandler.getByUserId(
+        userId,
+        tenantId
+      );
       
       // Return null if not found (consistent with other services)
       // This allows Promise.allSettled to handle it gracefully

@@ -15,7 +15,13 @@ class ProfessionalDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<Object>} Created professional details
    */
-  async createProfessionalDetails(data, applicationId, userId, userType) {
+  async createProfessionalDetails(
+    data,
+    applicationId,
+    userId,
+    userType,
+    tenantId
+  ) {
     try {
       if (!data) {
         throw AppError.badRequest("Professional details data is required");
@@ -27,7 +33,8 @@ class ProfessionalDetailsService {
 
       // Check if application exists
       const personalDetails = await personalDetailsHandler.getApplicationById(
-        applicationId
+        applicationId,
+        tenantId
       );
       if (!personalDetails) {
         throw AppError.notFound("Application not found");
@@ -35,7 +42,10 @@ class ProfessionalDetailsService {
 
       // Check if professional details already exist
       const existingDetails =
-        await professionalDetailsHandler.getByApplicationId(applicationId);
+        await professionalDetailsHandler.getByApplicationId(
+          applicationId,
+          tenantId
+        );
       if (existingDetails) {
         throw AppError.conflict(
           "Professional details already exist for this application, please update existing details"
@@ -55,6 +65,7 @@ class ProfessionalDetailsService {
         ...data,
         applicationId: applicationId,
         userId: userId,
+        tenantId,
         meta: { createdBy: userId, userType: userType },
       };
 
@@ -75,7 +86,7 @@ class ProfessionalDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<Object>} Professional details
    */
-  async getProfessionalDetails(applicationId, userId, userType) {
+  async getProfessionalDetails(applicationId, userId, userType, tenantId) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
@@ -83,13 +94,18 @@ class ProfessionalDetailsService {
 
       // Validate parent resource: check if application exists
       const personalDetails = await personalDetailsHandler.getApplicationById(
-        applicationId
+        applicationId,
+        tenantId
       );
       if (!personalDetails) {
         throw AppError.notFound("Application not found");
       }
 
-      const professionalDetails = await professionalDetailsHandler.getApplicationById(applicationId);
+      const professionalDetails =
+        await professionalDetailsHandler.getApplicationById(
+          applicationId,
+          tenantId
+        );
       
       // If application exists but professional details don't, return null (will be handled as 200 OK with null)
       if (!professionalDetails) {
@@ -123,7 +139,13 @@ class ProfessionalDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<Object>} Updated professional details
    */
-  async updateProfessionalDetails(applicationId, updateData, userId, userType) {
+  async updateProfessionalDetails(
+    applicationId,
+    updateData,
+    userId,
+    userType,
+    tenantId
+  ) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
@@ -142,14 +164,16 @@ class ProfessionalDetailsService {
       if (userType === "CRM") {
         result = await professionalDetailsHandler.updateByApplicationId(
           applicationId,
-          updatePayload
+          updatePayload,
+          tenantId
         );
       } else {
         result =
           await professionalDetailsHandler.updateByUserIdAndApplicationId(
             userId,
             applicationId,
-            updatePayload
+            updatePayload,
+            tenantId
           );
       }
 
@@ -170,7 +194,7 @@ class ProfessionalDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<Object>} Deleted professional details
    */
-  async deleteProfessionalDetails(applicationId, userId, userType) {
+  async deleteProfessionalDetails(applicationId, userId, userType, tenantId) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
@@ -179,13 +203,15 @@ class ProfessionalDetailsService {
       let result;
       if (userType === "CRM") {
         result = await professionalDetailsHandler.deleteByApplicationId(
-          applicationId
+          applicationId,
+          tenantId
         );
       } else {
         result =
           await professionalDetailsHandler.deleteByUserIdAndApplicationId(
             userId,
-            applicationId
+            applicationId,
+            tenantId
           );
       }
 
@@ -204,13 +230,13 @@ class ProfessionalDetailsService {
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Professional details
    */
-  async getMyProfessionalDetails(userId) {
+  async getMyProfessionalDetails(userId, tenantId) {
     try {
       if (!userId) {
         throw AppError.badRequest("User ID is required");
       }
 
-      return await professionalDetailsHandler.getByUserId(userId);
+      return await professionalDetailsHandler.getByUserId(userId, tenantId);
     } catch (error) {
       console.error(
         "ProfessionalDetailsService [getMyProfessionalDetails] Error:",
@@ -225,14 +251,15 @@ class ProfessionalDetailsService {
    * @param {string} applicationId - Application ID
    * @returns {Promise<boolean>} True if exists, false otherwise
    */
-  async checkProfessionalDetailsExist(applicationId) {
+  async checkProfessionalDetailsExist(applicationId, tenantId) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
       }
 
       const details = await professionalDetailsHandler.getByApplicationId(
-        applicationId
+        applicationId,
+        tenantId
       );
       return !!details;
     } catch (error) {

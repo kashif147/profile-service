@@ -28,7 +28,8 @@ const { AppError } = require("../errors/AppError");
 
 exports.createSubscriptionDetails = async (req, res, next) => {
   try {
-    const { userId, creatorId, userType } = extractUserAndCreatorContext(req);
+    const { userId, creatorId, userType, tenantId } =
+      extractUserAndCreatorContext(req);
     const validatedData =
       await joischemas.subscription_details_create.validateAsync(req.body);
 
@@ -40,7 +41,8 @@ exports.createSubscriptionDetails = async (req, res, next) => {
       validatedData,
       applicationId,
       userId,
-      userType
+      userType,
+      tenantId
     );
 
     return res.success(result);
@@ -58,7 +60,7 @@ exports.createSubscriptionDetails = async (req, res, next) => {
 
 exports.getSubscriptionDetails = async (req, res, next) => {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
     if (!applicationId) {
@@ -69,7 +71,8 @@ exports.getSubscriptionDetails = async (req, res, next) => {
       await subscriptionDetailsService.getSubscriptionDetails(
         applicationId,
         userId,
-        userType
+        userType,
+        tenantId
       );
     
     if (!subscriptionDetails) {
@@ -94,7 +97,8 @@ exports.getSubscriptionDetails = async (req, res, next) => {
 
 exports.updateSubscriptionDetails = async (req, res, next) => {
   try {
-    const { userId, userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userId, userType, creatorId, tenantId } =
+      extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
     if (!applicationId) {
@@ -112,7 +116,8 @@ exports.updateSubscriptionDetails = async (req, res, next) => {
       applicationId,
       updatePayload,
       userId,
-      userType
+      userType,
+      tenantId
     );
 
     return res.success(result);
@@ -133,7 +138,7 @@ exports.updateSubscriptionDetails = async (req, res, next) => {
 
 exports.deleteSubscriptionDetails = async (req, res, next) => {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
     if (!applicationId) {
@@ -143,7 +148,8 @@ exports.deleteSubscriptionDetails = async (req, res, next) => {
     await subscriptionDetailsService.deleteSubscriptionDetails(
       applicationId,
       userId,
-      userType
+      userType,
+      tenantId
     );
 
     return res.success("Subscription details deleted successfully");
@@ -161,7 +167,7 @@ exports.deleteSubscriptionDetails = async (req, res, next) => {
 
 exports.getMySubscriptionDetails = async (req, res, next) => {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
 
     // For PORTAL users, get by userId
     if (userType === "PORTAL") {
@@ -170,7 +176,10 @@ exports.getMySubscriptionDetails = async (req, res, next) => {
       }
 
       const subscriptionDetails =
-        await subscriptionDetailsService.getMySubscriptionDetails(userId);
+        await subscriptionDetailsService.getMySubscriptionDetails(
+          userId,
+          tenantId
+        );
 
       if (!subscriptionDetails) {
         return res.notFoundRecord("Subscription details not found");

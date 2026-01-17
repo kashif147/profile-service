@@ -9,6 +9,7 @@ const {
 
 const ProfileSchema = new mongoose.Schema(
   {
+    tenantId: { type: String, required: true, index: true },
     personalInfo: {
       title: {
         type: String,
@@ -133,5 +134,7 @@ ProfileSchema.index({ userId: 1 });
 ProfileSchema.index({ applicationId: 1 });
 ProfileSchema.index({ "duplicateDetection.isPotentialDuplicate": 1 });
 ProfileSchema.index({ "duplicateDetection.matchedApplicationIds": 1 });
+ProfileSchema.index({ tenantId: 1, applicationId: 1 });
+ProfileSchema.index({ tenantId: 1, userId: 1 });
 
 module.exports = mongoose.model("personalDetails", ProfileSchema);

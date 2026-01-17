@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const ProfessionalSchema = new mongoose.Schema(
   {
+    tenantId: { type: String, required: true, index: true },
     applicationId: { type: String, required: true },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -41,5 +42,7 @@ const ProfessionalSchema = new mongoose.Schema(
 
 // Index for frequently queried field
 ProfessionalSchema.index({ applicationId: 1 });
+ProfessionalSchema.index({ tenantId: 1, applicationId: 1 });
+ProfessionalSchema.index({ tenantId: 1, userId: 1 });
 
 module.exports = mongoose.model("ProfessionalDetails", ProfessionalSchema);

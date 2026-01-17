@@ -8,7 +8,8 @@ const { normalizeEmail } = require("../helpers/profileLookup.service.js");
 
 exports.createPersonalDetails = async (req, res, next) => {
   try {
-    const { userId, creatorId, userType } = extractUserAndCreatorContext(req);
+    const { userId, creatorId, userType, tenantId } =
+      extractUserAndCreatorContext(req);
     console.log("=== createPersonalDetails START ===");
     console.log("User context:", { userId, creatorId, userType });
 
@@ -47,7 +48,8 @@ exports.createPersonalDetails = async (req, res, next) => {
         );
       }
       const existingPersonalDetails = await personalDetailsHandler.getByEmail(
-        email
+        email,
+        tenantId
       );
       if (existingPersonalDetails) {
         return next(
@@ -64,7 +66,8 @@ exports.createPersonalDetails = async (req, res, next) => {
         );
       }
       const existingPersonalDetails = await personalDetailsHandler.getByUserId(
-        userId
+        userId,
+        tenantId
       );
       if (existingPersonalDetails) {
         return next(
@@ -79,6 +82,7 @@ exports.createPersonalDetails = async (req, res, next) => {
     const result = await personalDetailsService.createPersonalDetails({
       ...validatedData,
       userId,
+      tenantId,
       meta: { createdBy: creatorId, userType },
     });
 
@@ -103,7 +107,7 @@ exports.getPersonalDetails = async (req, res, next) => {
     console.log("Request user:", req.user);
     console.log("Request ctx:", req.ctx);
 
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
     console.log("Extracted context:", { userId, userType, applicationId });
@@ -130,7 +134,8 @@ exports.getPersonalDetails = async (req, res, next) => {
     const personalDetails = await personalDetailsService.getPersonalDetails(
       applicationId,
       userId,
-      userType
+      userType,
+      tenantId
     );
 
     if (!personalDetails) {
@@ -154,7 +159,8 @@ exports.getPersonalDetails = async (req, res, next) => {
 
 exports.updatePersonalDetails = async (req, res, next) => {
   try {
-    const { userId, userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userId, userType, creatorId, tenantId } =
+      extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
     // Context logging for debugging
@@ -183,7 +189,8 @@ exports.updatePersonalDetails = async (req, res, next) => {
         applicationId,
         updatePayload,
         userId,
-        userType
+        userType,
+        tenantId
       );
     } catch (err) {
       // Cleanly map specific business errors to AppError
@@ -209,7 +216,7 @@ exports.updatePersonalDetails = async (req, res, next) => {
 
 exports.deletePersonalDetails = async (req, res, next) => {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
     if (!applicationId) {
@@ -219,7 +226,8 @@ exports.deletePersonalDetails = async (req, res, next) => {
     await personalDetailsService.deletePersonalDetails(
       applicationId,
       userId,
-      userType
+      userType,
+      tenantId
     );
 
     return res.success("Personal details deleted successfully");
@@ -241,7 +249,7 @@ exports.getMyPersonalDetails = async (req, res, next) => {
     console.log("Request user:", req.user);
     console.log("Request ctx:", req.ctx);
 
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
     console.log("Extracted context:", { userId, userType });
 
     // For PORTAL users, get by userId
@@ -256,7 +264,8 @@ exports.getMyPersonalDetails = async (req, res, next) => {
         userId
       );
       const personalDetails = await personalDetailsService.getMyPersonalDetails(
-        userId
+        userId,
+        tenantId
       );
       console.log("Service response:", personalDetails);
 
@@ -295,7 +304,7 @@ exports.getMyPersonalDetails = async (req, res, next) => {
 
 exports.getApplicationStatus = async (req, res, next) => {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
     if (!applicationId) {
@@ -305,7 +314,8 @@ exports.getApplicationStatus = async (req, res, next) => {
     const applicationStatus = await personalDetailsService.getApplicationStatus(
       applicationId,
       userId,
-      userType
+      userType,
+      tenantId
     );
 
     return res.success({ applicationStatus });
@@ -361,7 +371,8 @@ exports.checkEmailExists = async (req, res, next) => {
     // Also check PersonalDetails (applications) for any pending/approved applications
     const emailLower = normalizedEmail.toLowerCase();
     const existingApplication = await personalDetailsHandler.getByEmail(
-      emailLower
+      emailLower,
+      tenantId
     );
 
     // If profile exists, return profile information

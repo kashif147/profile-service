@@ -412,7 +412,7 @@ async function softDeleteProfile(req, res, next) {
  */
 async function getMyProfile(req, res, next) {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
 
     // Only allow PORTAL users
     if (userType !== "PORTAL") {
@@ -806,7 +806,8 @@ async function getMyPersonalDetails(req, res, next) {
     }
 
     const personalDetails = await personalDetailsService.getMyPersonalDetails(
-      userId
+      userId,
+      tenantId
     );
 
     if (!personalDetails) {
@@ -840,7 +841,7 @@ async function getMyPersonalDetails(req, res, next) {
  */
 async function getMyProfessionalDetails(req, res, next) {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
 
     // Only allow PORTAL users
     if (userType !== "PORTAL") {
@@ -854,7 +855,10 @@ async function getMyProfessionalDetails(req, res, next) {
     }
 
     const professionalDetails =
-      await professionalDetailsService.getMyProfessionalDetails(userId);
+      await professionalDetailsService.getMyProfessionalDetails(
+        userId,
+        tenantId
+      );
 
     if (!professionalDetails) {
       return res.status(200).json({
@@ -887,7 +891,7 @@ async function getMyProfessionalDetails(req, res, next) {
  */
 async function getMySubscriptionDetails(req, res, next) {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
 
     // Only allow PORTAL users
     if (userType !== "PORTAL") {
@@ -901,7 +905,10 @@ async function getMySubscriptionDetails(req, res, next) {
     }
 
     const subscriptionDetails =
-      await subscriptionDetailsService.getMySubscriptionDetails(userId);
+      await subscriptionDetailsService.getMySubscriptionDetails(
+        userId,
+        tenantId
+      );
 
     if (!subscriptionDetails) {
       return res.status(200).json({
@@ -934,7 +941,7 @@ async function getMySubscriptionDetails(req, res, next) {
  */
 async function getMyAllDetails(req, res, next) {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
 
     // Only allow PORTAL users
     if (userType !== "PORTAL") {
@@ -950,9 +957,9 @@ async function getMyAllDetails(req, res, next) {
     // Fetch all details in parallel
     const [personalDetails, professionalDetails, subscriptionDetails] =
       await Promise.allSettled([
-        personalDetailsService.getMyPersonalDetails(userId),
-        professionalDetailsService.getMyProfessionalDetails(userId),
-        subscriptionDetailsService.getMySubscriptionDetails(userId),
+        personalDetailsService.getMyPersonalDetails(userId, tenantId),
+        professionalDetailsService.getMyProfessionalDetails(userId, tenantId),
+        subscriptionDetailsService.getMySubscriptionDetails(userId, tenantId),
       ]);
 
     const result = {

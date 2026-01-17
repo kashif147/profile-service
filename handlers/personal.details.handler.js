@@ -68,25 +68,14 @@ exports.create = (data) =>
     }
   });
 
-exports.getByUserId = (userId) =>
+exports.getByUserId = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const mongoose = require("mongoose");
-      
-      // Convert userId to ObjectId if it's a string
-      const userIdQuery = typeof userId === "string" && mongoose.Types.ObjectId.isValid(userId)
-        ? new mongoose.Types.ObjectId(userId)
-        : userId;
-
-      console.log("[getByUserId] Querying with userId:", userId, "converted to:", userIdQuery);
-
-      const result = await PersonalDetails.findOne({ 
-        userId: userIdQuery,
-        "meta.deleted": { $ne: true }
-      });
-
-      console.log("[getByUserId] Query result:", result ? "Found" : "Not found");
-      
+      const query = { userId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const result = await PersonalDetails.findOne(query);
       resolve(result);
     } catch (error) {
       console.error("PersonalDetailsHandler [getByUserId] Error:", error);
@@ -94,18 +83,22 @@ exports.getByUserId = (userId) =>
     }
   });
 
-exports.getByEmail = (email) =>
+exports.getByEmail = (email, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // Normalize email for case-insensitive comparison
       const normalizedEmail = email.toLowerCase().trim();
-      const result = await PersonalDetails.findOne({
+      const query = {
         $or: [
           { "contactInfo.personalEmail": new RegExp(`^${normalizedEmail}$`, "i") },
           { "contactInfo.workEmail": new RegExp(`^${normalizedEmail}$`, "i") },
         ],
         "meta.deleted": { $ne: true },
-      });
+      };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const result = await PersonalDetails.findOne(query);
       resolve(result);
     } catch (error) {
       console.error("PersonalDetailsHandler [getByEmail] Error:", error);
@@ -113,18 +106,22 @@ exports.getByEmail = (email) =>
     }
   });
 
-exports.getApplicationById = (applicationId) =>
+exports.getApplicationById = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       // Try lowercase first, then uppercase for backward compatibility
-      let result = await PersonalDetails.findOne({
-        applicationId: applicationId,
-      });
+      let result = await PersonalDetails.findOne(query);
       
       if (!result) {
-        result = await PersonalDetails.findOne({
-          ApplicationId: applicationId,
-        });
+        const legacyQuery = { ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
+        result = await PersonalDetails.findOne(legacyQuery);
       }
       
       resolve(result);
@@ -137,20 +134,22 @@ exports.getApplicationById = (applicationId) =>
     }
   });
 
-exports.getByUserIdAndApplicationId = (userId, applicationId) =>
+exports.getByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { userId: userId, applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       // Try lowercase first, then uppercase for backward compatibility
-      let result = await PersonalDetails.findOne({
-        userId: userId,
-        applicationId: applicationId,
-      });
+      let result = await PersonalDetails.findOne(query);
       
       if (!result) {
-        result = await PersonalDetails.findOne({
-          userId: userId,
-          ApplicationId: applicationId,
-        });
+        const legacyQuery = { userId: userId, ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
+        result = await PersonalDetails.findOne(legacyQuery);
       }
       
       resolve(result);
@@ -163,12 +162,16 @@ exports.getByUserIdAndApplicationId = (userId, applicationId) =>
     }
   });
 
-exports.updateByApplicationId = (applicationId, updateData) =>
+exports.updateByApplicationId = (applicationId, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       // Try lowercase first, then uppercase for backward compatibility
       let record = await PersonalDetails.findOneAndUpdate(
-        { applicationId: applicationId },
+        query,
         updateData,
         {
           new: true,
@@ -177,8 +180,12 @@ exports.updateByApplicationId = (applicationId, updateData) =>
       );
       
       if (!record) {
+        const legacyQuery = { ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
         record = await PersonalDetails.findOneAndUpdate(
-          { ApplicationId: applicationId },
+          legacyQuery,
           updateData,
           {
             new: true,
@@ -198,12 +205,21 @@ exports.updateByApplicationId = (applicationId, updateData) =>
     }
   });
 
-exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
+exports.updateByUserIdAndApplicationId = (
+  userId,
+  applicationId,
+  updateData,
+  tenantId
+) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { userId: userId, applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       // Try lowercase first, then uppercase for backward compatibility
       let record = await PersonalDetails.findOneAndUpdate(
-        { userId: userId, applicationId: applicationId },
+        query,
         updateData,
         {
           new: true,
@@ -212,8 +228,12 @@ exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
       );
       
       if (!record) {
+        const legacyQuery = { userId: userId, ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
         record = await PersonalDetails.findOneAndUpdate(
-          { userId: userId, ApplicationId: applicationId },
+          legacyQuery,
           updateData,
           {
             new: true,
@@ -233,17 +253,25 @@ exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
     }
   });
 
-exports.deleteByApplicationId = (applicationId) =>
+exports.deleteByApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       // Try lowercase first, then uppercase for backward compatibility
       let record = await PersonalDetails.findOneAndDelete({
-        applicationId: applicationId,
+        ...query,
       });
       
       if (!record) {
+        const legacyQuery = { ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
         record = await PersonalDetails.findOneAndDelete({
-          ApplicationId: applicationId,
+          ...legacyQuery,
         });
       }
       
@@ -258,19 +286,25 @@ exports.deleteByApplicationId = (applicationId) =>
     }
   });
 
-exports.deleteByUserIdAndApplicationId = (userId, applicationId) =>
+exports.deleteByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { userId: userId, applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       // Try lowercase first, then uppercase for backward compatibility
       let record = await PersonalDetails.findOneAndDelete({
-        userId: userId,
-        applicationId: applicationId,
+        ...query,
       });
       
       if (!record) {
+        const legacyQuery = { userId: userId, ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
         record = await PersonalDetails.findOneAndDelete({
-          userId: userId,
-          ApplicationId: applicationId,
+          ...legacyQuery,
         });
       }
       
@@ -285,19 +319,27 @@ exports.deleteByUserIdAndApplicationId = (userId, applicationId) =>
     }
   });
 
-exports.updateApplicationStatus = (applicationId, status) =>
+exports.updateApplicationStatus = (applicationId, status, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       // Try lowercase first, then uppercase for backward compatibility
       let result = await PersonalDetails.findOneAndUpdate(
-        { applicationId: applicationId },
+        query,
         { applicationStatus: status },
         { new: true }
       );
       
       if (!result) {
+        const legacyQuery = { ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
         result = await PersonalDetails.findOneAndUpdate(
-          { ApplicationId: applicationId },
+          legacyQuery,
           { applicationStatus: status },
           { new: true }
         );
@@ -313,26 +355,19 @@ exports.updateApplicationStatus = (applicationId, status) =>
     }
   });
 
-exports.getByUserIdForPortal = (userId) =>
+exports.getByUserIdForPortal = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const mongoose = require("mongoose");
-      
-      // Convert userId to ObjectId if it's a string
-      const userIdQuery = typeof userId === "string" && mongoose.Types.ObjectId.isValid(userId)
-        ? new mongoose.Types.ObjectId(userId)
-        : userId;
-
-      console.log("[getByUserIdForPortal] Querying with userId:", userId, "converted to:", userIdQuery);
-
-      const result = await PersonalDetails.findOne({
-        userId: userIdQuery,
+      const query = {
+        userId: userId,
         "meta.userType": "PORTAL",
-        "meta.deleted": { $ne: true }
+      };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const result = await PersonalDetails.findOne({
+        ...query,
       });
-
-      console.log("[getByUserIdForPortal] Query result:", result ? "Found" : "Not found");
-      
       resolve(result);
     } catch (error) {
       console.error(

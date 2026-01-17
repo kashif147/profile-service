@@ -32,7 +32,8 @@ const { AppError } = require("../errors/AppError");
 
 exports.createProfessionalDetails = async (req, res, next) => {
   try {
-    const { userId, userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userId, userType, creatorId, tenantId } =
+      extractUserAndCreatorContext(req);
     const validatedData =
       await joischemas.professional_details_create.validateAsync(req.body);
 
@@ -44,7 +45,8 @@ exports.createProfessionalDetails = async (req, res, next) => {
       validatedData,
       applicationId,
       userId,
-      userType
+      userType,
+      tenantId
     );
 
     return res.success(result);
@@ -62,7 +64,7 @@ exports.createProfessionalDetails = async (req, res, next) => {
 
 exports.getProfessionalDetails = async (req, res, next) => {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
     console.log(`[PROFESSIONAL_DETAILS] Getting professional details for:`, {
@@ -79,7 +81,8 @@ exports.getProfessionalDetails = async (req, res, next) => {
       await professionalDetailsService.getProfessionalDetails(
         applicationId,
         userId,
-        userType
+        userType,
+        tenantId
       );
     
     if (!professionalDetails) {
@@ -104,7 +107,8 @@ exports.getProfessionalDetails = async (req, res, next) => {
 
 exports.updateProfessionalDetails = async (req, res, next) => {
   try {
-    const { userId, userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userId, userType, creatorId, tenantId } =
+      extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
     if (!applicationId) {
@@ -122,7 +126,8 @@ exports.updateProfessionalDetails = async (req, res, next) => {
       applicationId,
       updatePayload,
       userId,
-      userType
+      userType,
+      tenantId
     );
 
     return res.success(result);
@@ -143,7 +148,7 @@ exports.updateProfessionalDetails = async (req, res, next) => {
 
 exports.deleteProfessionalDetails = async (req, res, next) => {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
     if (!applicationId) {
@@ -153,7 +158,8 @@ exports.deleteProfessionalDetails = async (req, res, next) => {
     await professionalDetailsService.deleteProfessionalDetails(
       applicationId,
       userId,
-      userType
+      userType,
+      tenantId
     );
 
     return res.success("Professional details deleted successfully");
@@ -171,7 +177,7 @@ exports.deleteProfessionalDetails = async (req, res, next) => {
 
 exports.getMyProfessionalDetails = async (req, res, next) => {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
 
     // For PORTAL users, get by userId
     if (userType === "PORTAL") {
@@ -180,7 +186,10 @@ exports.getMyProfessionalDetails = async (req, res, next) => {
       }
 
       const professionalDetails =
-        await professionalDetailsService.getMyProfessionalDetails(userId);
+        await professionalDetailsService.getMyProfessionalDetails(
+          userId,
+          tenantId
+        );
 
       if (!professionalDetails) {
         return res.notFoundRecord("Professional details not found");

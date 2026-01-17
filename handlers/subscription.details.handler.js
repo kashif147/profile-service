@@ -12,10 +12,14 @@ exports.create = (data) =>
     }
   });
 
-exports.getByApplicationId = (applicationId) =>
+exports.getByApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await SubscriptionDetails.findOne({ applicationId });
+      const query = { applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const record = await SubscriptionDetails.findOne(query);
       resolve(record);
     } catch (error) {
       console.error(
@@ -26,11 +30,15 @@ exports.getByApplicationId = (applicationId) =>
     }
   });
 
-exports.updateByApplicationId = (applicationId, updateData) =>
+exports.updateByApplicationId = (applicationId, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       const record = await SubscriptionDetails.findOneAndUpdate(
-        { applicationId },
+        query,
         updateData,
         {
           new: true,
@@ -48,11 +56,15 @@ exports.updateByApplicationId = (applicationId, updateData) =>
     }
   });
 
-exports.deleteByApplicationId = (applicationId) =>
+exports.deleteByApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       const record = await SubscriptionDetails.findOneAndDelete({
-        applicationId,
+        ...query,
       });
       if (!record) return reject(new Error("Subscription details not found"));
       resolve(record);
@@ -65,21 +77,14 @@ exports.deleteByApplicationId = (applicationId) =>
     }
   });
 
-exports.getByUserId = (userId) =>
+exports.getByUserId = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const mongoose = require("mongoose");
-      
-      // Convert userId to ObjectId if it's a string
-      const userIdQuery = typeof userId === "string" && mongoose.Types.ObjectId.isValid(userId)
-        ? new mongoose.Types.ObjectId(userId)
-        : userId;
-
-      const result = await SubscriptionDetails.findOne({ 
-        userId: userIdQuery,
-        "meta.deleted": { $ne: true }
-      });
-      
+      const query = { userId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const result = await SubscriptionDetails.findOne(query);
       resolve(result);
     } catch (error) {
       console.error("SubscriptionDetailsHandler [getByUserId] Error:", error);
@@ -87,16 +92,22 @@ exports.getByUserId = (userId) =>
     }
   });
 
-exports.getByEmail = (email) =>
+exports.getByEmail = (email, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // First find personal details by email to get userId
-      const personalDetailsRecord = await personalDetails.findOne({
+      const personalDetailsQuery = {
         $or: [
           { "contactInfo.personalEmail": email },
           { "contactInfo.workEmail": email },
         ],
-      });
+      };
+      if (tenantId) {
+        personalDetailsQuery.tenantId = tenantId;
+      }
+      const personalDetailsRecord = await personalDetails.findOne(
+        personalDetailsQuery
+      );
 
       if (!personalDetailsRecord) {
         resolve(null);
@@ -104,9 +115,11 @@ exports.getByEmail = (email) =>
       }
 
       // Then find subscription details by userId
-      const result = await SubscriptionDetails.findOne({
-        userId: personalDetailsRecord._id,
-      });
+      const subscriptionQuery = { userId: personalDetailsRecord._id };
+      if (tenantId) {
+        subscriptionQuery.tenantId = tenantId;
+      }
+      const result = await SubscriptionDetails.findOne(subscriptionQuery);
       resolve(result);
     } catch (error) {
       console.error("SubscriptionDetailsHandler [getByEmail] Error:", error);
@@ -114,11 +127,15 @@ exports.getByEmail = (email) =>
     }
   });
 
-exports.updateByUserId = (userId, updateData) =>
+exports.updateByUserId = (userId, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { userId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       const record = await SubscriptionDetails.findOneAndUpdate(
-        { userId },
+        query,
         updateData,
         {
           new: true,
@@ -136,24 +153,34 @@ exports.updateByUserId = (userId, updateData) =>
     }
   });
 
-exports.updateByEmail = (email, updateData) =>
+exports.updateByEmail = (email, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // First find personal details by email to get userId
-      const personalDetailsRecord = await personalDetails.findOne({
+      const personalDetailsQuery = {
         $or: [
           { "contactInfo.personalEmail": email },
           { "contactInfo.workEmail": email },
         ],
-      });
+      };
+      if (tenantId) {
+        personalDetailsQuery.tenantId = tenantId;
+      }
+      const personalDetailsRecord = await personalDetails.findOne(
+        personalDetailsQuery
+      );
 
       if (!personalDetailsRecord) {
         return reject(new Error("Personal details not found for this email"));
       }
 
       // Then update subscription details by userId
+      const subscriptionQuery = { userId: personalDetailsRecord._id };
+      if (tenantId) {
+        subscriptionQuery.tenantId = tenantId;
+      }
       const record = await SubscriptionDetails.findOneAndUpdate(
-        { userId: personalDetailsRecord._id },
+        subscriptionQuery,
         updateData,
         {
           new: true,
@@ -168,10 +195,14 @@ exports.updateByEmail = (email, updateData) =>
     }
   });
 
-exports.deleteByUserId = (userId) =>
+exports.deleteByUserId = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await SubscriptionDetails.findOneAndDelete({ userId });
+      const query = { userId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const record = await SubscriptionDetails.findOneAndDelete(query);
       if (!record) return reject(new Error("Subscription details not found"));
       resolve(record);
     } catch (error) {
@@ -183,25 +214,35 @@ exports.deleteByUserId = (userId) =>
     }
   });
 
-exports.deleteByEmail = (email) =>
+exports.deleteByEmail = (email, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // First find personal details by email to get userId
-      const personalDetailsRecord = await personalDetails.findOne({
+      const personalDetailsQuery = {
         $or: [
           { "contactInfo.personalEmail": email },
           { "contactInfo.workEmail": email },
         ],
-      });
+      };
+      if (tenantId) {
+        personalDetailsQuery.tenantId = tenantId;
+      }
+      const personalDetailsRecord = await personalDetails.findOne(
+        personalDetailsQuery
+      );
 
       if (!personalDetailsRecord) {
         return reject(new Error("Personal details not found for this email"));
       }
 
       // Then delete subscription details by userId
-      const record = await SubscriptionDetails.findOneAndDelete({
-        userId: personalDetailsRecord._id,
-      });
+      const subscriptionQuery = { userId: personalDetailsRecord._id };
+      if (tenantId) {
+        subscriptionQuery.tenantId = tenantId;
+      }
+      const record = await SubscriptionDetails.findOneAndDelete(
+        subscriptionQuery
+      );
       if (!record) return reject(new Error("Subscription details not found"));
       resolve(record);
     } catch (error) {
@@ -210,13 +251,17 @@ exports.deleteByEmail = (email) =>
     }
   });
 
-exports.findDeletedByUserId = (userId) =>
+exports.findDeletedByUserId = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const result = await SubscriptionDetails.findOne({
+      const query = {
         userId,
         "meta.deleted": true,
-      });
+      };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const result = await SubscriptionDetails.findOne(query);
       resolve(result);
     } catch (error) {
       console.error(
@@ -227,16 +272,22 @@ exports.findDeletedByUserId = (userId) =>
     }
   });
 
-exports.findDeletedByEmail = (email) =>
+exports.findDeletedByEmail = (email, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // First find personal details by email to get userId
-      const personalDetailsRecord = await personalDetails.findOne({
+      const personalDetailsQuery = {
         $or: [
           { "contactInfo.personalEmail": email },
           { "contactInfo.workEmail": email },
         ],
-      });
+      };
+      if (tenantId) {
+        personalDetailsQuery.tenantId = tenantId;
+      }
+      const personalDetailsRecord = await personalDetails.findOne(
+        personalDetailsQuery
+      );
 
       if (!personalDetailsRecord) {
         resolve(null);
@@ -244,10 +295,14 @@ exports.findDeletedByEmail = (email) =>
       }
 
       // Then find deleted subscription details by userId
-      const result = await SubscriptionDetails.findOne({
+      const subscriptionQuery = {
         userId: personalDetailsRecord._id,
         "meta.deleted": true,
-      });
+      };
+      if (tenantId) {
+        subscriptionQuery.tenantId = tenantId;
+      }
+      const result = await SubscriptionDetails.findOne(subscriptionQuery);
       resolve(result);
     } catch (error) {
       console.error(
@@ -258,14 +313,18 @@ exports.findDeletedByEmail = (email) =>
     }
   });
 
-exports.restoreByUserId = (userId, updateData) =>
+exports.restoreByUserId = (userId, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // Remove meta from updateData to avoid conflicts
       const { meta, ...dataWithoutMeta } = updateData;
 
+      const query = { userId, "meta.deleted": true };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       const record = await SubscriptionDetails.findOneAndUpdate(
-        { userId, "meta.deleted": true },
+        query,
         {
           ...dataWithoutMeta,
           "meta.deleted": false,
@@ -286,16 +345,22 @@ exports.restoreByUserId = (userId, updateData) =>
     }
   });
 
-exports.restoreByEmail = (email, updateData) =>
+exports.restoreByEmail = (email, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // First find personal details by email to get userId
-      const personalDetailsRecord = await personalDetails.findOne({
+      const personalDetailsQuery = {
         $or: [
           { "contactInfo.personalEmail": email },
           { "contactInfo.workEmail": email },
         ],
-      });
+      };
+      if (tenantId) {
+        personalDetailsQuery.tenantId = tenantId;
+      }
+      const personalDetailsRecord = await personalDetails.findOne(
+        personalDetailsQuery
+      );
 
       if (!personalDetailsRecord) {
         return reject(new Error("Personal details not found for this email"));
@@ -305,8 +370,15 @@ exports.restoreByEmail = (email, updateData) =>
       const { meta, ...dataWithoutMeta } = updateData;
 
       // Then restore subscription details by userId
+      const subscriptionQuery = {
+        userId: personalDetailsRecord._id,
+        "meta.deleted": true,
+      };
+      if (tenantId) {
+        subscriptionQuery.tenantId = tenantId;
+      }
       const record = await SubscriptionDetails.findOneAndUpdate(
-        { userId: personalDetailsRecord._id, "meta.deleted": true },
+        subscriptionQuery,
         {
           ...dataWithoutMeta,
           "meta.deleted": false,
@@ -327,13 +399,17 @@ exports.restoreByEmail = (email, updateData) =>
     }
   });
 
-exports.checkifSoftDeleted = (userId) =>
+exports.checkifSoftDeleted = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const result = await SubscriptionDetails.findOne({
+      const query = {
         userId,
         "meta.deleted": true,
-      });
+      };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const result = await SubscriptionDetails.findOne(query);
       resolve(result);
     } catch (error) {
       console.error(
@@ -344,18 +420,22 @@ exports.checkifSoftDeleted = (userId) =>
     }
   });
 
-exports.getApplicationById = (applicationId) =>
+exports.getApplicationById = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // Try lowercase first, then uppercase for backward compatibility
-      let record = await SubscriptionDetails.findOne({
-        applicationId: applicationId,
-      });
+      const query = { applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      let record = await SubscriptionDetails.findOne(query);
       
       if (!record) {
-        record = await SubscriptionDetails.findOne({
-          ApplicationId: applicationId,
-        });
+        const legacyQuery = { ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
+        record = await SubscriptionDetails.findOne(legacyQuery);
       }
       
       resolve(record);
@@ -368,20 +448,22 @@ exports.getApplicationById = (applicationId) =>
     }
   });
 
-exports.getByUserIdAndApplicationId = (userId, applicationId) =>
+exports.getByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // Try lowercase first, then uppercase for backward compatibility
-      let record = await SubscriptionDetails.findOne({
-        userId: userId,
-        applicationId: applicationId,
-      });
+      const query = { userId: userId, applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      let record = await SubscriptionDetails.findOne(query);
       
       if (!record) {
-        record = await SubscriptionDetails.findOne({
-          userId: userId,
-          ApplicationId: applicationId,
-        });
+        const legacyQuery = { userId: userId, ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
+        record = await SubscriptionDetails.findOne(legacyQuery);
       }
       
       resolve(record);
@@ -394,12 +476,21 @@ exports.getByUserIdAndApplicationId = (userId, applicationId) =>
     }
   });
 
-exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
+exports.updateByUserIdAndApplicationId = (
+  userId,
+  applicationId,
+  updateData,
+  tenantId
+) =>
   new Promise(async (resolve, reject) => {
     try {
       // Try lowercase first, then uppercase for backward compatibility
+      const query = { userId: userId, applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       let record = await SubscriptionDetails.findOneAndUpdate(
-        { userId: userId, applicationId: applicationId },
+        query,
         updateData,
         {
           new: true,
@@ -408,8 +499,12 @@ exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
       );
       
       if (!record) {
+        const legacyQuery = { userId: userId, ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
         record = await SubscriptionDetails.findOneAndUpdate(
-          { userId: userId, ApplicationId: applicationId },
+          legacyQuery,
           updateData,
           {
             new: true,
@@ -429,19 +524,25 @@ exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
     }
   });
 
-exports.deleteByUserIdAndApplicationId = (userId, applicationId) =>
+exports.deleteByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // Try lowercase first, then uppercase for backward compatibility
+      const query = { userId: userId, applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       let record = await SubscriptionDetails.findOneAndDelete({
-        userId: userId,
-        applicationId: applicationId,
+        ...query,
       });
       
       if (!record) {
+        const legacyQuery = { userId: userId, ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
         record = await SubscriptionDetails.findOneAndDelete({
-          userId: userId,
-          ApplicationId: applicationId,
+          ...legacyQuery,
         });
       }
       

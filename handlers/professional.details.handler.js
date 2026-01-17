@@ -12,10 +12,14 @@ exports.create = (data) =>
     }
   });
 
-exports.checkApplicationId = (applicationId) =>
+exports.checkApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await personalDetails.findOne({ applicationId });
+      const query = { applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const record = await personalDetails.findOne(query);
       resolve(record);
     } catch (error) {
       console.error(
@@ -26,10 +30,14 @@ exports.checkApplicationId = (applicationId) =>
     }
   });
 
-exports.getByApplicationId = (applicationId) =>
+exports.getByApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await ProfessionalDetails.findOne({ applicationId });
+      const query = { applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const record = await ProfessionalDetails.findOne(query);
       resolve(record);
     } catch (error) {
       console.error(
@@ -40,11 +48,15 @@ exports.getByApplicationId = (applicationId) =>
     }
   });
 
-exports.updateByApplicationId = (applicationId, updateData) =>
+exports.updateByApplicationId = (applicationId, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       const record = await ProfessionalDetails.findOneAndUpdate(
-        { applicationId },
+        query,
         updateData,
         {
           new: true,
@@ -62,11 +74,15 @@ exports.updateByApplicationId = (applicationId, updateData) =>
     }
   });
 
-exports.deleteByApplicationId = (applicationId) =>
+exports.deleteByApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       const record = await ProfessionalDetails.findOneAndDelete({
-        applicationId,
+        ...query,
       });
       if (!record) return reject(new Error("Professional details not found"));
       resolve(record);
@@ -79,15 +95,19 @@ exports.deleteByApplicationId = (applicationId) =>
     }
   });
 
-exports.checkPersonalDetailsByEmail = (email) =>
+exports.checkPersonalDetailsByEmail = (email, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await personalDetails.findOne({
+      const query = {
         $or: [
           { "contactInfo.personalEmail": email },
           { "contactInfo.workEmail": email },
         ],
-      });
+      };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const record = await personalDetails.findOne(query);
       resolve(record);
     } catch (error) {
       console.error(
@@ -98,21 +118,14 @@ exports.checkPersonalDetailsByEmail = (email) =>
     }
   });
 
-exports.getByUserId = (userId) =>
+exports.getByUserId = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const mongoose = require("mongoose");
-      
-      // Convert userId to ObjectId if it's a string
-      const userIdQuery = typeof userId === "string" && mongoose.Types.ObjectId.isValid(userId)
-        ? new mongoose.Types.ObjectId(userId)
-        : userId;
-
-      const result = await ProfessionalDetails.findOne({ 
-        userId: userIdQuery,
-        "meta.deleted": { $ne: true }
-      });
-      
+      const query = { userId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const result = await ProfessionalDetails.findOne(query);
       resolve(result);
     } catch (error) {
       console.error("ProfessionalDetailsHandler [getByUserId] Error:", error);
@@ -120,16 +133,22 @@ exports.getByUserId = (userId) =>
     }
   });
 
-exports.getByEmail = (email) =>
+exports.getByEmail = (email, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // First find personal details by email to get userId
-      const personalDetailsRecord = await personalDetails.findOne({
+      const personalDetailsQuery = {
         $or: [
           { "contactInfo.personalEmail": email },
           { "contactInfo.workEmail": email },
         ],
-      });
+      };
+      if (tenantId) {
+        personalDetailsQuery.tenantId = tenantId;
+      }
+      const personalDetailsRecord = await personalDetails.findOne(
+        personalDetailsQuery
+      );
 
       if (!personalDetailsRecord) {
         resolve(null);
@@ -137,9 +156,13 @@ exports.getByEmail = (email) =>
       }
 
       // Then find professional details by userId
-      const result = await ProfessionalDetails.findOne({
-        userId: personalDetailsRecord._id,
-      });
+      const professionalDetailsQuery = { userId: personalDetailsRecord._id };
+      if (tenantId) {
+        professionalDetailsQuery.tenantId = tenantId;
+      }
+      const result = await ProfessionalDetails.findOne(
+        professionalDetailsQuery
+      );
       resolve(result);
     } catch (error) {
       console.error("ProfessionalDetailsHandler [getByEmail] Error:", error);
@@ -147,11 +170,15 @@ exports.getByEmail = (email) =>
     }
   });
 
-exports.updateByUserId = (userId, updateData) =>
+exports.updateByUserId = (userId, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { userId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       const record = await ProfessionalDetails.findOneAndUpdate(
-        { userId },
+        query,
         updateData,
         {
           new: true,
@@ -169,24 +196,34 @@ exports.updateByUserId = (userId, updateData) =>
     }
   });
 
-exports.updateByEmail = (email, updateData) =>
+exports.updateByEmail = (email, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // First find personal details by email to get userId
-      const personalDetailsRecord = await personalDetails.findOne({
+      const personalDetailsQuery = {
         $or: [
           { "contactInfo.personalEmail": email },
           { "contactInfo.workEmail": email },
         ],
-      });
+      };
+      if (tenantId) {
+        personalDetailsQuery.tenantId = tenantId;
+      }
+      const personalDetailsRecord = await personalDetails.findOne(
+        personalDetailsQuery
+      );
 
       if (!personalDetailsRecord) {
         return reject(new Error("Personal details not found for this email"));
       }
 
       // Then update professional details by userId
+      const professionalDetailsQuery = { userId: personalDetailsRecord._id };
+      if (tenantId) {
+        professionalDetailsQuery.tenantId = tenantId;
+      }
       const record = await ProfessionalDetails.findOneAndUpdate(
-        { userId: personalDetailsRecord._id },
+        professionalDetailsQuery,
         updateData,
         {
           new: true,
@@ -201,10 +238,14 @@ exports.updateByEmail = (email, updateData) =>
     }
   });
 
-exports.deleteByUserId = (userId) =>
+exports.deleteByUserId = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const record = await ProfessionalDetails.findOneAndDelete({ userId });
+      const query = { userId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      const record = await ProfessionalDetails.findOneAndDelete(query);
       if (!record) return reject(new Error("Professional details not found"));
       resolve(record);
     } catch (error) {
@@ -216,24 +257,34 @@ exports.deleteByUserId = (userId) =>
     }
   });
 
-exports.deleteByEmail = (email) =>
+exports.deleteByEmail = (email, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // First find personal details by email to get userId
-      const personalDetailsRecord = await personalDetails.findOne({
+      const personalDetailsQuery = {
         $or: [
           { "contactInfo.personalEmail": email },
           { "contactInfo.workEmail": email },
         ],
-      });
+      };
+      if (tenantId) {
+        personalDetailsQuery.tenantId = tenantId;
+      }
+      const personalDetailsRecord = await personalDetails.findOne(
+        personalDetailsQuery
+      );
 
       if (!personalDetailsRecord) {
         return reject(new Error("Personal details not found for this email"));
       }
 
       // Then delete professional details by userId
+      const professionalDetailsQuery = { userId: personalDetailsRecord._id };
+      if (tenantId) {
+        professionalDetailsQuery.tenantId = tenantId;
+      }
       const record = await ProfessionalDetails.findOneAndDelete(
-        { userId: personalDetailsRecord._id },
+        professionalDetailsQuery,
         { new: true }
       );
       if (!record) return reject(new Error("Professional details not found"));
@@ -244,16 +295,22 @@ exports.deleteByEmail = (email) =>
     }
   });
 
-exports.findDeletedByEmail = (email) =>
+exports.findDeletedByEmail = (email, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // First find personal details by email to get userId
-      const personalDetailsRecord = await personalDetails.findOne({
+      const personalDetailsQuery = {
         $or: [
           { "contactInfo.personalEmail": email },
           { "contactInfo.workEmail": email },
         ],
-      });
+      };
+      if (tenantId) {
+        personalDetailsQuery.tenantId = tenantId;
+      }
+      const personalDetailsRecord = await personalDetails.findOne(
+        personalDetailsQuery
+      );
 
       if (!personalDetailsRecord) {
         resolve(null);
@@ -261,10 +318,16 @@ exports.findDeletedByEmail = (email) =>
       }
 
       // Then find deleted professional details by userId
-      const result = await ProfessionalDetails.findOne({
+      const professionalDetailsQuery = {
         userId: personalDetailsRecord._id,
         "meta.deleted": true,
-      });
+      };
+      if (tenantId) {
+        professionalDetailsQuery.tenantId = tenantId;
+      }
+      const result = await ProfessionalDetails.findOne(
+        professionalDetailsQuery
+      );
       resolve(result);
     } catch (error) {
       console.error(
@@ -275,20 +338,24 @@ exports.findDeletedByEmail = (email) =>
     }
   });
 
-exports.getApplicationById = (applicationId) =>
+exports.getApplicationById = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       // Query both uppercase and lowercase field names to handle legacy data
       // Prioritize lowercase since schema uses applicationId
-      let record = await ProfessionalDetails.findOne({
-        applicationId: applicationId,
-      });
+      const query = { applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      let record = await ProfessionalDetails.findOne(query);
       
       // Fallback to uppercase for backward compatibility with legacy data
       if (!record) {
-        record = await ProfessionalDetails.findOne({
-          ApplicationId: applicationId,
-        });
+        const legacyQuery = { ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
+        record = await ProfessionalDetails.findOne(legacyQuery);
       }
       
       if (!record) return reject(new Error("Professional details not found"));
@@ -302,20 +369,22 @@ exports.getApplicationById = (applicationId) =>
     }
   });
 
-exports.getByUserIdAndApplicationId = (userId, applicationId) =>
+exports.getByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { userId: userId, applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       // Try lowercase first, then uppercase for backward compatibility
-      let record = await ProfessionalDetails.findOne({
-        userId: userId,
-        applicationId: applicationId,
-      });
+      let record = await ProfessionalDetails.findOne(query);
       
       if (!record) {
-        record = await ProfessionalDetails.findOne({
-          userId: userId,
-          ApplicationId: applicationId,
-        });
+        const legacyQuery = { userId: userId, ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
+        record = await ProfessionalDetails.findOne(legacyQuery);
       }
       
       resolve(record);
@@ -328,12 +397,21 @@ exports.getByUserIdAndApplicationId = (userId, applicationId) =>
     }
   });
 
-exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
+exports.updateByUserIdAndApplicationId = (
+  userId,
+  applicationId,
+  updateData,
+  tenantId
+) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { userId: userId, applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       // Try lowercase first, then uppercase for backward compatibility
       let record = await ProfessionalDetails.findOneAndUpdate(
-        { userId: userId, applicationId: applicationId },
+        query,
         updateData,
         {
           new: true,
@@ -342,8 +420,12 @@ exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
       );
       
       if (!record) {
+        const legacyQuery = { userId: userId, ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
         record = await ProfessionalDetails.findOneAndUpdate(
-          { userId: userId, ApplicationId: applicationId },
+          legacyQuery,
           updateData,
           {
             new: true,
@@ -363,19 +445,25 @@ exports.updateByUserIdAndApplicationId = (userId, applicationId, updateData) =>
     }
   });
 
-exports.deleteByUserIdAndApplicationId = (userId, applicationId) =>
+exports.deleteByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const query = { userId: userId, applicationId: applicationId };
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
       // Try lowercase first, then uppercase for backward compatibility
       let record = await ProfessionalDetails.findOneAndDelete({
-        userId: userId,
-        applicationId: applicationId,
+        ...query,
       });
       
       if (!record) {
+        const legacyQuery = { userId: userId, ApplicationId: applicationId };
+        if (tenantId) {
+          legacyQuery.tenantId = tenantId;
+        }
         record = await ProfessionalDetails.findOneAndDelete({
-          userId: userId,
-          ApplicationId: applicationId,
+          ...legacyQuery,
         });
       }
       

@@ -34,7 +34,7 @@ class PersonalDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<Object>} Personal details
    */
-  async getPersonalDetails(applicationId, userId, userType) {
+  async getPersonalDetails(applicationId, userId, userType, tenantId) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
@@ -46,19 +46,22 @@ class PersonalDetailsService {
 
       let personalDetails;
       if (userType === "CRM") {
-        personalDetails = await personalDetailsHandler.getApplicationById(applicationId);
+        personalDetails = await personalDetailsHandler.getApplicationById(
+          applicationId,
+          tenantId
+        );
       } else if (userType === "PORTAL") {
         if (!userId) {
           throw AppError.badRequest("User ID is required for portal users");
         }
-        personalDetails = await personalDetailsHandler.getByUserIdAndApplicationId(
-          userId,
-          applicationId
-        );
+        personalDetails =
+          await personalDetailsHandler.getByUserIdAndApplicationId(
+            userId,
+            applicationId,
+            tenantId
+          );
       } else {
-        throw AppError.badRequest(
-          `Invalid user type: ${userType}. Expected PORTAL or CRM.`
-        );
+        throw AppError.badRequest(`Invalid user type: ${userType}. Expected PORTAL or CRM.`);
       }
 
       if (!personalDetails) {
@@ -83,7 +86,13 @@ class PersonalDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<Object>} Updated personal details
    */
-  async updatePersonalDetails(applicationId, updateData, userId, userType) {
+  async updatePersonalDetails(
+    applicationId,
+    updateData,
+    userId,
+    userType,
+    tenantId
+  ) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
@@ -97,13 +106,15 @@ class PersonalDetailsService {
       if (userType === "CRM") {
         result = await personalDetailsHandler.updateByApplicationId(
           applicationId,
-          updateData
+          updateData,
+          tenantId
         );
       } else {
         result = await personalDetailsHandler.updateByUserIdAndApplicationId(
           userId,
           applicationId,
-          updateData
+          updateData,
+          tenantId
         );
       }
 
@@ -124,7 +135,7 @@ class PersonalDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<Object>} Deleted personal details
    */
-  async deletePersonalDetails(applicationId, userId, userType) {
+  async deletePersonalDetails(applicationId, userId, userType, tenantId) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
@@ -133,12 +144,14 @@ class PersonalDetailsService {
       let result;
       if (userType === "CRM") {
         result = await personalDetailsHandler.deleteByApplicationId(
-          applicationId
+          applicationId,
+          tenantId
         );
       } else {
         result = await personalDetailsHandler.deleteByUserIdAndApplicationId(
           userId,
-          applicationId
+          applicationId,
+          tenantId
         );
       }
 
@@ -157,21 +170,16 @@ class PersonalDetailsService {
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Personal details
    */
-  async getMyPersonalDetails(userId) {
+  async getMyPersonalDetails(userId, tenantId) {
     try {
       if (!userId) {
         throw AppError.badRequest("User ID is required");
       }
 
-      console.log("[PersonalDetailsService] getMyPersonalDetails called with userId:", userId);
-
-      // Use the same approach as professional and subscription details
-      // This ensures consistency across all detail types
-      const result = await personalDetailsHandler.getByUserId(userId);
-
-      console.log("[PersonalDetailsService] Final result:", result ? "Found" : "Not found");
-      
-      return result;
+      return await personalDetailsHandler.getByUserIdForPortal(
+        userId,
+        tenantId
+      );
     } catch (error) {
       console.error(
         "PersonalDetailsService [getMyPersonalDetails] Error:",
@@ -186,13 +194,16 @@ class PersonalDetailsService {
    * @param {string} userId - User ID
    * @returns {Promise<boolean>} True if exists, false otherwise
    */
-  async checkPersonalDetailsExist(userId) {
+  async checkPersonalDetailsExist(userId, tenantId) {
     try {
       if (!userId) {
         throw AppError.badRequest("User ID is required");
       }
 
-      const details = await personalDetailsHandler.getByUserId(userId);
+      const details = await personalDetailsHandler.getByUserId(
+        userId,
+        tenantId
+      );
       return !!details;
     } catch (error) {
       console.error(
@@ -210,7 +221,7 @@ class PersonalDetailsService {
    * @param {string} userType - User type (CRM/PORTAL)
    * @returns {Promise<string>} Application status
    */
-  async getApplicationStatus(applicationId, userId, userType) {
+  async getApplicationStatus(applicationId, userId, userType, tenantId) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
@@ -219,13 +230,15 @@ class PersonalDetailsService {
       let personalDetails;
       if (userType === "CRM") {
         personalDetails = await personalDetailsHandler.getApplicationById(
-          applicationId
+          applicationId,
+          tenantId
         );
       } else {
         personalDetails =
           await personalDetailsHandler.getByUserIdAndApplicationId(
             userId,
-            applicationId
+            applicationId,
+            tenantId
           );
       }
 
