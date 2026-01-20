@@ -6,23 +6,28 @@ const ApplicationFilterTemplateSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false, 
       index: true,
-    }, // CRM user who created this template
+    }, 
     filters: {
       type: {
-        type: mongoose.Schema.Types.Mixed, // Can be string or array of strings
+        type: mongoose.Schema.Types.Mixed, 
         required: false,
       },
     },
     columns: {
-      type: [String], // Array of field names to include in the response
+      type: [String], 
       default: [],
     },
     isDefault: {
       type: Boolean,
       default: false,
     },
+    systemDefault: {
+      type: Boolean,
+      default: false,
+      index: true,
+    }, 
     meta: {
       deleted: {
         type: Boolean,
@@ -40,6 +45,7 @@ const ApplicationFilterTemplateSchema = new mongoose.Schema(
 // Index for efficient queries
 ApplicationFilterTemplateSchema.index({ userId: 1, "meta.deleted": 1 });
 ApplicationFilterTemplateSchema.index({ userId: 1, isDefault: 1 });
+ApplicationFilterTemplateSchema.index({ systemDefault: 1, "meta.deleted": 1 }); // NEW: Index for system default
 
 module.exports = mongoose.model(
   "ApplicationFilterTemplate",

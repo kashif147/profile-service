@@ -40,6 +40,7 @@ exports.createTemplate = async (req, res, next) => {
 
 /**
  * Get all filter templates for the current user
+ * Includes system default template + user's personal templates
  */
 exports.getUserTemplates = async (req, res, next) => {
   try {
@@ -53,10 +54,12 @@ exports.getUserTemplates = async (req, res, next) => {
     }
 
     const templates =
-      await applicationFilterTemplateService.getUserTemplates(creatorId);
+      await applicationFilterTemplateService.getUserTemplatesWithSystemDefault(creatorId);
 
     return res.success({
       total: templates.length,
+      systemDefault: templates.find(t => t.systemDefault) || null,
+      userTemplates: templates.filter(t => !t.systemDefault),
       templates,
     });
   } catch (error) {

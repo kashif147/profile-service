@@ -63,6 +63,45 @@ class ApplicationFilterTemplateService {
   }
 
   /**
+   * NEW METHOD - Get user templates + system default template
+   * Returns system default template + all user's personal templates
+   * @param {string} userId - User ID
+   * @returns {Promise<Array>} Array of templates (system default first, then user templates)
+   */
+  async getUserTemplatesWithSystemDefault(userId) {
+    try {
+      // Get system default template
+      const systemDefault = await ApplicationFilterTemplate.findOne({
+        systemDefault: true,
+        "meta.deleted": false,
+      });
+
+      // Get user's personal templates
+      const userTemplates = await ApplicationFilterTemplate.find({
+        userId,
+        "meta.deleted": false,
+      }).sort({ isDefault: -1, createdAt: -1 });
+
+      // Combine: system default first, then user templates
+      const allTemplates = [];
+      
+      if (systemDefault) {
+        allTemplates.push(systemDefault);
+      }
+      
+      allTemplates.push(...userTemplates);
+
+      return allTemplates;
+    } catch (error) {
+      console.error(
+        "ApplicationFilterTemplateService [getUserTemplatesWithSystemDefault] Error:",
+        error
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Get a specific template by ID
    * @param {string} templateId - Template ID
    * @param {string} userId - User ID (for authorization)
@@ -203,6 +242,35 @@ class ApplicationFilterTemplateService {
     } catch (error) {
       console.error(
         "ApplicationFilterTemplateService [getDefaultTemplate] Error:",
+        error
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * NEW METHOD - Get system-wide default template
+   * This template should exist in the database with systemDefault: true
+   * Used when no templateId is provided in the PUT API request
+   * @returns {Promise<Object>} System default template
+   */
+  async getSystemDefaultTemplate() {
+    try {
+      const template = await ApplicationFilterTemplate.findOne({
+        systemDefault: true,
+        "meta.deleted": false,
+      });
+
+      if (!template) {
+        throw AppError.notFound(
+          "System default template not found. Please create one in the database with systemDefault: true"
+        );
+      }
+
+      return template;
+    } catch (error) {
+      console.error(
+        "ApplicationFilterTemplateService [getSystemDefaultTemplate] Error:",
         error
       );
       throw error;

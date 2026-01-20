@@ -1,9 +1,11 @@
 const applicationService = require("../services/application.service");
+const applicationFilterTemplateService = require("../services/application.filter.template.service");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 const joischemas = require("../validation/index.js");
 const { AppError } = require("../errors/AppError");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
 
+// Original GET API - unchanged
 exports.getAllApplications = async (req, res, next) => {
   try {
     const { userType } = extractUserAndCreatorContext(req);
@@ -53,6 +55,95 @@ exports.getAllApplications = async (req, res, next) => {
     console.error("ApplicationController [getAllApplications] Error:", error);
     if (error.isJoi) {
       return next(AppError.badRequest("Validation error: " + error.message));
+    }
+    return next(error);
+  }
+};
+
+// NEW PUT API - Completely separate for template-based filtering
+exports.getApplicationsWithTemplate = async (req, res, next) => {
+  try {
+    const { userType, creatorId } = extractUserAndCreatorContext(req);
+    if (userType !== "CRM") {
+      return next(
+        AppError.forbidden(
+          "Access denied. Only CRM users can view applications."
+        )
+      );
+    }
+
+    const page = req.body.page ? parseInt(req.body.page) : 1;
+    const limit = req.body.limit ? parseInt(req.body.limit) : 10;
+    const templateId = req.body.templateId;
+
+    let template;
+
+    // If templateId is provided, fetch and validate the template
+    if (templateId) {
+      template = await applicationFilterTemplateService.getTemplateById(
+        templateId,
+        creatorId
+      );
+      
+      if (!template) {
+        return next(
+          AppError.notFound(
+            "Template not found or you don't have permission to access it"
+          )
+        );
+      }
+    } else {
+      // If no templateId, use the SYSTEM DEFAULT template (systemDefault: true)
+      template = await applicationFilterTemplateService.getSystemDefaultTemplate();
+    }
+
+    // Extract filters from template
+    let statusFilters = [];
+    if (template.filters && template.filters.type) {
+      if (Array.isArray(template.filters.type)) {
+        statusFilters = template.filters.type;
+      } else {
+        statusFilters = [template.filters.type];
+      }
+    }
+
+    // Extract columns from template
+    const columns = template.columns || [];
+
+    // Get applications with filters using the NEW service method
+    const result =
+      await applicationService.getApplicationsWithTemplateFilters(
+        statusFilters,
+        page,
+        limit,
+        columns
+      );
+
+    return res.success({
+      filter: template.filters || "default",
+      columns: columns,
+      templateId: template._id,
+      isDefault: template.isDefault,
+      systemDefault: template.systemDefault || false,
+      applications: result.applications,
+      pagination: {
+        page: result.pagination.page,
+        limit: result.pagination.limit,
+        totalCount: result.pagination.totalCount,
+        totalPages: result.pagination.totalPages,
+        hasNextPage: result.pagination.hasNextPage,
+        hasPreviousPage: result.pagination.hasPreviousPage,
+      },
+    });
+  } catch (error) {
+    console.error("ApplicationController [getApplicationsWithTemplate] Error:", error);
+    if (error.isJoi) {
+      return next(AppError.badRequest("Validation error: " + error.message));
+    }
+    if (error.message && error.message.includes("not found")) {
+      return next(
+        AppError.notFound(error.message)
+      );
     }
     return next(error);
   }
