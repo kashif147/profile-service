@@ -71,13 +71,6 @@ exports.create = (data) =>
 exports.getByUserId = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-<<<<<<< HEAD
-      const query = { userId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
-      const result = await PersonalDetails.findOne(query);
-=======
       const mongoose = require("mongoose");
       
       // Convert userId to ObjectId if it's a string
@@ -85,16 +78,16 @@ exports.getByUserId = (userId, tenantId) =>
         ? new mongoose.Types.ObjectId(userId)
         : userId;
 
-      console.log("[getByUserId] Querying with userId:", userId, "converted to:", userIdQuery);
-
-      const result = await PersonalDetails.findOne({ 
+      const query = { 
         userId: userIdQuery,
         "meta.deleted": { $ne: true }
-      });
-
-      console.log("[getByUserId] Query result:", result ? "Found" : "Not found");
+      };
       
->>>>>>> a29b653203818b1b5e903283bd8cfc7b4ae613a0
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      
+      const result = await PersonalDetails.findOne(query);
       resolve(result);
     } catch (error) {
       console.error("PersonalDetailsHandler [getByUserId] Error:", error);
@@ -377,17 +370,6 @@ exports.updateApplicationStatus = (applicationId, status, tenantId) =>
 exports.getByUserIdForPortal = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-<<<<<<< HEAD
-      const query = {
-        userId: userId,
-        "meta.userType": "PORTAL",
-      };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
-      const result = await PersonalDetails.findOne({
-        ...query,
-=======
       const mongoose = require("mongoose");
       
       // Convert userId to ObjectId if it's a string
@@ -395,14 +377,17 @@ exports.getByUserIdForPortal = (userId, tenantId) =>
         ? new mongoose.Types.ObjectId(userId)
         : userId;
 
-      console.log("[getByUserIdForPortal] Querying with userId:", userId, "converted to:", userIdQuery);
-
-      const result = await PersonalDetails.findOne({
+      const query = {
         userId: userIdQuery,
         "meta.userType": "PORTAL",
         "meta.deleted": { $ne: true }
->>>>>>> a29b653203818b1b5e903283bd8cfc7b4ae613a0
-      });
+      };
+      
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      
+      const result = await PersonalDetails.findOne(query);
 
       console.log("[getByUserIdForPortal] Query result:", result ? "Found" : "Not found");
       

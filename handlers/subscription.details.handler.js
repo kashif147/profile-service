@@ -80,13 +80,6 @@ exports.deleteByApplicationId = (applicationId, tenantId) =>
 exports.getByUserId = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-<<<<<<< HEAD
-      const query = { userId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
-      const result = await SubscriptionDetails.findOne(query);
-=======
       const mongoose = require("mongoose");
       
       // Convert userId to ObjectId if it's a string
@@ -94,12 +87,16 @@ exports.getByUserId = (userId, tenantId) =>
         ? new mongoose.Types.ObjectId(userId)
         : userId;
 
-      const result = await SubscriptionDetails.findOne({ 
+      const query = { 
         userId: userIdQuery,
         "meta.deleted": { $ne: true }
-      });
+      };
       
->>>>>>> a29b653203818b1b5e903283bd8cfc7b4ae613a0
+      if (tenantId) {
+        query.tenantId = tenantId;
+      }
+      
+      const result = await SubscriptionDetails.findOne(query);
       resolve(result);
     } catch (error) {
       console.error("SubscriptionDetailsHandler [getByUserId] Error:", error);
