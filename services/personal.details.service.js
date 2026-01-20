@@ -176,10 +176,22 @@ class PersonalDetailsService {
         throw AppError.badRequest("User ID is required");
       }
 
+<<<<<<< HEAD
       return await personalDetailsHandler.getByUserIdForPortal(
         userId,
         tenantId
       );
+=======
+      console.log("[PersonalDetailsService] getMyPersonalDetails called with userId:", userId);
+
+      // Use the same approach as professional and subscription details
+      // This ensures consistency across all detail types
+      const result = await personalDetailsHandler.getByUserId(userId);
+
+      console.log("[PersonalDetailsService] Final result:", result ? "Found" : "Not found");
+      
+      return result;
+>>>>>>> a29b653203818b1b5e903283bd8cfc7b4ae613a0
     } catch (error) {
       console.error(
         "PersonalDetailsService [getMyPersonalDetails] Error:",
