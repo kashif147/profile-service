@@ -71,7 +71,22 @@ exports.create = (data) =>
 exports.getByUserId = (userId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const result = await PersonalDetails.findOne({ userId });
+      const mongoose = require("mongoose");
+      
+      // Convert userId to ObjectId if it's a string
+      const userIdQuery = typeof userId === "string" && mongoose.Types.ObjectId.isValid(userId)
+        ? new mongoose.Types.ObjectId(userId)
+        : userId;
+
+      console.log("[getByUserId] Querying with userId:", userId, "converted to:", userIdQuery);
+
+      const result = await PersonalDetails.findOne({ 
+        userId: userIdQuery,
+        "meta.deleted": { $ne: true }
+      });
+
+      console.log("[getByUserId] Query result:", result ? "Found" : "Not found");
+      
       resolve(result);
     } catch (error) {
       console.error("PersonalDetailsHandler [getByUserId] Error:", error);
@@ -301,10 +316,23 @@ exports.updateApplicationStatus = (applicationId, status) =>
 exports.getByUserIdForPortal = (userId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const mongoose = require("mongoose");
+      
+      // Convert userId to ObjectId if it's a string
+      const userIdQuery = typeof userId === "string" && mongoose.Types.ObjectId.isValid(userId)
+        ? new mongoose.Types.ObjectId(userId)
+        : userId;
+
+      console.log("[getByUserIdForPortal] Querying with userId:", userId, "converted to:", userIdQuery);
+
       const result = await PersonalDetails.findOne({
-        userId: userId,
+        userId: userIdQuery,
         "meta.userType": "PORTAL",
+        "meta.deleted": { $ne: true }
       });
+
+      console.log("[getByUserIdForPortal] Query result:", result ? "Found" : "Not found");
+      
       resolve(result);
     } catch (error) {
       console.error(

@@ -27,13 +27,27 @@ exports.getAllApplications = async (req, res, next) => {
       }
     }
 
-    const applicationsWithDetails =
-      await applicationService.getAllApplicationsWithDetails(statusFilters);
+    const page = validatedQuery.page || 1;
+    const limit = validatedQuery.limit || 10;
+
+    const result =
+      await applicationService.getAllApplicationsWithDetails(
+        statusFilters,
+        page,
+        limit
+      );
 
     return res.success({
       filter: validatedQuery.type || "all",
-      total: applicationsWithDetails.length,
-      applications: applicationsWithDetails,
+      applications: result.applications,
+      pagination: {
+        page: result.pagination.page,
+        limit: result.pagination.limit,
+        totalCount: result.pagination.totalCount,
+        totalPages: result.pagination.totalPages,
+        hasNextPage: result.pagination.hasNextPage,
+        hasPreviousPage: result.pagination.hasPreviousPage,
+      },
     });
   } catch (error) {
     console.error("ApplicationController [getAllApplications] Error:", error);

@@ -94,12 +94,16 @@ class ApplicationService {
   /**
    * Get applications with complete details (personal, professional, subscription)
    * @param {Array} statusFilters - Array of status values to filter by
-   * @returns {Promise<Array>} Array of applications with complete details
+   * @param {number} page - Page number (default: 1)
+   * @param {number} limit - Number of items per page (default: 10)
+   * @returns {Promise<Object>} Object containing applications array and pagination metadata
    */
-  async getAllApplicationsWithDetails(statusFilters = []) {
+  async getAllApplicationsWithDetails(statusFilters = [], page = 1, limit = 10) {
     try {
       return await applicationHandler.getAllApplicationsWithDetails(
-        statusFilters
+        statusFilters,
+        page,
+        limit
       );
     } catch (error) {
       console.error(

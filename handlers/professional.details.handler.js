@@ -101,7 +101,18 @@ exports.checkPersonalDetailsByEmail = (email) =>
 exports.getByUserId = (userId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const result = await ProfessionalDetails.findOne({ userId });
+      const mongoose = require("mongoose");
+      
+      // Convert userId to ObjectId if it's a string
+      const userIdQuery = typeof userId === "string" && mongoose.Types.ObjectId.isValid(userId)
+        ? new mongoose.Types.ObjectId(userId)
+        : userId;
+
+      const result = await ProfessionalDetails.findOne({ 
+        userId: userIdQuery,
+        "meta.deleted": { $ne: true }
+      });
+      
       resolve(result);
     } catch (error) {
       console.error("ProfessionalDetailsHandler [getByUserId] Error:", error);

@@ -194,10 +194,6 @@ exports.getDefaultTemplate = async (req, res, next) => {
     const template =
       await applicationFilterTemplateService.getDefaultTemplate(creatorId);
 
-    if (!template) {
-      return res.success(null, "No default template found");
-    }
-
     return res.success(template);
   } catch (error) {
     console.error(

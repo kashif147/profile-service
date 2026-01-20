@@ -1,5 +1,6 @@
 const ApplicationFilterTemplate = require("../models/application.filter.template.model");
 const { AppError } = require("../errors/AppError");
+const { APPLICATION_STATUS } = require("../constants/enums");
 
 /**
  * Application Filter Template Service Layer
@@ -14,7 +15,7 @@ class ApplicationFilterTemplateService {
    */
   async createTemplate(userId, templateData) {
     try {
-      const { filters, isDefault } = templateData;
+      const { filters, columns, isDefault } = templateData;
 
       // If setting as default, unset other defaults for this user
       if (isDefault) {
@@ -27,6 +28,7 @@ class ApplicationFilterTemplateService {
       const template = new ApplicationFilterTemplate({
         userId,
         filters: filters || {},
+        columns: columns || [],
         isDefault: isDefault || false,
       });
 
@@ -97,7 +99,7 @@ class ApplicationFilterTemplateService {
    */
   async updateTemplate(templateId, userId, updateData) {
     try {
-      const { filters, isDefault } = updateData;
+      const { filters, columns, isDefault } = updateData;
 
       const template = await ApplicationFilterTemplate.findOne({
         _id: templateId,
@@ -120,6 +122,9 @@ class ApplicationFilterTemplateService {
       // Update fields
       if (filters !== undefined) {
         template.filters = filters;
+      }
+      if (columns !== undefined) {
+        template.columns = columns;
       }
       if (isDefault !== undefined) {
         template.isDefault = isDefault;
@@ -168,16 +173,33 @@ class ApplicationFilterTemplateService {
 
   /**
    * Get default template for a user
+   * If no default template exists, creates one for submitted applications
    * @param {string} userId - User ID
-   * @returns {Promise<Object|null>} Default template or null
+   * @returns {Promise<Object>} Default template (always returns a template)
    */
   async getDefaultTemplate(userId) {
     try {
-      return await ApplicationFilterTemplate.findOne({
+      let template = await ApplicationFilterTemplate.findOne({
         userId,
         isDefault: true,
         "meta.deleted": false,
       });
+
+      // If no default template exists, create one for submitted applications
+      if (!template) {
+        template = new ApplicationFilterTemplate({
+          userId,
+          filters: {
+            type: APPLICATION_STATUS.SUBMITTED,
+          },
+          columns: [],
+          isDefault: true,
+        });
+
+        template = await template.save();
+      }
+
+      return template;
     } catch (error) {
       console.error(
         "ApplicationFilterTemplateService [getDefaultTemplate] Error:",

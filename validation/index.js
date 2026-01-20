@@ -86,6 +86,8 @@ module.exports.application_status_query = Joi.object({
       )
     )
     .optional(),
+  page: Joi.number().integer().min(1).optional().default(1),
+  limit: Joi.number().integer().min(1).max(100).optional().default(10),
 });
 
 module.exports.application_approve = Joi.object({
@@ -326,6 +328,7 @@ module.exports.filter_template_create = Joi.object({
       )
       .optional(),
   }).optional(),
+  columns: Joi.array().items(Joi.string()).optional().default([]),
   isDefault: Joi.boolean().optional().default(false),
 });
 
@@ -340,5 +343,6 @@ module.exports.filter_template_update = Joi.object({
       )
       .optional(),
   }).optional(),
+  columns: Joi.array().items(Joi.string()).optional(),
   isDefault: Joi.boolean().optional(),
 });

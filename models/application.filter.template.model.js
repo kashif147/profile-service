@@ -15,6 +15,10 @@ const ApplicationFilterTemplateSchema = new mongoose.Schema(
         required: false,
       },
     },
+    columns: {
+      type: [String], // Array of field names to include in the response
+      default: [],
+    },
     isDefault: {
       type: Boolean,
       default: false,

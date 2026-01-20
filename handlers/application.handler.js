@@ -157,7 +157,7 @@ exports.getApplicationWithDetails = (applicationId) =>
     }
   });
 
-exports.getAllApplicationsWithDetails = (statusFilters = []) =>
+exports.getAllApplicationsWithDetails = (statusFilters = [], page = 1, limit = 10) =>
   new Promise(async (resolve, reject) => {
     try {
       let query = {};
@@ -166,9 +166,19 @@ exports.getAllApplicationsWithDetails = (statusFilters = []) =>
         query.applicationStatus = { $in: statusFilters };
       }
 
-      const applications = await PersonalDetails.find(query).sort({
-        createdAt: -1,
-      });
+      // Calculate pagination
+      const skip = (page - 1) * limit;
+
+      // Get total count for pagination metadata
+      const totalCount = await PersonalDetails.countDocuments(query);
+
+      // Get paginated applications
+      const applications = await PersonalDetails.find(query)
+        .sort({
+          createdAt: -1,
+        })
+        .skip(skip)
+        .limit(limit);
 
       const applicationsWithDetails = await Promise.all(
         applications.map(async (application) => {
@@ -229,7 +239,20 @@ exports.getAllApplicationsWithDetails = (statusFilters = []) =>
         })
       );
 
-      resolve(applicationsWithDetails);
+      // Filter out null values (from errors)
+      const filteredApplications = applicationsWithDetails.filter(app => app !== null);
+
+      resolve({
+        applications: filteredApplications,
+        pagination: {
+          page: page,
+          limit: limit,
+          totalCount: totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+          hasNextPage: page < Math.ceil(totalCount / limit),
+          hasPreviousPage: page > 1,
+        },
+      });
     } catch (error) {
       console.error(
         "ApplicationHandler [getAllApplicationsWithDetails] Error:",
