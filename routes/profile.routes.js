@@ -13,7 +13,7 @@ router.get("/", profileController.getAllProfiles);
 router.get("/search", profileController.searchProfiles);
 router.get("/my-profile", profileController.getMyProfile);
 router.put("/my-profile", profileController.updateMyProfile);
-router.get("/my-personal-details", profileController.getMyPersonalDetails);
+router.get("/my-personal-info", profileController.getMyPersonalDetails);
 router.get("/my-professional-details", profileController.getMyProfessionalDetails);
 router.get("/my-subscription-details", profileController.getMySubscriptionDetails);
 router.get("/my-details", profileController.getMyAllDetails);

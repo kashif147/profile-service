@@ -785,11 +785,6 @@ async function checkEmailExists(req, res, next) {
   }
 }
 
-/**
- * Get personal details for the logged-in PORTAL user
- * GET /api/profile/my-personal-details
- * Returns: Personal details for the user
- */
 async function getMyPersonalDetails(req, res, next) {
   try {
     const { userId, userType } = extractUserAndCreatorContext(req);
