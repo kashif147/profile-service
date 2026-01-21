@@ -74,6 +74,11 @@ const BatchSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected", "completed"],
+      default: "pending",
+    },
     isActive: {
       type: Boolean,
       default: true,

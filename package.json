@@ -14,7 +14,8 @@
     "postinstall": "echo \"Dependencies installed successfully\"",
     "docker:build": "docker build -t profile-service .",
     "docker:run": "docker run -p 4001:4001 profile-service",
-    "test:ci": "npm test && npm run lint"
+    "test:ci": "npm test && npm run lint",
+    "migrate:batch-status": "node scripts/add-status-to-batches.js"
   },
   "keywords": [
     "profile",
