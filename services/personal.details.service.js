@@ -56,7 +56,9 @@ class PersonalDetailsService {
           applicationId
         );
       } else {
-        throw AppError.badRequest(`Invalid user type: ${userType}. Expected PORTAL or CRM.`);
+        throw AppError.badRequest(
+          `Invalid user type: ${userType}. Expected PORTAL or CRM.`
+        );
       }
 
       if (!personalDetails) {
