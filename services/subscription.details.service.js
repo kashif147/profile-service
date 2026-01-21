@@ -423,11 +423,9 @@ class SubscriptionDetailsService {
 
       const subscriptionDetails = await subscriptionDetailsHandler.getByUserId(userId);
       
-      if (!subscriptionDetails) {
-        throw new Error("Subscription details not found");
-      }
-
-      return subscriptionDetails;
+      // Return null if not found (consistent with other services)
+      // This allows Promise.allSettled to handle it gracefully
+      return subscriptionDetails || null;
     } catch (error) {
       console.error(
         "SubscriptionDetailsService [getMySubscriptionDetails] Error:",
