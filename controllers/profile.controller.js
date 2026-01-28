@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const jwt = require("jsonwebtoken");
 const Profile = require("../models/profile.model.js");
 const Subscription = require("../models/subscription.model.js");
 const { AppError } = require("../errors/AppError");
@@ -1003,15 +1004,37 @@ async function getMyAllDetails(req, res, next) {
 // Internal endpoint: Get profiles by user IDs (for service-to-service calls)
 async function getProfilesByUserIds(req, res, next) {
   try {
-    // Check for internal request header
+    // Accept either JWT token OR internal request header
     const isInternalRequest =
       req.headers["x-internal-request"] === "true" ||
       req.headers["x-internal-request"] === "1";
+    
+    // Manually validate JWT token if present (since route is before authenticate middleware)
+    let hasValidJWT = false;
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      try {
+        const token = authHeader.substring(7);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // Set user context if JWT is valid
+        req.user = decoded;
+        req.userId = decoded.sub || decoded.id;
+        req.tenantId = decoded.tenantId || decoded.tid || decoded.extension_tenantId;
+        hasValidJWT = true;
+      } catch (error) {
+        // JWT validation failed, but we'll still allow if internal header is present
+        console.warn("JWT validation failed for internal endpoint:", error.message);
+      }
+    }
 
-    if (!isInternalRequest) {
+    // If neither JWT token (valid) nor internal header is present, reject
+    if (!hasValidJWT && !isInternalRequest) {
       return res.status(403).json({
         success: false,
-        message: "This endpoint is only accessible for internal service calls",
+        message:
+          "This endpoint requires either a valid JWT token (Authorization header) or internal request header (x-internal-request)",
       });
     }
 
