@@ -1047,9 +1047,32 @@ async function getProfilesByUserIds(req, res, next) {
       });
     }
 
-    // Fetch profiles by userIds
+    // Convert userIds to ObjectIds (Profile.userId is ObjectId, but FCMToken.userId is String)
+    // Try to convert each userId to ObjectId, filter out invalid ones
+    const objectIdUserIds = userIds
+      .map((id) => {
+        try {
+          // If already ObjectId, return as is
+          if (mongoose.Types.ObjectId.isValid(id)) {
+            return new mongoose.Types.ObjectId(id);
+          }
+          return null;
+        } catch (error) {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    if (objectIdUserIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {},
+      });
+    }
+
+    // Fetch profiles by userIds (using ObjectIds)
     const profiles = await Profile.find({
-      userId: { $in: userIds },
+      userId: { $in: objectIdUserIds },
     })
       .select(
         "userId tenantId personalInfo contactInfo membershipNumber isActive normalizedEmail"
@@ -1057,10 +1080,34 @@ async function getProfilesByUserIds(req, res, next) {
       .lean();
 
     // Create a map of userId -> profile for easy lookup
+    // Map each profile to all possible userId formats (ObjectId string and original string)
     const profilesByUserId = {};
+    
     profiles.forEach((profile) => {
-      const userIdStr = String(profile.userId);
-      profilesByUserId[userIdStr] = profile;
+      if (profile.userId) {
+        const profileUserIdStr = String(profile.userId);
+        
+        // Find the original userId from the request that matches this profile's userId
+        // This handles the case where FCMToken.userId is a string but Profile.userId is ObjectId
+        const matchingOriginalId = userIds.find((id) => {
+          const originalIdStr = String(id);
+          // Compare both as strings - MongoDB ObjectId comparison works with string comparison
+          return originalIdStr === profileUserIdStr;
+        });
+        
+        // Map using the original userId string from the request (so notification-service can find it)
+        if (matchingOriginalId) {
+          profilesByUserId[String(matchingOriginalId)] = profile;
+        }
+        // Also map using the ObjectId string format as fallback
+        profilesByUserId[profileUserIdStr] = profile;
+      }
+    });
+    
+    console.log("Profile lookup results:", {
+      requestedUserIds: userIds,
+      profilesFound: profiles.length,
+      mappedUserIds: Object.keys(profilesByUserId),
     });
 
     return res.status(200).json({
