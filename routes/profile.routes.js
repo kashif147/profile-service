@@ -6,6 +6,9 @@ const { authenticate } = require("../middlewares/auth");
 
 router.post("/validate", profileValidationController.validateProfile);
 
+// Internal endpoint for service-to-service calls (bypasses auth, checks internal header)
+router.post("/internal/by-user-ids", profileController.getProfilesByUserIds);
+
 router.use(authenticate);
 
 router.get("/check-email", profileController.checkEmailExists);

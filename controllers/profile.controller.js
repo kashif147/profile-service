@@ -1000,6 +1000,60 @@ async function getMyAllDetails(req, res, next) {
   }
 }
 
+// Internal endpoint: Get profiles by user IDs (for service-to-service calls)
+async function getProfilesByUserIds(req, res, next) {
+  try {
+    // Check for internal request header
+    const isInternalRequest =
+      req.headers["x-internal-request"] === "true" ||
+      req.headers["x-internal-request"] === "1";
+
+    if (!isInternalRequest) {
+      return res.status(403).json({
+        success: false,
+        message: "This endpoint is only accessible for internal service calls",
+      });
+    }
+
+    const { userIds } = req.body;
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "userIds array is required and must not be empty",
+      });
+    }
+
+    // Fetch profiles by userIds
+    const profiles = await Profile.find({
+      userId: { $in: userIds },
+    })
+      .select(
+        "userId tenantId personalInfo contactInfo membershipNumber isActive normalizedEmail"
+      )
+      .lean();
+
+    // Create a map of userId -> profile for easy lookup
+    const profilesByUserId = {};
+    profiles.forEach((profile) => {
+      const userIdStr = String(profile.userId);
+      profilesByUserId[userIdStr] = profile;
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: profilesByUserId,
+    });
+  } catch (error) {
+    console.error("ProfileController [getProfilesByUserIds] Error:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch profiles by user IDs"
+      )
+    );
+  }
+}
+
 module.exports = {
   getAllProfiles,
   searchProfiles,
@@ -1015,4 +1069,5 @@ module.exports = {
   getMyProfessionalDetails,
   getMySubscriptionDetails,
   getMyAllDetails,
+  getProfilesByUserIds,
 };
