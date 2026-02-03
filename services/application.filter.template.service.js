@@ -103,12 +103,21 @@ class ApplicationFilterTemplateService {
 
   /**
    * Get a specific template by ID
+   * Returns template if: (1) it's the system default, or (2) it belongs to the user
    * @param {string} templateId - Template ID
    * @param {string} userId - User ID (for authorization)
    * @returns {Promise<Object>} Template
    */
   async getTemplateById(templateId, userId) {
     try {
+      // Allow system default by ID so frontend can pass it like any other template
+      const systemDefault = await ApplicationFilterTemplate.findOne({
+        _id: templateId,
+        systemDefault: true,
+        "meta.deleted": false,
+      });
+      if (systemDefault) return systemDefault;
+
       const template = await ApplicationFilterTemplate.findOne({
         _id: templateId,
         userId,

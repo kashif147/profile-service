@@ -1001,6 +1001,56 @@ async function getMyAllDetails(req, res, next) {
   }
 }
 
+/**
+ * Batch endpoint for gateway aggregation: get profiles by profile IDs.
+ * POST /api/profile/batch
+ * Body: { profileIds: string[] }
+ * Returns: { data: profile[] } - array of full profile documents for aggregation.
+ */
+async function getProfilesBatch(req, res, next) {
+  try {
+    const { profileIds } = req.body;
+
+    if (!profileIds || !Array.isArray(profileIds) || profileIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "profileIds array is required and must not be empty",
+      });
+    }
+
+    const objectIds = profileIds
+      .map((id) => {
+        try {
+          if (mongoose.Types.ObjectId.isValid(id)) {
+            return new mongoose.Types.ObjectId(id);
+          }
+          return null;
+        } catch (_) {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    if (objectIds.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const profiles = await Profile.find({ _id: { $in: objectIds } }).lean();
+
+    return res.status(200).json({
+      success: true,
+      data: profiles,
+    });
+  } catch (error) {
+    console.error("ProfileController [getProfilesBatch] Error:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch profiles by IDs"
+      )
+    );
+  }
+}
+
 // Internal endpoint: Get profiles by user IDs (for service-to-service calls)
 async function getProfilesByUserIds(req, res, next) {
   try {
@@ -1139,5 +1189,6 @@ module.exports = {
   getMyProfessionalDetails,
   getMySubscriptionDetails,
   getMyAllDetails,
+  getProfilesBatch,
   getProfilesByUserIds,
 };

@@ -12,6 +12,9 @@ router.post("/internal/by-user-ids", profileController.getProfilesByUserIds);
 
 router.use(authenticate);
 
+// Gateway aggregation: batch fetch profiles by IDs (subscription service)
+router.post("/batch", profileController.getProfilesBatch);
+
 router.get("/check-email", profileController.checkEmailExists);
 router.get("/", profileController.getAllProfiles);
 router.get("/search", profileController.searchProfiles);
