@@ -17,6 +17,15 @@ const BatchSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+    recruitmentDetails: {
+      recruitedBy: { type: String, default: null },
+      recruitedByMembershipNo: { type: String, default: null },
+      confirmedRecruiterProfileId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Profile",
+        default: null,
+      },
+    },
     profileIds: [
       {
         type: mongoose.Schema.Types.ObjectId,

@@ -13,5 +13,6 @@ router.use("/corn-market", require("./corn.market.routes"));
 router.use("/recruit-list", require("./recruit.a.friend.routes"));
 router.use("/universal", require("./universal.search.routes"));
 router.use("/batches", require("./batch.routes"));
+router.use("/batch-details", require("./batch.detail.routes"));
 
 module.exports = router;

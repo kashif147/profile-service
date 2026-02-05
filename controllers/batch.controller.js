@@ -51,6 +51,26 @@ async function fetchSubscriptionStartDates(profileIds, authHeader) {
 }
 
 /**
+ * Build batch recruitmentDetails from first profile (recruit-friend only).
+ * Returns { recruitedBy, recruitedByMembershipNo, confirmedRecruiterProfileId } or all nulls.
+ */
+function buildBatchRecruitmentDetails(profile) {
+  if (!profile?.recruitmentDetails) {
+    return {
+      recruitedBy: null,
+      recruitedByMembershipNo: null,
+      confirmedRecruiterProfileId: null,
+    };
+  }
+  const rd = profile.recruitmentDetails;
+  return {
+    recruitedBy: rd.recruitedBy ?? null,
+    recruitedByMembershipNo: rd.recruitedByMembershipNo ?? null,
+    confirmedRecruiterProfileId: rd.confirmedRecruiterProfileId ?? null,
+  };
+}
+
+/**
  * Format profile with ALL fields (combined format)
  * This creates a snapshot of profile data
  */
@@ -183,11 +203,22 @@ async function createBatch(req, res, next) {
       );
     }
 
+    // Recruitment details: only for recruit-friend, from first profile; null for other types
+    const recruitmentDetails =
+      type === "recruit-friend" && matchingProfiles.length > 0
+        ? buildBatchRecruitmentDetails(matchingProfiles[0])
+        : {
+            recruitedBy: null,
+            recruitedByMembershipNo: null,
+            confirmedRecruiterProfileId: null,
+          };
+
     // Create the batch with embedded profile data (even if empty)
     const batch = new Batch({
       name: name.trim(),
       type: type, // Store frontend type directly in database
       date: new Date(date),
+      recruitmentDetails,
       profileIds: profileIds,
       profiles: profileSnapshots, // Store snapshot of all profile fields
       createdBy: userId,
@@ -554,6 +585,16 @@ async function refreshBatch(req, res, next) {
         formatProfileSnapshot(profile, subscriptionStartMap, batch.type)
       );
     }
+
+    // Update recruitment details for recruit-friend: from first profile or nulls
+    batch.recruitmentDetails =
+      batch.type === "recruit-friend" && matchingProfiles.length > 0
+        ? buildBatchRecruitmentDetails(matchingProfiles[0])
+        : {
+            recruitedBy: null,
+            recruitedByMembershipNo: null,
+            confirmedRecruiterProfileId: null,
+          };
 
     // Update batch with new profile IDs and snapshots
     batch.profileIds = profileIds;

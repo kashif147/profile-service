@@ -1035,7 +1035,11 @@ async function getProfilesBatch(req, res, next) {
       return res.status(200).json({ success: true, data: [] });
     }
 
-    const profiles = await Profile.find({ _id: { $in: objectIds } }).lean();
+    const query = { _id: { $in: objectIds } };
+    if (req.tenantId) {
+      query.tenantId = req.tenantId;
+    }
+    const profiles = await Profile.find(query).lean();
 
     return res.status(200).json({
       success: true,
