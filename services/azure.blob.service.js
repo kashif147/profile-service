@@ -25,6 +25,24 @@ async function uploadToBlob(blobPath, buffer, contentType) {
   return blockBlob.url;
 }
 
+/**
+ * Download blob to buffer (for processing file content).
+ */
+async function downloadBlobToBuffer(blobPath) {
+  if (!isConfigured) {
+    throw new Error(
+      "Azure Storage is not configured. Set AZURE_STORAGE_ACCOUNT and AZURE_STORAGE_KEY."
+    );
+  }
+  const container = blobServiceClient.getContainerClient(containerName);
+  const blockBlob = container.getBlockBlobClient(blobPath);
+  const downloadResponse = await blockBlob.download(0);
+  const chunks = [];
+  for await (const chunk of downloadResponse.readableStreamBody) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
 
 function generateDownloadUrl(blobPath, expiryMinutes = 60) {
   if (!isConfigured || !sharedKeyCredential) {
@@ -49,6 +67,7 @@ function generateDownloadUrl(blobPath, expiryMinutes = 60) {
 
 module.exports = {
   uploadToBlob,
+  downloadBlobToBuffer,
   generateDownloadUrl,
   isConfigured,
 };

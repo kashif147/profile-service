@@ -1,6 +1,7 @@
 const BatchDetail = require("../models/batch.detail.model.js");
 const { AppError } = require("../errors/AppError");
 const azureBlob = require("../services/azure.blob.service");
+const batchPaymentProcess = require("../services/batch.payment.process.service");
 const { v4: uuidv4 } = require("uuid");
 
 /**
@@ -14,9 +15,9 @@ function requireCrm(req, res, next) {
 }
 
 /**
- * Create a batch detail (type: check | deduction, date, referenceNumber, description, comments, file).
- * File is uploaded to Azure Blob Storage. CRM only.
- * Expects multipart/form-data with optional file field "file".
+ * Create a batch detail. All required: type, date, referenceNumber, description, comments, file.
+ * File is uploaded to Azure Blob Storage (no expiration). fileUrl is stored in the model.
+ * CRM only. Expects multipart/form-data with file field "file".
  */
 async function createBatchDetail(req, res, next) {
   try {
@@ -45,34 +46,29 @@ async function createBatchDetail(req, res, next) {
       );
     }
 
-    let fileBlobPath = null;
-    let fileName = null;
-    let fileContentType = null;
-
-    if (req.file && req.file.buffer) {
-      if (!azureBlob.isConfigured) {
-        return next(
-          AppError.badRequest(
-            "Azure Storage is not configured. File upload is unavailable."
-          )
-        );
-      }
-      const ext =
-        req.file.originalname && req.file.originalname.includes(".")
-          ? req.file.originalname.split(".").pop()
-          : "bin";
-      const safeName = (req.file.originalname || "file")
-        .replace(/[^a-zA-Z0-9._-]/g, "_");
-      const blobPath = `batch-details/${tenantId || "default"}/${uuidv4()}-${safeName}`;
-      await azureBlob.uploadToBlob(
-        blobPath,
-        req.file.buffer,
-        req.file.mimetype || "application/octet-stream"
-      );
-      fileBlobPath = blobPath;
-      fileName = req.file.originalname || "file";
-      fileContentType = req.file.mimetype || "application/octet-stream";
+    if (!req.file || !req.file.buffer) {
+      return next(AppError.badRequest("File is required"));
     }
+
+    if (!azureBlob.isConfigured) {
+      return next(
+        AppError.badRequest(
+          "Azure Storage is not configured. File upload is unavailable."
+        )
+      );
+    }
+
+    const safeName = (req.file.originalname || "file")
+      .replace(/[^a-zA-Z0-9._-]/g, "_");
+    const blobPath = `batch-details/${tenantId || "default"}/${uuidv4()}-${safeName}`;
+    const fileUrl = await azureBlob.uploadToBlob(
+      blobPath,
+      req.file.buffer,
+      req.file.mimetype || "application/octet-stream"
+    );
+    const fileBlobPath = blobPath;
+    const fileName = req.file.originalname || "file";
+    const fileContentType = req.file.mimetype || "application/octet-stream";
 
     const batchDetail = new BatchDetail({
       tenantId,
@@ -82,6 +78,7 @@ async function createBatchDetail(req, res, next) {
       description,
       comments,
       fileBlobPath,
+      fileUrl,
       fileName,
       fileContentType,
       createdBy,
@@ -206,19 +203,16 @@ async function updateBatchDetail(req, res, next) {
       batchDetail.comments = req.body.comments.trim();
 
     if (req.file && req.file.buffer && azureBlob.isConfigured) {
-      const ext =
-        req.file.originalname && req.file.originalname.includes(".")
-          ? req.file.originalname.split(".").pop()
-          : "bin";
       const safeName = (req.file.originalname || "file")
         .replace(/[^a-zA-Z0-9._-]/g, "_");
       const blobPath = `batch-details/${tenantId || "default"}/${uuidv4()}-${safeName}`;
-      await azureBlob.uploadToBlob(
+      const fileUrl = await azureBlob.uploadToBlob(
         blobPath,
         req.file.buffer,
         req.file.mimetype || "application/octet-stream"
       );
       batchDetail.fileBlobPath = blobPath;
+      batchDetail.fileUrl = fileUrl;
       batchDetail.fileName = req.file.originalname || "file";
       batchDetail.fileContentType =
         req.file.mimetype || "application/octet-stream";
@@ -322,6 +316,112 @@ async function getBatchDetailFileDownloadUrl(req, res, next) {
   }
 }
 
+/**
+ * Process batch detail (deduction): read file from Azure, match Column A (Membership No)
+ * to profiles; create batch payments for found members, exceptions for not found.
+ * CRM only.
+ */
+async function processBatchDetail(req, res, next) {
+  try {
+    const { batchDetailId } = req.params;
+    const tenantId = req.user?.tenantId || null;
+
+    const result = await batchPaymentProcess.processBatchDetail({
+      batchDetailId,
+      tenantId,
+    });
+
+    return res.json({
+      message: result.message,
+      data: {
+        paymentsCount: result.paymentsCount,
+        exceptionsCount: result.exceptionsCount,
+        payments: result.payments,
+        exceptions: result.exceptions,
+      },
+    });
+  } catch (error) {
+    if (error.message === "Batch detail not found") {
+      return next(AppError.notFound(error.message));
+    }
+    if (error.message === "No file attached to this batch detail") {
+      return next(AppError.badRequest(error.message));
+    }
+    if (error.message === "Azure Storage is not configured") {
+      return next(AppError.serviceUnavailable(error.message));
+    }
+    console.error("Error processing batch detail:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to process batch detail"
+      )
+    );
+  }
+}
+
+/**
+ * Get batch payments for a batch detail (members found in system). From BatchDetail.batchPayments.
+ */
+async function getBatchPayments(req, res, next) {
+  try {
+    const { batchDetailId } = req.params;
+    const tenantId = req.user?.tenantId;
+    const query = { _id: batchDetailId, isDeleted: false };
+    if (tenantId) query.tenantId = tenantId;
+
+    const batchDetail = await BatchDetail.findOne(query)
+      .select("batchPayments")
+      .populate("batchPayments.profileId", "membershipNumber personalInfo contactInfo")
+      .lean();
+    if (!batchDetail) {
+      return next(AppError.notFound("Batch detail not found"));
+    }
+
+    const payments = (batchDetail.batchPayments || []).sort(
+      (a, b) => (a.rowIndex || 0) - (b.rowIndex || 0)
+    );
+    return res.json({ data: payments });
+  } catch (error) {
+    console.error("Error fetching batch payments:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch batch payments"
+      )
+    );
+  }
+}
+
+/**
+ * Get batch payment exceptions for a batch detail (members not found). From BatchDetail.batchExceptions.
+ */
+async function getBatchPaymentExceptions(req, res, next) {
+  try {
+    const { batchDetailId } = req.params;
+    const tenantId = req.user?.tenantId;
+    const query = { _id: batchDetailId, isDeleted: false };
+    if (tenantId) query.tenantId = tenantId;
+
+    const batchDetail = await BatchDetail.findOne(query)
+      .select("batchExceptions")
+      .lean();
+    if (!batchDetail) {
+      return next(AppError.notFound("Batch detail not found"));
+    }
+
+    const exceptions = (batchDetail.batchExceptions || []).sort(
+      (a, b) => (a.rowIndex || 0) - (b.rowIndex || 0)
+    );
+    return res.json({ data: exceptions });
+  } catch (error) {
+    console.error("Error fetching batch payment exceptions:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch batch payment exceptions"
+      )
+    );
+  }
+}
+
 module.exports = {
   requireCrm,
   createBatchDetail,
@@ -330,4 +430,7 @@ module.exports = {
   updateBatchDetail,
   deleteBatchDetail,
   getBatchDetailFileDownloadUrl,
+  processBatchDetail,
+  getBatchPayments,
+  getBatchPaymentExceptions,
 };

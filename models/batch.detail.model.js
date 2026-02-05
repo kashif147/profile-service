@@ -40,23 +40,47 @@ const BatchDetailSchema = new mongoose.Schema(
       maxlength: 2000,
       default: "",
     },
-    // File stored in Azure Blob Storage
-    fileBlobPath: {
-      type: String,
-      default: null,
-      trim: true,
-    },
-    fileName: {
-      type: String,
-      default: null,
-      trim: true,
-      maxlength: 500,
-    },
-    fileContentType: {
-      type: String,
-      default: null,
-      trim: true,
-    },
+    // File stored in Azure Blob Storage (no expiration). URL stored for download/view.
+    fileBlobPath: { type: String, default: null, trim: true },
+    fileUrl: { type: String, default: null, trim: true }, // Full blob URL (no SAS, no expiration)
+    fileName: { type: String, default: null, trim: true, maxlength: 500 },
+    fileContentType: { type: String, default: null, trim: true },
+    // Populated when process API is run: members found in system (profile snapshot + value from file)
+    batchPayments: [
+      {
+        profileId: { type: mongoose.Schema.Types.ObjectId, ref: "Profile", required: true },
+        membershipNumber: { type: String, required: true, trim: true },
+        valueForPeriodSelected: { type: Number, default: null },
+        rowIndex: { type: Number, default: null },
+        // From Profile: personalInfo
+        forename: { type: String, default: null, trim: true },
+        surname: { type: String, default: null, trim: true },
+        dateOfBirth: { type: Date, default: null },
+        gender: { type: String, default: null, trim: true },
+        // From Profile: contactInfo
+        personalEmail: { type: String, default: null, trim: true },
+        workEmail: { type: String, default: null, trim: true },
+        mobileNumber: { type: String, default: null, trim: true },
+        fullAddress: { type: String, default: null, trim: true },
+        // From Profile: professionalDetails
+        workLocation: { type: String, default: null, trim: true },
+        grade: { type: String, default: null, trim: true },
+        primarySection: { type: String, default: null, trim: true },
+        // From Profile: preferences
+        valueAddedServices: { type: Boolean, default: false },
+      },
+    ],
+    // Populated when process API is run: members NOT found (fields from file only)
+    batchExceptions: [
+      {
+        membershipNumber: { type: String, required: true, trim: true },
+        lastName: { type: String, default: null, trim: true },
+        firstName: { type: String, default: null, trim: true },
+        fullName: { type: String, default: null, trim: true },
+        valueForPeriodSelected: { type: Number, default: null },
+        rowIndex: { type: Number, default: null },
+      },
+    ],
     createdBy: {
       type: String,
       required: true,

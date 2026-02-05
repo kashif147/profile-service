@@ -16,13 +16,32 @@ router.post(
   batchDetailController.createBatchDetail
 );
 
-// Get all batch details (pagination, optional ?type=check|deduction, ?page=1, ?limit=20)
+// Get all batch details (pagination, optional ?type=deduction|cheque, ?page=1, ?limit=20)
 router.get("/", batchDetailController.getAllBatchDetails);
 
-// Get time-limited download URL for the attached file (?expiryMinutes=60) — must be before /:id
+// Process batch: process comes before ID — POST /batch-details/process/:batchDetailId
+router.post(
+  "/process/:batchDetailId",
+  batchDetailController.requireCrm,
+  batchDetailController.processBatchDetail
+);
+
+// Get time-limited download URL for the attached file (?expiryMinutes=60)
 router.get(
   "/:batchDetailId/download-url",
   batchDetailController.getBatchDetailFileDownloadUrl
+);
+
+// List batch payments (members found in system) for this batch detail
+router.get(
+  "/:batchDetailId/payments",
+  batchDetailController.getBatchPayments
+);
+
+// List batch payment exceptions (members not found) for this batch detail
+router.get(
+  "/:batchDetailId/exceptions",
+  batchDetailController.getBatchPaymentExceptions
 );
 
 // Get one batch detail by ID
