@@ -15,9 +15,12 @@ function requireCrm(req, res, next) {
 }
 
 /**
- * Create a batch detail. All required: type, date, referenceNumber, description, comments, file.
- * File is uploaded to Azure Blob Storage (no expiration). fileUrl is stored in the model.
- * CRM only. Expects multipart/form-data with file field "file".
+ * Create a batch detail. Required: type, date, referenceNumber, description.
+ * Optional: comments, file. When file is uploaded, it is processed immediately:
+ * membership number column is matched to profiles → matched go to batchPayments,
+ * not matched go to batchExceptions. No separate process API.
+ * CRM only. Expects multipart/form-data with optional file field "file" (type=file from computer).
+ * When file is provided, fileUrl is saved on the batch (no expiry).
  */
 async function createBatchDetail(req, res, next) {
   try {
@@ -35,6 +38,9 @@ async function createBatchDetail(req, res, next) {
         AppError.badRequest("type, date, and referenceNumber are required")
       );
     }
+    if (!description) {
+      return next(AppError.badRequest("description is required"));
+    }
 
     const BATCH_DETAIL_TYPES = require("../models/batch.detail.model.js")
       .BATCH_DETAIL_TYPES;
@@ -46,29 +52,31 @@ async function createBatchDetail(req, res, next) {
       );
     }
 
-    if (!req.file || !req.file.buffer) {
-      return next(AppError.badRequest("File is required"));
-    }
+    let fileBlobPath = null;
+    let fileUrl = null;
+    let fileName = null;
+    let fileContentType = null;
 
-    if (!azureBlob.isConfigured) {
-      return next(
-        AppError.badRequest(
-          "Azure Storage is not configured. File upload is unavailable."
-        )
+    if (req.file && req.file.buffer) {
+      if (!azureBlob.isConfigured) {
+        return next(
+          AppError.badRequest(
+            "Azure Storage is not configured. File upload is unavailable."
+          )
+        );
+      }
+      const safeName = (req.file.originalname || "file")
+        .replace(/[^a-zA-Z0-9._-]/g, "_");
+      const blobPath = `batch-details/${tenantId || "default"}/${uuidv4()}-${safeName}`;
+      fileUrl = await azureBlob.uploadToBlob(
+        blobPath,
+        req.file.buffer,
+        req.file.mimetype || "application/octet-stream"
       );
+      fileBlobPath = blobPath;
+      fileName = req.file.originalname || "file";
+      fileContentType = req.file.mimetype || "application/octet-stream";
     }
-
-    const safeName = (req.file.originalname || "file")
-      .replace(/[^a-zA-Z0-9._-]/g, "_");
-    const blobPath = `batch-details/${tenantId || "default"}/${uuidv4()}-${safeName}`;
-    const fileUrl = await azureBlob.uploadToBlob(
-      blobPath,
-      req.file.buffer,
-      req.file.mimetype || "application/octet-stream"
-    );
-    const fileBlobPath = blobPath;
-    const fileName = req.file.originalname || "file";
-    const fileContentType = req.file.mimetype || "application/octet-stream";
 
     const batchDetail = new BatchDetail({
       tenantId,
@@ -86,9 +94,27 @@ async function createBatchDetail(req, res, next) {
 
     const saved = await batchDetail.save();
 
+    if (req.file && req.file.buffer && saved._id) {
+      try {
+        await batchPaymentProcess.processBatchDetailWithBuffer(
+          saved,
+          req.file.buffer,
+          tenantId
+        );
+      } catch (processErr) {
+        console.error("Error processing batch file:", processErr);
+        return next(
+          AppError.internalServerError(
+            processErr.message || "Batch created but file processing failed"
+          )
+        );
+      }
+    }
+
+    const toReturn = await BatchDetail.findById(saved._id).lean();
     return res.status(201).json({
       message: "Batch detail created successfully",
-      data: saved.toJSON(),
+      data: toReturn,
     });
   } catch (error) {
     console.error("Error creating batch detail:", error);
@@ -140,7 +166,8 @@ async function getAllBatchDetails(req, res, next) {
 }
 
 /**
- * Get a single batch detail by ID.
+ * Get a single batch detail by ID with all details populated (batchPayments with profile, batchExceptions, fileUrl).
+ * File URL is stored permanently on the batch when file is uploaded at create/update (no expiry).
  */
 async function getBatchDetailById(req, res, next) {
   try {
@@ -150,7 +177,9 @@ async function getBatchDetailById(req, res, next) {
     const query = { _id: batchDetailId, isDeleted: false };
     if (tenantId) query.tenantId = tenantId;
 
-    const batchDetail = await BatchDetail.findOne(query).lean();
+    const batchDetail = await BatchDetail.findOne(query)
+      .populate("batchPayments.profileId", "membershipNumber personalInfo contactInfo professionalDetails preferences")
+      .lean();
     if (!batchDetail) {
       return next(AppError.notFound("Batch detail not found"));
     }
@@ -263,165 +292,6 @@ async function deleteBatchDetail(req, res, next) {
   }
 }
 
-/**
- * Get a time-limited download URL for the batch detail file (Azure SAS).
- */
-async function getBatchDetailFileDownloadUrl(req, res, next) {
-  try {
-    const { batchDetailId } = req.params;
-    const tenantId = req.user?.tenantId;
-    const expiryMinutes = Math.min(
-      1440,
-      Math.max(1, parseInt(req.query.expiryMinutes, 10) || 60)
-    );
-
-    const query = { _id: batchDetailId, isDeleted: false };
-    if (tenantId) query.tenantId = tenantId;
-
-    const batchDetail = await BatchDetail.findOne(query).lean();
-    if (!batchDetail) {
-      return next(AppError.notFound("Batch detail not found"));
-    }
-    if (!batchDetail.fileBlobPath) {
-      return next(AppError.notFound("No file attached to this batch detail"));
-    }
-
-    if (!azureBlob.isConfigured) {
-      return next(
-        AppError.serviceUnavailable(
-          "Azure Storage is not configured. Download is unavailable."
-        )
-      );
-    }
-
-    const downloadUrl = azureBlob.generateDownloadUrl(
-      batchDetail.fileBlobPath,
-      expiryMinutes
-    );
-
-    return res.json({
-      data: {
-        downloadUrl,
-        expiresInMinutes: expiryMinutes,
-        fileName: batchDetail.fileName || null,
-      },
-    });
-  } catch (error) {
-    console.error("Error generating download URL:", error);
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to generate download URL"
-      )
-    );
-  }
-}
-
-/**
- * Process batch detail (deduction): read file from Azure, match Column A (Membership No)
- * to profiles; create batch payments for found members, exceptions for not found.
- * CRM only.
- */
-async function processBatchDetail(req, res, next) {
-  try {
-    const { batchDetailId } = req.params;
-    const tenantId = req.user?.tenantId || null;
-
-    const result = await batchPaymentProcess.processBatchDetail({
-      batchDetailId,
-      tenantId,
-    });
-
-    return res.json({
-      message: result.message,
-      data: {
-        paymentsCount: result.paymentsCount,
-        exceptionsCount: result.exceptionsCount,
-        payments: result.payments,
-        exceptions: result.exceptions,
-      },
-    });
-  } catch (error) {
-    if (error.message === "Batch detail not found") {
-      return next(AppError.notFound(error.message));
-    }
-    if (error.message === "No file attached to this batch detail") {
-      return next(AppError.badRequest(error.message));
-    }
-    if (error.message === "Azure Storage is not configured") {
-      return next(AppError.serviceUnavailable(error.message));
-    }
-    console.error("Error processing batch detail:", error);
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to process batch detail"
-      )
-    );
-  }
-}
-
-/**
- * Get batch payments for a batch detail (members found in system). From BatchDetail.batchPayments.
- */
-async function getBatchPayments(req, res, next) {
-  try {
-    const { batchDetailId } = req.params;
-    const tenantId = req.user?.tenantId;
-    const query = { _id: batchDetailId, isDeleted: false };
-    if (tenantId) query.tenantId = tenantId;
-
-    const batchDetail = await BatchDetail.findOne(query)
-      .select("batchPayments")
-      .populate("batchPayments.profileId", "membershipNumber personalInfo contactInfo")
-      .lean();
-    if (!batchDetail) {
-      return next(AppError.notFound("Batch detail not found"));
-    }
-
-    const payments = (batchDetail.batchPayments || []).sort(
-      (a, b) => (a.rowIndex || 0) - (b.rowIndex || 0)
-    );
-    return res.json({ data: payments });
-  } catch (error) {
-    console.error("Error fetching batch payments:", error);
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to fetch batch payments"
-      )
-    );
-  }
-}
-
-/**
- * Get batch payment exceptions for a batch detail (members not found). From BatchDetail.batchExceptions.
- */
-async function getBatchPaymentExceptions(req, res, next) {
-  try {
-    const { batchDetailId } = req.params;
-    const tenantId = req.user?.tenantId;
-    const query = { _id: batchDetailId, isDeleted: false };
-    if (tenantId) query.tenantId = tenantId;
-
-    const batchDetail = await BatchDetail.findOne(query)
-      .select("batchExceptions")
-      .lean();
-    if (!batchDetail) {
-      return next(AppError.notFound("Batch detail not found"));
-    }
-
-    const exceptions = (batchDetail.batchExceptions || []).sort(
-      (a, b) => (a.rowIndex || 0) - (b.rowIndex || 0)
-    );
-    return res.json({ data: exceptions });
-  } catch (error) {
-    console.error("Error fetching batch payment exceptions:", error);
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to fetch batch payment exceptions"
-      )
-    );
-  }
-}
-
 module.exports = {
   requireCrm,
   createBatchDetail,
@@ -429,8 +299,4 @@ module.exports = {
   getBatchDetailById,
   updateBatchDetail,
   deleteBatchDetail,
-  getBatchDetailFileDownloadUrl,
-  processBatchDetail,
-  getBatchPayments,
-  getBatchPaymentExceptions,
 };

@@ -158,7 +158,98 @@ async function processBatchDetail({ batchDetailId, tenantId }) {
   };
 }
 
+/**
+ * Process a batch detail using an in-memory buffer (e.g. right after upload).
+ * Matches membership number column to profiles; found → batchPayments, not found → batchExceptions.
+ * @param {Object} batchDetail - Mongoose BatchDetail document (will be saved)
+ * @param {Buffer} buffer - File buffer (e.g. Excel)
+ * @param {string|null} tenantId - Optional tenant filter for profiles
+ * @returns {Promise<{ paymentsCount, exceptionsCount, payments, exceptions, message }>}
+ */
+async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null) {
+  const rows = parseRows(buffer);
+  if (rows.length === 0) {
+    batchDetail.batchPayments = [];
+    batchDetail.batchExceptions = [];
+    await batchDetail.save();
+    return {
+      paymentsCount: 0,
+      exceptionsCount: 0,
+      payments: [],
+      exceptions: [],
+      message: "No data rows found in file",
+    };
+  }
+
+  const tenantFilter = tenantId ? { tenantId } : {};
+  const membershipNumbers = [...new Set(rows.map((r) => r.membershipNumber))];
+  const profiles = await Profile.find({
+    ...tenantFilter,
+    membershipNumber: { $in: membershipNumbers },
+  })
+    .select(
+      "membershipNumber personalInfo contactInfo professionalDetails preferences"
+    )
+    .lean();
+  const profileByMembership = new Map(
+    profiles.map((p) => [String(p.membershipNumber).trim(), p])
+  );
+
+  const batchPayments = [];
+  const batchExceptions = [];
+  for (const row of rows) {
+    const normalizedMembership = String(row.membershipNumber).trim();
+    const profile = profileByMembership.get(normalizedMembership);
+    if (profile) {
+      const pi = profile.personalInfo || {};
+      const ci = profile.contactInfo || {};
+      const pd = profile.professionalDetails || {};
+      const pref = profile.preferences || {};
+      batchPayments.push({
+        profileId: profile._id,
+        membershipNumber: profile.membershipNumber || row.membershipNumber,
+        valueForPeriodSelected: row.valueForPeriodSelected,
+        rowIndex: row.rowIndex,
+        forename: pi.forename ?? null,
+        surname: pi.surname ?? null,
+        dateOfBirth: pi.dateOfBirth ?? null,
+        gender: pi.gender ?? null,
+        personalEmail: ci.personalEmail ?? null,
+        workEmail: ci.workEmail ?? null,
+        mobileNumber: ci.mobileNumber ?? null,
+        fullAddress: ci.fullAddress ?? null,
+        workLocation: pd.workLocation ?? null,
+        grade: pd.grade ?? null,
+        primarySection: pd.primarySection ?? null,
+        valueAddedServices: pref.valueAddedServices ?? false,
+      });
+    } else {
+      batchExceptions.push({
+        membershipNumber: row.membershipNumber,
+        lastName: row.lastName,
+        firstName: row.firstName,
+        fullName: row.fullName,
+        valueForPeriodSelected: row.valueForPeriodSelected,
+        rowIndex: row.rowIndex,
+      });
+    }
+  }
+
+  batchDetail.batchPayments = batchPayments;
+  batchDetail.batchExceptions = batchExceptions;
+  await batchDetail.save();
+
+  return {
+    paymentsCount: batchPayments.length,
+    exceptionsCount: batchExceptions.length,
+    payments: batchDetail.batchPayments,
+    exceptions: batchDetail.batchExceptions,
+    message: `Processed ${rows.length} rows: ${batchPayments.length} matched, ${batchExceptions.length} exceptions.`,
+  };
+}
+
 module.exports = {
   processBatchDetail,
+  processBatchDetailWithBuffer,
   parseRows,
 };
