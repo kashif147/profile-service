@@ -19,26 +19,6 @@ router.use((req, res, next) => {
 // All routes require authentication
 router.use(authenticate);
 
-// Safeguard: if GET is called with multipart content-type (POST was converted to GET)
-router.use((req, res, next) => {
-  const contentType = req.get("content-type") || "";
-  
-  if (req.method === "GET" && req.path === "/" && contentType.includes("multipart/form-data")) {
-    console.error("[BatchDetail] ❌ ERROR: GET request with multipart/form-data detected!");
-    console.error("[BatchDetail] This means your POST was converted to GET by redirect or proxy.");
-    return res.status(400).json({
-      error: "METHOD_MISMATCH",
-      message: "ERROR: Server received GET but with multipart/form-data. Your POST request was converted to GET (usually by a 301/302 redirect).",
-      solution: "In Postman: Settings → turn OFF 'Follow redirects'. Then send POST again and check if you get 301/302 response.",
-      expectedMethod: "POST",
-      receivedMethod: "GET",
-      contentType: contentType,
-    });
-  }
-  
-  next();
-});
-
 // Create batch detail (CRM only). Required: type, date, referenceNumber, description. Optional: comments, file.
 // File must be sent as type=file (from computer). If file is uploaded, fileUrl is saved on the batch (no expiry).
 // Content-Type: multipart/form-data
@@ -55,7 +35,27 @@ router.post(
 );
 
 // Get all batch details (pagination, optional ?type=deduction|cheque, ?page=1, ?limit=20)
-router.get("/", batchDetailController.getAllBatchDetails);
+// Workaround: if GET has multipart/form-data (proxy/gateway converted POST→GET), parse body and run create
+router.get("/", (req, res, next) => {
+  const contentType = req.get("content-type") || "";
+  if (!contentType.includes("multipart/form-data")) {
+    return batchDetailController.getAllBatchDetails(req, res, next);
+  }
+  console.log("[BatchDetail] Workaround: GET with multipart/form-data - treating as CREATE (redirect/proxy converted POST to GET)");
+  uploadSingleOptional(req, res, (err) => {
+    if (err) return next(err);
+    if (!req.body.type || !req.body.referenceNumber || !req.body.date || !req.body.description) {
+      return res.status(400).json({
+        error: "BODY_STRIPPED",
+        message: "Request has multipart content-type but required fields (type, date, referenceNumber, description) are missing. The redirect may have stripped the body. Fix: turn OFF 'Follow redirects' in Postman and send POST.",
+      });
+    }
+    batchDetailController.requireCrm(req, res, (err) => {
+      if (err) return next(err);
+      batchDetailController.createBatchDetail(req, res, next);
+    });
+  });
+});
 
 // Get one batch detail by ID. Returns full batch with batchPayments (matched members) and batchExceptions (unmatched) populated; fileUrl on batch has no expiry.
 router.get("/:batchDetailId", batchDetailController.getBatchDetailById);
