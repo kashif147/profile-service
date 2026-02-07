@@ -12,9 +12,9 @@ const {
 
 
 const connectionString = (process.env.AZURE_STORAGE_CONNECTION_STRING || "").replace(/\s+/g, " ").trim();
-const accountName = (process.env.AZURE_STORAGE_ACCOUNT || "").trim();
-const accountKey = (process.env.AZURE_STORAGE_KEY || "").replace(/\r?\n/g, "").trim();
-const containerName = (process.env.AZURE_STORAGE_CONTAINER || "").trim();
+const accountName = (process.env.AZURE_STORAGE_ACCOUNT).trim();
+const accountKey = (process.env.AZURE_STORAGE_KEY).replace(/\r?\n/g, "").trim();
+const containerName = (process.env.AZURE_STORAGE_CONTAINER).trim();
 
 let blobServiceClient = null;
 let sharedKeyCredential = null;
