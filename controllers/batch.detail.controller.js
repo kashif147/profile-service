@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require("uuid");
  */
 function requireCrm(req, res, next) {
   if (req.user?.userType !== "CRM") {
+    console.log("[BatchDetail] requireCrm: blocked — userType is not CRM", { userType: req.user?.userType });
     return next(AppError.badRequest("Only CRM users can perform this action"));
   }
   next();
@@ -31,6 +32,16 @@ function requireCrm(req, res, next) {
  */
 async function createBatchDetail(req, res, next) {
   try {
+    console.log("[BatchDetail] createBatchDetail: request received", {
+      hasFile: !!(req.file && req.file.buffer),
+      fileName: req.file?.originalname,
+      bodyKeys: Object.keys(req.body || {}),
+      type: req.body?.type,
+      date: req.body?.date,
+      referenceNumber: req.body?.referenceNumber,
+      tenantId: req.user?.tenantId,
+    });
+
     const tenantId = req.user?.tenantId || null;
     const createdBy = req.user?.userId || req.user?.id || "unknown";
 
@@ -41,11 +52,13 @@ async function createBatchDetail(req, res, next) {
     const comments = (req.body.comments || "").trim();
 
     if (!type || !date || !referenceNumber) {
+      console.log("[BatchDetail] createBatchDetail: validation failed — missing type/date/referenceNumber");
       return next(
         AppError.badRequest("type, date, and referenceNumber are required")
       );
     }
     if (!description) {
+      console.log("[BatchDetail] createBatchDetail: validation failed — description required");
       return next(AppError.badRequest("description is required"));
     }
 
@@ -97,18 +110,32 @@ async function createBatchDetail(req, res, next) {
     });
 
     const saved = await batchDetail.save();
+    console.log("[BatchDetail] createBatchDetail: document saved", {
+      batchDetailId: saved._id?.toString(),
+      tenantId: saved.tenantId,
+      type: saved.type,
+      hasFile: !!(fileName || fileUrl),
+      azureConfigured: azureBlob.isConfigured,
+    });
 
     // When file was uploaded: match membership numbers to profiles → batchPayments;
     // rows not found in DB → batchExceptions. Always process from buffer when file present.
     if (req.file && req.file.buffer && saved._id) {
       try {
-        await batchPaymentProcess.processBatchDetailWithBuffer(
+        console.log("[BatchDetail] createBatchDetail: processing file from buffer", { bufferLength: req.file.buffer.length });
+        const processResult = await batchPaymentProcess.processBatchDetailWithBuffer(
           saved,
           req.file.buffer,
           tenantId
         );
+        console.log("[BatchDetail] createBatchDetail: file processed", {
+          batchDetailId: saved._id?.toString(),
+          paymentsCount: processResult?.paymentsCount ?? 0,
+          exceptionsCount: processResult?.exceptionsCount ?? 0,
+          message: processResult?.message,
+        });
       } catch (processErr) {
-        console.error("Error processing batch file:", processErr);
+        console.error("[BatchDetail] createBatchDetail: error processing batch file:", processErr);
         return next(
           AppError.internalServerError(
             processErr.message || "Batch created but file processing failed"
@@ -118,12 +145,17 @@ async function createBatchDetail(req, res, next) {
     }
 
     const toReturn = await BatchDetail.findById(saved._id).lean();
+    console.log("[BatchDetail] createBatchDetail: responding 201", {
+      batchDetailId: toReturn?._id?.toString(),
+      batchPaymentsCount: toReturn?.batchPayments?.length ?? 0,
+      batchExceptionsCount: toReturn?.batchExceptions?.length ?? 0,
+    });
     return res.status(201).json({
       message: "Batch detail created successfully",
       data: toReturn,
     });
   } catch (error) {
-    console.error("Error creating batch detail:", error);
+    console.error("[BatchDetail] createBatchDetail: unexpected error", error);
     return next(
       AppError.internalServerError(
         error.message || "Failed to create batch detail"
@@ -156,10 +188,14 @@ async function getAllBatchDetails(req, res, next) {
     }
     if (type) query.type = type;
 
+    console.log("[BatchDetail] getAllBatchDetails: query", { page, limit, tenantId, type, query: JSON.stringify(query) });
+
     const [items, total] = await Promise.all([
       BatchDetail.find(query).sort({ date: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
       BatchDetail.countDocuments(query),
     ]);
+
+    console.log("[BatchDetail] getAllBatchDetails: result", { total, returned: items.length });
 
     return res.json({
       data: items,
@@ -192,16 +228,20 @@ async function getBatchDetailById(req, res, next) {
     const query = { _id: batchDetailId, isDeleted: false };
     if (tenantId) query.tenantId = tenantId;
 
+    console.log("[BatchDetail] getBatchDetailById: request", { batchDetailId, tenantId });
+
     const batchDetail = await BatchDetail.findOne(query)
       .populate("batchPayments.profileId", "membershipNumber personalInfo contactInfo professionalDetails preferences")
       .lean();
     if (!batchDetail) {
+      console.log("[BatchDetail] getBatchDetailById: not found", { batchDetailId });
       return next(AppError.notFound("Batch detail not found"));
     }
 
+    console.log("[BatchDetail] getBatchDetailById: found", { batchDetailId, batchPaymentsCount: batchDetail.batchPayments?.length, batchExceptionsCount: batchDetail.batchExceptions?.length });
     return res.json({ data: batchDetail });
   } catch (error) {
-    console.error("Error fetching batch detail:", error);
+    console.error("[BatchDetail] getBatchDetailById: error", error);
     return next(
       AppError.internalServerError(
         error.message || "Failed to fetch batch detail"

@@ -196,10 +196,18 @@ async function processBatchDetail({ batchDetailId, tenantId }) {
  */
 async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null) {
   const rows = parseRows(buffer);
+  console.log("[BatchDetail] processBatchDetailWithBuffer: parsed file", {
+    batchDetailId: batchDetail._id?.toString(),
+    rowsCount: rows.length,
+    tenantId: tenantId ?? "none",
+    membershipNumbersSample: rows.slice(0, 5).map((r) => r.membershipNumber),
+  });
+
   if (rows.length === 0) {
     batchDetail.batchPayments = [];
     batchDetail.batchExceptions = [];
     await batchDetail.save();
+    console.log("[BatchDetail] processBatchDetailWithBuffer: no data rows, saved empty arrays");
     return {
       paymentsCount: 0,
       exceptionsCount: 0,
@@ -222,6 +230,10 @@ async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null
   const profileByMembership = new Map(
     profiles.map((p) => [String(p.membershipNumber).trim(), p])
   );
+  console.log("[BatchDetail] processBatchDetailWithBuffer: profile lookup", {
+    uniqueMembershipNumbers: membershipNumbers.length,
+    profilesFound: profiles.length,
+  });
 
   const batchPayments = [];
   const batchExceptions = [];
@@ -267,6 +279,12 @@ async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null
   batchDetail.batchExceptions = batchExceptions;
   await batchDetail.save();
 
+  console.log("[BatchDetail] processBatchDetailWithBuffer: done", {
+    batchDetailId: batchDetail._id?.toString(),
+    paymentsCount: batchPayments.length,
+    exceptionsCount: batchExceptions.length,
+    message: `Processed ${rows.length} rows: ${batchPayments.length} matched, ${batchExceptions.length} exceptions.`,
+  });
   return {
     paymentsCount: batchPayments.length,
     exceptionsCount: batchExceptions.length,
