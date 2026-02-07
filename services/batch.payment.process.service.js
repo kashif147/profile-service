@@ -4,10 +4,10 @@ const Profile = require("../models/profile.model");
 const azureBlob = require("./azure.blob.service");
 
 /**
- * Expected Excel columns (0-based): A=Membership No, B=Last name, C=First name, D=Full name, E=Value for Periods Selected.
- * First row is treated as header.
+ * Default Excel column indices (0-based): A=Membership No, B=Last name, C=First name, D=Full name, E=Value for Periods Selected.
+ * If the first row looks like a header (e.g. contains "membership"), we detect column indices from it.
  */
-const COL = {
+const DEFAULT_COL = {
   MEMBERSHIP_NO: 0,
   LAST_NAME: 1,
   FIRST_NAME: 2,
@@ -22,6 +22,16 @@ function getCell(row, index) {
   return s === "" ? null : s;
 }
 
+/** Find column index where header (lowercased) includes one of the keywords. */
+function findColumnIndex(headerRow, keywords) {
+  if (!Array.isArray(headerRow)) return -1;
+  for (let c = 0; c < headerRow.length; c++) {
+    const cell = String(headerRow[c] || "").trim().toLowerCase();
+    if (keywords.some((kw) => cell.includes(kw))) return c;
+  }
+  return -1;
+}
+
 function parseRows(buffer) {
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -32,20 +42,38 @@ function parseRows(buffer) {
     raw: false,
   });
   if (!rows.length) return [];
+  const headerRow = rows[0];
+  let membershipCol = DEFAULT_COL.MEMBERSHIP_NO;
+  let lastCol = DEFAULT_COL.LAST_NAME;
+  let firstCol = DEFAULT_COL.FIRST_NAME;
+  let fullNameCol = DEFAULT_COL.FULL_NAME;
+  let valueCol = DEFAULT_COL.VALUE_FOR_PERIOD;
+  const membershipHeader = findColumnIndex(headerRow, ["membership", "member no", "member no.", "membership no", "membership no."]);
+  if (membershipHeader >= 0) {
+    membershipCol = membershipHeader;
+    const lastIdx = findColumnIndex(headerRow, ["last name", "surname", "lastname"]);
+    const firstIdx = findColumnIndex(headerRow, ["first name", "forename", "firstname"]);
+    const fullIdx = findColumnIndex(headerRow, ["full name", "fullname", "name"]);
+    const valueIdx = findColumnIndex(headerRow, ["value", "amount", "period"]);
+    if (lastIdx >= 0) lastCol = lastIdx;
+    if (firstIdx >= 0) firstCol = firstIdx;
+    if (fullIdx >= 0) fullNameCol = fullIdx;
+    if (valueIdx >= 0) valueCol = valueIdx;
+  }
   const dataRows = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!Array.isArray(row)) continue;
-    const membershipNo = getCell(row, COL.MEMBERSHIP_NO);
+    const membershipNo = getCell(row, membershipCol);
     if (!membershipNo) continue; // skip empty rows
     dataRows.push({
       rowIndex: i + 1,
       membershipNumber: membershipNo,
-      lastName: getCell(row, COL.LAST_NAME),
-      firstName: getCell(row, COL.FIRST_NAME),
-      fullName: getCell(row, COL.FULL_NAME),
+      lastName: getCell(row, lastCol),
+      firstName: getCell(row, firstCol),
+      fullName: getCell(row, fullNameCol),
       valueForPeriodSelected: (() => {
-        const v = row[COL.VALUE_FOR_PERIOD];
+        const v = row[valueCol];
         if (v === undefined || v === null || v === "") return null;
         const n = Number(v);
         return Number.isFinite(n) ? n : null;

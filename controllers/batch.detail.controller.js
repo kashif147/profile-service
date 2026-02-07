@@ -16,11 +16,18 @@ function requireCrm(req, res, next) {
 
 /**
  * Create a batch detail. Required: type, date, referenceNumber, description.
- * Optional: comments, file. When file is uploaded, it is processed immediately:
- * membership number column is matched to profiles → matched go to batchPayments,
- * not matched go to batchExceptions. No separate process API.
- * CRM only. Expects multipart/form-data with optional file field "file" (type=file from computer).
- * When file is provided, fileUrl is saved on the batch (no expiry).
+ * Optional: comments, file.
+ *
+ * - When NO file is uploaded: create the document in the database and return it
+ *   in the response (batchPayments and batchExceptions stay empty).
+ *
+ * - When a file IS uploaded: create the document, optionally upload to Azure if
+ *   configured, then parse the file. The file must have a membership number column
+ *   (column A). For each row: look up the membership number in Profile; if found,
+ *   add that profile to batchPayments; if not found, add the row to batchExceptions.
+ *   Return the created document with batchPayments and batchExceptions populated.
+ *
+ * CRM only. Expects multipart/form-data with optional file field "file".
  */
 async function createBatchDetail(req, res, next) {
   try {
@@ -58,24 +65,21 @@ async function createBatchDetail(req, res, next) {
     let fileContentType = null;
 
     if (req.file && req.file.buffer) {
-      if (!azureBlob.isConfigured) {
-        return next(
-          AppError.badRequest(
-            "Azure Storage is not configured. File upload is unavailable."
-          )
-        );
-      }
-      const safeName = (req.file.originalname || "file")
-        .replace(/[^a-zA-Z0-9._-]/g, "_");
-      const blobPath = `batch-details/${tenantId || "default"}/${uuidv4()}-${safeName}`;
-      fileUrl = await azureBlob.uploadToBlob(
-        blobPath,
-        req.file.buffer,
-        req.file.mimetype || "application/octet-stream"
-      );
-      fileBlobPath = blobPath;
       fileName = req.file.originalname || "file";
       fileContentType = req.file.mimetype || "application/octet-stream";
+      if (azureBlob.isConfigured) {
+        const safeName = (req.file.originalname || "file")
+          .replace(/[^a-zA-Z0-9._-]/g, "_");
+        const blobPath = `batch-details/${tenantId || "default"}/${uuidv4()}-${safeName}`;
+        fileUrl = await azureBlob.uploadToBlob(
+          blobPath,
+          req.file.buffer,
+          req.file.mimetype || "application/octet-stream"
+        );
+        fileBlobPath = blobPath;
+      }
+      // If Azure not configured, we still create the batch and process the file from buffer
+      // (batchPayments/batchExceptions will be populated; fileUrl will stay null).
     }
 
     const batchDetail = new BatchDetail({
@@ -94,6 +98,8 @@ async function createBatchDetail(req, res, next) {
 
     const saved = await batchDetail.save();
 
+    // When file was uploaded: match membership numbers to profiles → batchPayments;
+    // rows not found in DB → batchExceptions. Always process from buffer when file present.
     if (req.file && req.file.buffer && saved._id) {
       try {
         await batchPaymentProcess.processBatchDetailWithBuffer(
@@ -128,6 +134,8 @@ async function createBatchDetail(req, res, next) {
 
 /**
  * Get all batch details with pagination and optional filters (type, tenantId).
+ * When user has a tenantId, show batches for that tenant OR batches with no tenant (null),
+ * so batches created without tenant (e.g. missing header) still appear.
  */
 async function getAllBatchDetails(req, res, next) {
   try {
@@ -138,7 +146,14 @@ async function getAllBatchDetails(req, res, next) {
     const tenantId = req.user?.tenantId ?? req.query.tenantId;
 
     const query = { isDeleted: false };
-    if (tenantId) query.tenantId = tenantId;
+    if (tenantId) {
+      // Include batches for this tenant OR batches with no tenant (created without tenant context)
+      query.$or = [
+        { tenantId },
+        { tenantId: null },
+        { tenantId: { $exists: false } },
+      ];
+    }
     if (type) query.type = type;
 
     const [items, total] = await Promise.all([
