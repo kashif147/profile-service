@@ -11,7 +11,7 @@ const {
 
 
 
-const connectionString = (process.env.AZURE_STORAGE_CONNECTION_STRING || "").replace(/\s+/g, " ").trim();
+const connectionString = ""
 const accountName = (process.env.AZURE_STORAGE_ACCOUNT).trim();
 const accountKey = (process.env.AZURE_STORAGE_KEY).replace(/\r?\n/g, "").trim();
 const containerName = (process.env.AZURE_STORAGE_CONTAINER).trim();
@@ -20,7 +20,7 @@ let blobServiceClient = null;
 let sharedKeyCredential = null;
 let resolvedAccountName = accountName;
 
-if (connectionString) {ßßßß
+if (connectionString) {
   blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
   const match = connectionString.match(/AccountName=([^;]+)/);
   resolvedAccountName = match ? match[1].trim() : accountName;
