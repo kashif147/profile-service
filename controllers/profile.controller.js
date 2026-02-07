@@ -1006,15 +1006,59 @@ async function getMyAllDetails(req, res, next) {
  * POST /api/profile/batch
  * Body: { profileIds: string[] }
  * Returns: { data: profile[] } - array of full profile documents for aggregation.
+ * Auth: JWT (Authorization header) OR internal service call (x-internal-request: true + x-tenant-id).
  */
 async function getProfilesBatch(req, res, next) {
   try {
-    const { profileIds } = req.body;
+    // Accept either JWT or internal request (when gateway doesn't forward JWT to profile-service)
+    const isInternalRequest =
+      req.headers["x-internal-request"] === "true" ||
+      req.headers["x-internal-request"] === "1";
+    const tenantIdHeader = req.headers["x-tenant-id"];
 
-    if (!profileIds || !Array.isArray(profileIds) || profileIds.length === 0) {
+    let hasValidJWT = false;
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      try {
+        const token = authHeader.substring(7);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        req.userId = decoded.sub || decoded.id;
+        req.tenantId = decoded.tenantId || decoded.tid || decoded.extension_tenantId;
+        hasValidJWT = true;
+      } catch (err) {
+        // JWT invalid; will allow if internal header present
+      }
+    }
+
+    if (!hasValidJWT) {
+      if (isInternalRequest && tenantIdHeader) {
+        req.tenantId = tenantIdHeader;
+        req.user = req.user || { tenantId: tenantIdHeader };
+      } else {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Batch endpoint requires Authorization (Bearer) or internal request (x-internal-request: true and x-tenant-id)",
+        });
+      }
+    }
+
+    // Accept profileIds from POST body or GET query (gateway-safe when proxy strips body or converts to GET)
+    let profileIds = req.body?.profileIds;
+    if (!profileIds || !Array.isArray(profileIds)) {
+      const q = req.query?.profileIds;
+      profileIds = typeof q === "string"
+        ? q.split(",").map((s) => s.trim()).filter(Boolean)
+        : Array.isArray(q)
+          ? q.filter((id) => id != null && String(id).trim())
+          : [];
+    }
+
+    if (!profileIds || profileIds.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "profileIds array is required and must not be empty",
+        message: "profileIds array is required and must not be empty (body.profileIds or query.profileIds)",
       });
     }
 

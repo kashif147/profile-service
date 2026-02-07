@@ -10,10 +10,10 @@ router.post("/validate", profileValidationController.validateProfile);
 // Accepts JWT token OR internal header
 router.post("/internal/by-user-ids", profileController.getProfilesByUserIds);
 
-router.use(authenticate);
-
-// Gateway aggregation: batch fetch profiles by IDs (subscription service)
 router.post("/batch", profileController.getProfilesBatch);
+router.get("/batch", profileController.getProfilesBatch);
+
+router.use(authenticate);
 
 router.get("/check-email", profileController.checkEmailExists);
 router.get("/", profileController.getAllProfiles);
