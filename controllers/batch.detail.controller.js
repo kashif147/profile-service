@@ -150,6 +150,7 @@ async function createBatchDetail(req, res, next) {
       batchPaymentsCount: toReturn?.batchPayments?.length ?? 0,
       batchExceptionsCount: toReturn?.batchExceptions?.length ?? 0,
     });
+    res.setHeader("X-Batch-Detail-Action", "create");
     return res.status(201).json({
       message: "Batch detail created successfully",
       data: toReturn,
@@ -171,6 +172,21 @@ async function createBatchDetail(req, res, next) {
  */
 async function getAllBatchDetails(req, res, next) {
   try {
+    // SAFEGUARD: Check if someone is trying to CREATE but method is GET
+    // This catches cases where POST was converted to GET but body params leaked through
+    const hasCreateParams = req.query.type || req.query.referenceNumber || req.query.description || req.query.date;
+    if (hasCreateParams) {
+      console.error("[BatchDetail] ❌ getAllBatchDetails called with create-like params:", { type: req.query.type, referenceNumber: req.query.referenceNumber });
+      return res.status(400).json({
+        error: "WRONG_METHOD",
+        message: "You're trying to CREATE a batch but using GET (list). Use POST method with form-data body (not query params).",
+        receivedParams: { type: req.query.type, referenceNumber: req.query.referenceNumber, description: req.query.description },
+        expectedMethod: "POST",
+        receivedMethod: "GET",
+        hint: "Check if your POST request is being redirected to GET. In Postman: turn OFF 'Follow redirects'.",
+      });
+    }
+
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const skip = (page - 1) * limit;
@@ -197,7 +213,8 @@ async function getAllBatchDetails(req, res, next) {
 
     console.log("[BatchDetail] getAllBatchDetails: result", { total, returned: items.length });
 
-    return res.json({
+    res.setHeader("X-Batch-Detail-Action", "list");
+    const response = {
       data: items,
       pagination: {
         page,
@@ -205,7 +222,14 @@ async function getAllBatchDetails(req, res, next) {
         total,
         totalPages: Math.ceil(total / limit),
       },
-    });
+    };
+
+    // If no batches found, add a helpful hint for users trying to create
+    if (total === 0) {
+      response.message = "No batch details found. To create a new batch, send a POST request to this endpoint with form-data: type, date, referenceNumber, description (and optionally comments, file).";
+    }
+
+    return res.json(response);
   } catch (error) {
     console.error("Error fetching batch details:", error);
     return next(
