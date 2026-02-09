@@ -24,6 +24,7 @@ const SYSTEM_DEFAULT_TEMPLATE = {
   },
   columns: [], // Empty array = return all fields
   isDefault: false, // Not a user's default
+  pinned: false,
   systemDefault: true, // THIS IS THE SYSTEM DEFAULT
   meta: {
     deleted: false,

@@ -332,6 +332,7 @@ module.exports.filter_template_create = Joi.object({
   }).optional(),
   columns: Joi.array().items(Joi.string()).optional().default([]),
   isDefault: Joi.boolean().optional().default(false),
+  pinned: Joi.boolean().optional().default(false),
 });
 
 module.exports.filter_template_update = Joi.object({
@@ -348,4 +349,5 @@ module.exports.filter_template_update = Joi.object({
   }).optional(),
   columns: Joi.array().items(Joi.string()).optional(),
   isDefault: Joi.boolean().optional(),
+  pinned: Joi.boolean().optional(),
 });

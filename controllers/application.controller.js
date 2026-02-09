@@ -101,8 +101,14 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
         );
       }
     } else {
-      // If no templateId, use the SYSTEM DEFAULT template (systemDefault: true)
-      template = await applicationFilterTemplateService.getSystemDefaultTemplate();
+      // No templateId: use user's default template for application, else system default
+      template = await applicationFilterTemplateService.getDefaultTemplateForType(
+        creatorId,
+        "application"
+      );
+      if (!template) {
+        template = await applicationFilterTemplateService.getSystemDefaultTemplate("application");
+      }
     }
 
     // Extract filters from template

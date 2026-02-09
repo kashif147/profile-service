@@ -29,6 +29,10 @@ const TemplateSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    pinned: {
+      type: Boolean,
+      default: false,
+    },
     systemDefault: {
       type: Boolean,
       default: false,
