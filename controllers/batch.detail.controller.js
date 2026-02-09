@@ -16,23 +16,18 @@ const { v4: uuidv4 } = require("uuid");
  */
 async function createBatchDetail(req, res) {
   try {
-    // Read from body OR query (gateway redirect strips body, query params survive)
-    const type = req.body?.type || req.query?.type;
-    const date = req.body?.date || req.query?.date;
-    const referenceNumber = req.body?.referenceNumber || req.query?.referenceNumber;
-    const description = (req.body?.description || req.query?.description || "").trim();
-    const comments = (req.body?.comments || req.query?.comments || "").trim();
+    const type = req.body?.type;
+    const date = req.body?.date;
+    const referenceNumber = req.body?.referenceNumber;
+    const description = (req.body?.description || "").trim();
+    const comments = (req.body?.comments || "").trim();
 
     console.log("[BatchDetail] create:", { type, date, referenceNumber, description: description || "(empty)", hasFile: !!(req.file), method: req.method });
 
-    // Validate required fields
-    if (!type || !date || !referenceNumber) {
-      return res.status(400).json({
-        success: false,
-        message: "type, date, and referenceNumber are required",
-        received: { type: type || null, date: date || null, referenceNumber: referenceNumber || null },
-      });
-    }
+    // Validate — specific message for each missing field
+    if (!type) return res.status(400).json({ success: false, message: "type is required" });
+    if (!date) return res.status(400).json({ success: false, message: "date is required" });
+    if (!referenceNumber) return res.status(400).json({ success: false, message: "referenceNumber is required" });
 
     const tenantId = req.user?.tenantId || null;
     const createdBy = req.user?.userId || req.user?.id || "unknown";
