@@ -41,17 +41,38 @@ router.get("/", (req, res, next) => {
   if (!contentType.includes("multipart/form-data")) {
     return batchDetailController.getAllBatchDetails(req, res, next);
   }
-  console.log("[BatchDetail] Workaround: GET with multipart/form-data - treating as CREATE (redirect/proxy converted POST to GET)");
+  console.log("[BatchDetail] WORKAROUND: GET with multipart - parsing body and running create flow");
   uploadSingleOptional(req, res, (err) => {
-    if (err) return next(err);
+    if (err) {
+      console.error("[BatchDetail] WORKAROUND: multer error", err.message);
+      return next(err);
+    }
+    console.log("[BatchDetail] WORKAROUND: after multer", {
+      bodyKeys: Object.keys(req.body || {}),
+      type: req.body?.type,
+      date: req.body?.date,
+      referenceNumber: req.body?.referenceNumber,
+      description: req.body?.description ? "(present)" : "(missing)",
+      hasFile: !!(req.file && req.file.buffer),
+    });
     if (!req.body.type || !req.body.referenceNumber || !req.body.date || !req.body.description) {
+      console.error("[BatchDetail] WORKAROUND: missing required fields", {
+        hasType: !!req.body?.type,
+        hasDate: !!req.body?.date,
+        hasReferenceNumber: !!req.body?.referenceNumber,
+        hasDescription: !!req.body?.description,
+      });
       return res.status(400).json({
         error: "BODY_STRIPPED",
         message: "Request has multipart content-type but required fields (type, date, referenceNumber, description) are missing. The redirect may have stripped the body. Fix: turn OFF 'Follow redirects' in Postman and send POST.",
       });
     }
+    console.log("[BatchDetail] WORKAROUND: calling requireCrm then createBatchDetail");
     batchDetailController.requireCrm(req, res, (err) => {
-      if (err) return next(err);
+      if (err) {
+        console.error("[BatchDetail] WORKAROUND: requireCrm rejected", err?.message);
+        return next(err);
+      }
       batchDetailController.createBatchDetail(req, res, next);
     });
   });

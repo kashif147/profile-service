@@ -9,9 +9,10 @@ const { v4: uuidv4 } = require("uuid");
  */
 function requireCrm(req, res, next) {
   if (req.user?.userType !== "CRM") {
-    console.log("[BatchDetail] requireCrm: blocked — userType is not CRM", { userType: req.user?.userType });
+    console.log("[BatchDetail] requireCrm: BLOCKED — userType is not CRM", { userType: req.user?.userType });
     return next(AppError.badRequest("Only CRM users can perform this action"));
   }
+  console.log("[BatchDetail] requireCrm: OK (userType=CRM)", { userId: req.user?.userId || req.user?.id, tenantId: req.user?.tenantId });
   next();
 }
 
@@ -32,14 +33,17 @@ function requireCrm(req, res, next) {
  */
 async function createBatchDetail(req, res, next) {
   try {
-    console.log("[BatchDetail] createBatchDetail: request received", {
+    console.log("[BatchDetail] createBatchDetail: ENTRY", {
+      method: req.method,
       hasFile: !!(req.file && req.file.buffer),
       fileName: req.file?.originalname,
       bodyKeys: Object.keys(req.body || {}),
       type: req.body?.type,
       date: req.body?.date,
       referenceNumber: req.body?.referenceNumber,
+      description: req.body?.description ? "(present)" : "(missing)",
       tenantId: req.user?.tenantId,
+      userId: req.user?.userId || req.user?.id,
     });
 
     const tenantId = req.user?.tenantId || null;
@@ -109,8 +113,26 @@ async function createBatchDetail(req, res, next) {
       createdBy,
     });
 
-    const saved = await batchDetail.save();
-    console.log("[BatchDetail] createBatchDetail: document saved", {
+    console.log("[BatchDetail] createBatchDetail: about to SAVE to DB", {
+      tenantId,
+      type,
+      date: batchDetail.date,
+      referenceNumber: batchDetail.referenceNumber,
+      createdBy,
+      hasFile: !!(fileBlobPath || fileUrl),
+    });
+    let saved;
+    try {
+      saved = await batchDetail.save();
+    } catch (saveErr) {
+      console.error("[BatchDetail] createBatchDetail: DB SAVE FAILED", {
+        message: saveErr.message,
+        name: saveErr.name,
+        code: saveErr.code,
+      });
+      throw saveErr;
+    }
+    console.log("[BatchDetail] createBatchDetail: document SAVED OK", {
       batchDetailId: saved._id?.toString(),
       tenantId: saved.tenantId,
       type: saved.type,
@@ -144,7 +166,11 @@ async function createBatchDetail(req, res, next) {
       }
     }
 
+    console.log("[BatchDetail] createBatchDetail: fetching saved doc from DB for response", { id: saved._id?.toString() });
     const toReturn = await BatchDetail.findById(saved._id).lean();
+    if (!toReturn) {
+      console.error("[BatchDetail] createBatchDetail: findById returned null after save!", { id: saved._id?.toString() });
+    }
     console.log("[BatchDetail] createBatchDetail: responding 201", {
       batchDetailId: toReturn?._id?.toString(),
       batchPaymentsCount: toReturn?.batchPayments?.length ?? 0,
@@ -156,7 +182,11 @@ async function createBatchDetail(req, res, next) {
       data: toReturn,
     });
   } catch (error) {
-    console.error("[BatchDetail] createBatchDetail: unexpected error", error);
+    console.error("[BatchDetail] createBatchDetail: UNEXPECTED ERROR", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack?.split("\n").slice(0, 5).join(" | "),
+    });
     return next(
       AppError.internalServerError(
         error.message || "Failed to create batch detail"
