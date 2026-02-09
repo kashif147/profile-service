@@ -8,7 +8,7 @@
  */
 
 const mongoose = require("mongoose");
-const ApplicationFilterTemplate = require("../models/application.filter.template.model");
+const Template = require("../models/template.model");
 const { APPLICATION_STATUS } = require("../constants/enums");
 require("dotenv").config();
 
@@ -17,6 +17,7 @@ const MONGODB_URI = process.env.MONGODB_URI || process.env.DATABASE_URL || "mong
 
 // System Default Template Configuration
 const SYSTEM_DEFAULT_TEMPLATE = {
+  templateType: "application", // Type of template: "application" or any future type
   userId: null, // System template doesn't belong to any user
   filters: {
     type: APPLICATION_STATUS.SUBMITTED, // Show only submitted applications by default
@@ -39,7 +40,7 @@ async function seedSystemDefaultTemplate() {
     console.log("🔍 Checking for existing system default template...");
     
     // Check if system default template already exists
-    const existingTemplate = await ApplicationFilterTemplate.findOne({
+    const existingTemplate = await Template.findOne({
       systemDefault: true,
       "meta.deleted": false,
     });
@@ -53,7 +54,7 @@ async function seedSystemDefaultTemplate() {
 
     console.log("📝 Creating system default template...");
     
-    const template = new ApplicationFilterTemplate(SYSTEM_DEFAULT_TEMPLATE);
+    const template = new Template(SYSTEM_DEFAULT_TEMPLATE);
     const savedTemplate = await template.save();
 
     console.log("\n✅ System default template created successfully!");

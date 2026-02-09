@@ -92,6 +92,14 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
           )
         );
       }
+      // This API returns applications; only allow templates of type "application"
+      if (template.templateType && template.templateType !== "application") {
+        return next(
+          AppError.badRequest(
+            "This template is not an application template. Use a template with templateType 'application'."
+          )
+        );
+      }
     } else {
       // If no templateId, use the SYSTEM DEFAULT template (systemDefault: true)
       template = await applicationFilterTemplateService.getSystemDefaultTemplate();

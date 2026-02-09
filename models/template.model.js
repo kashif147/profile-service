@@ -1,8 +1,14 @@
 const mongoose = require("mongoose");
 const { APPLICATION_STATUS } = require("../constants/enums");
 
-const ApplicationFilterTemplateSchema = new mongoose.Schema(
+const TemplateSchema = new mongoose.Schema(
   {
+    templateType: {
+      type: String,
+      default: "application",
+      trim: true,
+      index: true,
+    },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -43,12 +49,8 @@ const ApplicationFilterTemplateSchema = new mongoose.Schema(
 );
 
 // Index for efficient queries
-ApplicationFilterTemplateSchema.index({ userId: 1, "meta.deleted": 1 });
-ApplicationFilterTemplateSchema.index({ userId: 1, isDefault: 1 });
-ApplicationFilterTemplateSchema.index({ systemDefault: 1, "meta.deleted": 1 }); // NEW: Index for system default
+TemplateSchema.index({ userId: 1, "meta.deleted": 1 });
+TemplateSchema.index({ userId: 1, isDefault: 1 });
+TemplateSchema.index({ systemDefault: 1, "meta.deleted": 1 });
 
-module.exports = mongoose.model(
-  "ApplicationFilterTemplate",
-  ApplicationFilterTemplateSchema
-);
-
+module.exports = mongoose.model("Template", TemplateSchema);

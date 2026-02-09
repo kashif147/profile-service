@@ -3,6 +3,28 @@
 ## Overview
 This API allows CRM users to create, manage, and retrieve filter templates for applications. Filter templates save filter configurations (like application status filters) that can be reused to get filtered application lists.
 
+Each template has a **template type** (`templateType`): e.g. `"application"` for application-list templates. The type can be any string so you can support other entity types later. The "Get applications by template" API (`PUT /api/applications/filter`) only accepts templates with `templateType: "application"`.
+
+---
+
+## How the template logic works (Get applications by template)
+
+1. **Templates** store saved filter + column configs. Each has:
+   - **templateType**: e.g. `"application"` (or any type you define).
+   - **filters.type**: which application statuses to show (e.g. `"submitted"`, `["approved","rejected"]`).
+   - **columns**: which fields to return per application (empty = all).
+
+2. **CRM user flow:**
+   - **List templates:** `GET /api/application-filter-templates` → returns system default + user’s templates (all types).
+   - **Get applications by template:** `PUT /api/applications/filter` with optional `templateId`, `page`, `limit`.
+     - If **no templateId** → backend uses the **system default** template (`systemDefault: true`).
+     - If **templateId** is sent → backend loads that template (must be owned by user or system default), checks **templateType === "application"**, then uses its `filters.type` and `columns`.
+   - Backend queries applications by `applicationStatus` from `filters.type`, paginates, then shapes each application by `columns` and returns the list + pagination.
+
+3. **Summary:** Users can create/update templates (with `templateType`, filters, columns), then call `PUT /api/applications/filter` with a chosen template (or none for system default) to get a filtered, column-shaped list of applications.
+
+---
+
 **Base URL:** `/api/application-filter-templates`
 
 **Authentication:** All endpoints require Bearer token authentication and CRM user type.
@@ -27,12 +49,15 @@ Create a new filter template with specified filters.
 **Request Body:**
 ```json
 {
+  "templateType": "application",
   "filters": {
     "type": "approved"  // or ["approved", "submitted"] for multiple
   },
   "isDefault": false
 }
 ```
+
+- **templateType** (optional): Type of the template, e.g. `"application"`. Defaults to `"application"`. Can be any string for future types.
 
 **cURL Example:**
 ```bash
@@ -66,6 +91,7 @@ curl -X POST "http://localhost:3000/api/application-filter-templates" \
   "status": "success",
   "data": {
     "_id": "507f1f77bcf86cd799439011",
+    "templateType": "application",
     "userId": "507f191e810c19729de860ea",
     "filters": {
       "type": "approved"
@@ -247,12 +273,15 @@ Update an existing filter template. This is the PUT API mentioned for saving fil
 **Request Body:**
 ```json
 {
+  "templateType": "application",
   "filters": {
     "type": "rejected"  // or ["approved", "rejected"] for multiple
   },
   "isDefault": true
 }
 ```
+
+- **templateType** (optional): Update the template type (e.g. `"application"`).
 
 **cURL Example:**
 ```bash
@@ -485,14 +514,16 @@ curl -X POST "http://localhost:3000/api/application-filter-templates" \
    - A single string: `"approved"`
    - An array of strings: `["approved", "submitted"]`
 
-4. **Soft Delete:** Templates are soft-deleted (marked as deleted in the `meta.deleted` field) rather than being permanently removed from the database.
+4. **Template type:** Each template has `templateType` (e.g. `"application"`). The applications API (`PUT /api/applications/filter`) only uses templates with `templateType: "application"`. You can use other values for future features.
 
-5. **Authentication:** Replace `YOUR_JWT_TOKEN` in all curl examples with a valid JWT token that includes:
+5. **Soft Delete:** Templates are soft-deleted (marked as deleted in the `meta.deleted` field) rather than being permanently removed from the database.
+
+6. **Authentication:** Replace `YOUR_JWT_TOKEN` in all curl examples with a valid JWT token that includes:
    - Valid user ID
    - User type set to "CRM"
    - Required permissions for portal:read and portal:write
 
-6. **Base URL:** Replace `http://localhost:3000` with your actual server URL (e.g., `https://your-domain.com` or `https://profileserviceshell-bqfmh8apf9erf0b0.northeurope-01.azurewebsites.net` for staging).
+7. **Base URL:** Replace `http://localhost:3000` with your actual server URL (e.g., `https://your-domain.com` or `https://profileserviceshell-bqfmh8apf9erf0b0.northeurope-01.azurewebsites.net` for staging).
 
 ---
 
@@ -503,11 +534,14 @@ The filter template is stored in MongoDB with the following structure:
 ```javascript
 {
   _id: ObjectId,
-  userId: ObjectId,  // Reference to CRM user
+  templateType: String,  // e.g. "application"; can be any type
+  userId: ObjectId,     // Reference to CRM user
   filters: {
     type: String | [String]  // Application status filter
   },
+  columns: [String],
   isDefault: Boolean,
+  systemDefault: Boolean,
   meta: {
     deleted: Boolean,
     deletedAt: Date | null

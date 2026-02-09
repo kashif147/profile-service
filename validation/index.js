@@ -318,6 +318,8 @@ module.exports.profile_update = Joi.object({
 
 // Application Filter Template Validation
 module.exports.filter_template_create = Joi.object({
+  /** Type of template, e.g. "application". Can be any string. */
+  templateType: Joi.string().trim().optional().default("application"),
   filters: Joi.object({
     type: Joi.alternatives()
       .try(
@@ -333,6 +335,7 @@ module.exports.filter_template_create = Joi.object({
 });
 
 module.exports.filter_template_update = Joi.object({
+  templateType: Joi.string().trim().optional(),
   filters: Joi.object({
     type: Joi.alternatives()
       .try(

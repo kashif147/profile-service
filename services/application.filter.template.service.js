@@ -1,4 +1,4 @@
-const ApplicationFilterTemplate = require("../models/application.filter.template.model");
+const Template = require("../models/template.model");
 const { AppError } = require("../errors/AppError");
 const { APPLICATION_STATUS } = require("../constants/enums");
 
@@ -6,7 +6,7 @@ const { APPLICATION_STATUS } = require("../constants/enums");
  * Application Filter Template Service Layer
  * Contains business logic for filter template operations
  */
-class ApplicationFilterTemplateService {
+class TemplateService {
   /**
    * Create a new filter template
    * @param {string} userId - User ID who created the template
@@ -15,18 +15,19 @@ class ApplicationFilterTemplateService {
    */
   async createTemplate(userId, templateData) {
     try {
-      const { filters, columns, isDefault } = templateData;
+      const { templateType, filters, columns, isDefault } = templateData;
 
       // If setting as default, unset other defaults for this user
       if (isDefault) {
-        await ApplicationFilterTemplate.updateMany(
+        await Template.updateMany(
           { userId, "meta.deleted": false },
           { $set: { isDefault: false } }
         );
       }
 
-      const template = new ApplicationFilterTemplate({
+      const template = new Template({
         userId,
+        templateType: templateType || "application",
         filters: filters || {},
         columns: columns || [],
         isDefault: isDefault || false,
@@ -35,7 +36,7 @@ class ApplicationFilterTemplateService {
       return await template.save();
     } catch (error) {
       console.error(
-        "ApplicationFilterTemplateService [createTemplate] Error:",
+        "TemplateService [createTemplate] Error:",
         error
       );
       throw error;
@@ -49,13 +50,13 @@ class ApplicationFilterTemplateService {
    */
   async getUserTemplates(userId) {
     try {
-      return await ApplicationFilterTemplate.find({
+      return await Template.find({
         userId,
         "meta.deleted": false,
       }).sort({ isDefault: -1, createdAt: -1 });
     } catch (error) {
       console.error(
-        "ApplicationFilterTemplateService [getUserTemplates] Error:",
+        "TemplateService [getUserTemplates] Error:",
         error
       );
       throw error;
@@ -71,13 +72,13 @@ class ApplicationFilterTemplateService {
   async getUserTemplatesWithSystemDefault(userId) {
     try {
       // Get system default template
-      const systemDefault = await ApplicationFilterTemplate.findOne({
+      const systemDefault = await Template.findOne({
         systemDefault: true,
         "meta.deleted": false,
       });
 
       // Get user's personal templates
-      const userTemplates = await ApplicationFilterTemplate.find({
+      const userTemplates = await Template.find({
         userId,
         "meta.deleted": false,
       }).sort({ isDefault: -1, createdAt: -1 });
@@ -94,7 +95,7 @@ class ApplicationFilterTemplateService {
       return allTemplates;
     } catch (error) {
       console.error(
-        "ApplicationFilterTemplateService [getUserTemplatesWithSystemDefault] Error:",
+        "TemplateService [getUserTemplatesWithSystemDefault] Error:",
         error
       );
       throw error;
@@ -111,14 +112,14 @@ class ApplicationFilterTemplateService {
   async getTemplateById(templateId, userId) {
     try {
       // Allow system default by ID so frontend can pass it like any other template
-      const systemDefault = await ApplicationFilterTemplate.findOne({
+      const systemDefault = await Template.findOne({
         _id: templateId,
         systemDefault: true,
         "meta.deleted": false,
       });
       if (systemDefault) return systemDefault;
 
-      const template = await ApplicationFilterTemplate.findOne({
+      const template = await Template.findOne({
         _id: templateId,
         userId,
         "meta.deleted": false,
@@ -131,7 +132,7 @@ class ApplicationFilterTemplateService {
       return template;
     } catch (error) {
       console.error(
-        "ApplicationFilterTemplateService [getTemplateById] Error:",
+        "TemplateService [getTemplateById] Error:",
         error
       );
       throw error;
@@ -147,9 +148,9 @@ class ApplicationFilterTemplateService {
    */
   async updateTemplate(templateId, userId, updateData) {
     try {
-      const { filters, columns, isDefault } = updateData;
+      const { templateType, filters, columns, isDefault } = updateData;
 
-      const template = await ApplicationFilterTemplate.findOne({
+      const template = await Template.findOne({
         _id: templateId,
         userId,
         "meta.deleted": false,
@@ -161,13 +162,16 @@ class ApplicationFilterTemplateService {
 
       // If setting as default, unset other defaults for this user
       if (isDefault === true) {
-        await ApplicationFilterTemplate.updateMany(
+        await Template.updateMany(
           { userId, _id: { $ne: templateId }, "meta.deleted": false },
           { $set: { isDefault: false } }
         );
       }
 
       // Update fields
+      if (templateType !== undefined) {
+        template.templateType = templateType;
+      }
       if (filters !== undefined) {
         template.filters = filters;
       }
@@ -181,7 +185,7 @@ class ApplicationFilterTemplateService {
       return await template.save();
     } catch (error) {
       console.error(
-        "ApplicationFilterTemplateService [updateTemplate] Error:",
+        "TemplateService [updateTemplate] Error:",
         error
       );
       throw error;
@@ -196,7 +200,7 @@ class ApplicationFilterTemplateService {
    */
   async deleteTemplate(templateId, userId) {
     try {
-      const template = await ApplicationFilterTemplate.findOne({
+      const template = await Template.findOne({
         _id: templateId,
         userId,
         "meta.deleted": false,
@@ -212,7 +216,7 @@ class ApplicationFilterTemplateService {
       return await template.save();
     } catch (error) {
       console.error(
-        "ApplicationFilterTemplateService [deleteTemplate] Error:",
+        "TemplateService [deleteTemplate] Error:",
         error
       );
       throw error;
@@ -227,7 +231,7 @@ class ApplicationFilterTemplateService {
    */
   async getDefaultTemplate(userId) {
     try {
-      let template = await ApplicationFilterTemplate.findOne({
+      let template = await Template.findOne({
         userId,
         isDefault: true,
         "meta.deleted": false,
@@ -235,8 +239,9 @@ class ApplicationFilterTemplateService {
 
       // If no default template exists, create one for submitted applications
       if (!template) {
-        template = new ApplicationFilterTemplate({
+        template = new Template({
           userId,
+          templateType: "application",
           filters: {
             type: APPLICATION_STATUS.SUBMITTED,
           },
@@ -250,7 +255,7 @@ class ApplicationFilterTemplateService {
       return template;
     } catch (error) {
       console.error(
-        "ApplicationFilterTemplateService [getDefaultTemplate] Error:",
+        "TemplateService [getDefaultTemplate] Error:",
         error
       );
       throw error;
@@ -265,7 +270,7 @@ class ApplicationFilterTemplateService {
    */
   async getSystemDefaultTemplate() {
     try {
-      const template = await ApplicationFilterTemplate.findOne({
+      const template = await Template.findOne({
         systemDefault: true,
         "meta.deleted": false,
       });
@@ -279,7 +284,7 @@ class ApplicationFilterTemplateService {
       return template;
     } catch (error) {
       console.error(
-        "ApplicationFilterTemplateService [getSystemDefaultTemplate] Error:",
+        "TemplateService [getSystemDefaultTemplate] Error:",
         error
       );
       throw error;
@@ -287,5 +292,5 @@ class ApplicationFilterTemplateService {
   }
 }
 
-module.exports = new ApplicationFilterTemplateService();
+module.exports = new TemplateService();
 
