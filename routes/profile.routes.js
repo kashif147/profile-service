@@ -16,6 +16,8 @@ router.get("/batch", profileController.getProfilesBatch);
 
 router.use(authenticate);
 
+// Literal paths first so they are not matched by /:profileId (which would return "Invalid profileId")
+router.get("/aggregated-user-details", aggregatedUserDetailsController.getAggregatedUserDetails);
 router.get("/check-email", profileController.checkEmailExists);
 router.get("/", profileController.getAllProfiles);
 router.get("/search", profileController.searchProfiles);
@@ -25,7 +27,6 @@ router.get("/my-personal-details", profileController.getMyPersonalDetails);
 router.get("/my-professional-details", profileController.getMyProfessionalDetails);
 router.get("/my-subscription-details", profileController.getMySubscriptionDetails);
 router.get("/my-details", profileController.getMyAllDetails);
-router.get("/aggregated-user-details", aggregatedUserDetailsController.getAggregatedUserDetails);
 router.get("/corn-market/new", profileController.getCornMarketNew);
 router.get("/corn-market/graduate", profileController.getCornMarketGraduate);
 router.get("/:profileId", profileController.getProfileById);
