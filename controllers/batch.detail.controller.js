@@ -105,4 +105,43 @@ async function getBatchDetailById(req, res) {
   }
 }
 
-module.exports = { createBatchDetail, getBatchDetailById };
+async function getAllBatchDetails(req, res) {
+  try {
+    if (req.user?.userType !== "CRM") {
+      return res.status(403).json({ success: false, message: "Only CRM users can access batch details" });
+    }
+
+    const tenantId = req.user?.tenantId || null;
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const skip = (page - 1) * limit;
+
+    const query = { isDeleted: false };
+    if (tenantId) query.tenantId = tenantId;
+
+    if (req.query.type) {
+      const validTypes = ["cheque", "deduction", "other"];
+      if (validTypes.includes(req.query.type)) query.type = req.query.type;
+    }
+
+    const [batches, total] = await Promise.all([
+      BatchDetail.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      BatchDetail.countDocuments(query),
+    ]);
+
+    return res.json({
+      data: batches,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("[BatchDetail] list error:", error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+module.exports = { createBatchDetail, getBatchDetailById, getAllBatchDetails };
