@@ -12,6 +12,7 @@ const joischemas = require("../validation/index.js");
 const personalDetailsService = require("../services/personal.details.service.js");
 const professionalDetailsService = require("../services/professional.details.service.js");
 const subscriptionDetailsService = require("../services/subscription.details.service.js");
+const aggregatedUserDetailsController = require("./aggregated.user.details.controller.js");
 
 /**
  * Apply derived fields (age, fullAddress, date conversions) to the payload.
@@ -235,6 +236,16 @@ async function getProfileById(req, res, next) {
   try {
     const { profileId } = req.params;
     const tenantId = req.tenantId;
+
+    // If request hit this route with literal path (e.g. gateway rewrote URL or trailing slash), delegate to aggregated-user-details
+    const param = (profileId || "").replace(/\/$/, "");
+    if (param === "aggregated-user-details") {
+      return aggregatedUserDetailsController.getAggregatedUserDetails(
+        req,
+        res,
+        next
+      );
+    }
 
     if (!mongoose.Types.ObjectId.isValid(profileId)) {
       return next(AppError.badRequest("Invalid profileId"));
