@@ -4,19 +4,9 @@ const azureBlob = require("../services/azure.blob.service");
 const batchPaymentProcess = require("../services/batch.payment.process.service");
 const { v4: uuidv4 } = require("uuid");
 
-/**
- * Create a batch detail. ONE simple API.
- *
- * Required: type, date, referenceNumber (from body OR query params)
- * Optional: description, comments, file
- *
- * - If file is uploaded → process it (match membership numbers to profiles)
- * - If no file → just save the batch
- * - Always return the created batch with "Batch is created."
- */
+
 async function createBatchDetail(req, res) {
   try {
-    // Read from body first, fallback to query params (query params survive gateway redirects)
     const type = req.body?.type || req.query?.type;
     const date = req.body?.date || req.query?.date;
     const referenceNumber = req.body?.referenceNumber || req.query?.referenceNumber;
@@ -33,7 +23,6 @@ async function createBatchDetail(req, res) {
       contentType: req.headers["content-type"] || "NONE",
     });
 
-    // Validate — specific message for each missing field
     if (!type) return res.status(400).json({ success: false, message: "type is required" });
     if (!date) return res.status(400).json({ success: false, message: "date is required" });
     if (!referenceNumber) return res.status(400).json({ success: false, message: "referenceNumber is required" });
@@ -41,7 +30,6 @@ async function createBatchDetail(req, res) {
     const tenantId = req.user?.tenantId || null;
     const createdBy = req.user?.userId || req.user?.id || "unknown";
 
-    // File upload to Azure (optional)
     let fileBlobPath = null;
     let fileUrl = null;
     let fileName = null;
@@ -58,7 +46,6 @@ async function createBatchDetail(req, res) {
       }
     }
 
-    // Save batch to DB
     const batch = await BatchDetail.create({
       tenantId,
       type,
@@ -75,14 +62,12 @@ async function createBatchDetail(req, res) {
 
     console.log("[BatchDetail] saved:", batch._id.toString());
 
-    // If file was uploaded, process it (match membership numbers → batchPayments / batchExceptions)
     if (req.file && req.file.buffer) {
       try {
         const result = await batchPaymentProcess.processBatchDetailWithBuffer(batch, req.file.buffer, tenantId);
         console.log("[BatchDetail] file processed:", result.message);
       } catch (err) {
         console.error("[BatchDetail] file processing error:", err.message);
-        // Batch is already saved, return it with a warning
         const saved = await BatchDetail.findById(batch._id).lean();
         return res.status(201).json({
           message: "Batch is created. File processing failed: " + err.message,
@@ -105,10 +90,6 @@ async function createBatchDetail(req, res) {
     });
   }
 }
-
-/**
- * Get one batch detail by ID.
- */
 async function getBatchDetailById(req, res) {
   try {
     const { batchDetailId } = req.params;
