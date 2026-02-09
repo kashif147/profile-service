@@ -20,63 +20,23 @@ router.use((req, res, next) => {
 router.use(authenticate);
 
 // Create batch detail (CRM only). Required: type, date, referenceNumber, description. Optional: comments, file.
-// File must be sent as type=file (from computer). If file is uploaded, fileUrl is saved on the batch (no expiry).
 // Content-Type: multipart/form-data
-router.post(
-  "/",
+// Two paths so gateway redirect on "/" doesn't block create: POST / and POST /create
+const createMiddleware = [
   (req, res, next) => {
-    console.log("[BatchDetail] ✅ POST handler is running! (This is the CREATE endpoint)");
-    console.log("[BatchDetail] Content-Type:", req.get("content-type"));
+    console.log("[BatchDetail] ✅ CREATE handler running", { path: req.path, method: req.method });
     next();
   },
   batchDetailController.requireCrm,
   uploadSingleOptional,
-  batchDetailController.createBatchDetail
-);
+  batchDetailController.createBatchDetail,
+];
 
-// Get all batch details (pagination, optional ?type=deduction|cheque, ?page=1, ?limit=20)
-// Workaround: if GET has multipart/form-data (proxy/gateway converted POST→GET), parse body and run create
-router.get("/", (req, res, next) => {
-  const contentType = req.get("content-type") || "";
-  if (!contentType.includes("multipart/form-data")) {
-    return batchDetailController.getAllBatchDetails(req, res, next);
-  }
-  console.log("[BatchDetail] WORKAROUND: GET with multipart - parsing body and running create flow");
-  uploadSingleOptional(req, res, (err) => {
-    if (err) {
-      console.error("[BatchDetail] WORKAROUND: multer error", err.message);
-      return next(err);
-    }
-    console.log("[BatchDetail] WORKAROUND: after multer", {
-      bodyKeys: Object.keys(req.body || {}),
-      type: req.body?.type,
-      date: req.body?.date,
-      referenceNumber: req.body?.referenceNumber,
-      description: req.body?.description ? "(present)" : "(missing)",
-      hasFile: !!(req.file && req.file.buffer),
-    });
-    if (!req.body.type || !req.body.referenceNumber || !req.body.date || !req.body.description) {
-      console.error("[BatchDetail] WORKAROUND: missing required fields", {
-        hasType: !!req.body?.type,
-        hasDate: !!req.body?.date,
-        hasReferenceNumber: !!req.body?.referenceNumber,
-        hasDescription: !!req.body?.description,
-      });
-      return res.status(400).json({
-        error: "BODY_STRIPPED",
-        message: "Request has multipart content-type but required fields (type, date, referenceNumber, description) are missing. The redirect may have stripped the body. Fix: turn OFF 'Follow redirects' in Postman and send POST.",
-      });
-    }
-    console.log("[BatchDetail] WORKAROUND: calling requireCrm then createBatchDetail");
-    batchDetailController.requireCrm(req, res, (err) => {
-      if (err) {
-        console.error("[BatchDetail] WORKAROUND: requireCrm rejected", err?.message);
-        return next(err);
-      }
-      batchDetailController.createBatchDetail(req, res, next);
-    });
-  });
-});
+router.post("/", ...createMiddleware);
+router.post("/create", ...createMiddleware);
+
+// Get all batch details (list only). POST must use / or /create above.
+router.get("/", batchDetailController.getAllBatchDetails);
 
 // Get one batch detail by ID. Returns full batch with batchPayments (matched members) and batchExceptions (unmatched) populated; fileUrl on batch has no expiry.
 router.get("/:batchDetailId", batchDetailController.getBatchDetailById);
