@@ -16,13 +16,22 @@ const { v4: uuidv4 } = require("uuid");
  */
 async function createBatchDetail(req, res) {
   try {
-    const type = req.body?.type;
-    const date = req.body?.date;
-    const referenceNumber = req.body?.referenceNumber;
-    const description = (req.body?.description || "").trim();
-    const comments = (req.body?.comments || "").trim();
+    // Read from body first, fallback to query params (query params survive gateway redirects)
+    const type = req.body?.type || req.query?.type;
+    const date = req.body?.date || req.query?.date;
+    const referenceNumber = req.body?.referenceNumber || req.query?.referenceNumber;
+    const description = (req.body?.description || req.query?.description || "").trim();
+    const comments = (req.body?.comments || req.query?.comments || "").trim();
 
-    console.log("[BatchDetail] create:", { type, date, referenceNumber, description: description || "(empty)", hasFile: !!(req.file), method: req.method });
+    console.log("[BatchDetail] create:", {
+      method: req.method,
+      url: req.originalUrl,
+      type, date, referenceNumber,
+      bodyKeys: Object.keys(req.body || {}),
+      queryKeys: Object.keys(req.query || {}),
+      hasFile: !!(req.file),
+      contentType: req.headers["content-type"] || "NONE",
+    });
 
     // Validate — specific message for each missing field
     if (!type) return res.status(400).json({ success: false, message: "type is required" });
