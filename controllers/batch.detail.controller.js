@@ -17,17 +17,15 @@ function requireCrm(req, res, next) {
 }
 
 /**
- * Create a batch detail. Required: type, date, referenceNumber, description.
+ * Create a batch detail (POST only). Required: type, date, referenceNumber, description.
  * Optional: comments, file.
  *
- * - When NO file is uploaded: create the document in the database and return it
- *   in the response (batchPayments and batchExceptions stay empty).
- *
- * - When a file IS uploaded: create the document, optionally upload to Azure if
- *   configured, then parse the file. The file must have a membership number column
- *   (column A). For each row: look up the membership number in Profile; if found,
- *   add that profile to batchPayments; if not found, add the row to batchExceptions.
- *   Return the created document with batchPayments and batchExceptions populated.
+ * Logic:
+ * 1. Always create the batch document in the database.
+ * 2. If file is given: process the file (membership number column → match profiles
+ *    → batchPayments for found, batchExceptions for not found).
+ * 3. If file is not given: skip file processing (batchPayments and batchExceptions stay empty).
+ * 4. Always return the created batch in the response with message "Batch is created."
  *
  * CRM only. Expects multipart/form-data with optional file field "file".
  */
@@ -178,8 +176,8 @@ async function createBatchDetail(req, res, next) {
     });
     res.setHeader("X-Batch-Detail-Action", "create");
     return res.status(201).json({
-      message: "Batch detail created successfully",
-      data: toReturn,
+      message: "Batch is created.",
+      data: toReturn || saved.toObject ? saved.toObject() : saved,
     });
   } catch (error) {
     console.error("[BatchDetail] createBatchDetail: UNEXPECTED ERROR", {
