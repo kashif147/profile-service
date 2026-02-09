@@ -12,9 +12,16 @@ const {
 
 
 const connectionString = (process.env.AZURE_STORAGE_CONNECTION_STRING || "").replace(/\s+/g, " ").trim();
-const accountName = (process.env.AZURE_STORAGE_ACCOUNT).trim();
-const accountKey = (process.env.AZURE_STORAGE_KEY).replace(/\r?\n/g, "").trim();
-const containerName = (process.env.AZURE_STORAGE_CONTAINER).trim();
+const accountName = (process.env.AZURE_STORAGE_ACCOUNT || "").trim();
+const accountKey = (process.env.AZURE_STORAGE_KEY || "").replace(/\r?\n/g, "").trim();
+const containerName = (process.env.AZURE_STORAGE_CONTAINER || "").trim();
+
+console.log("[Azure Storage ENV]", {
+  AZURE_STORAGE_ACCOUNT: accountName ? accountName.substring(0, 6) + "***" : "NOT SET",
+  AZURE_STORAGE_KEY: accountKey ? accountKey.substring(0, 6) + "***" : "NOT SET",
+  AZURE_STORAGE_CONTAINER: containerName || "NOT SET",
+  AZURE_STORAGE_CONNECTION_STRING: connectionString ? connectionString.substring(0, 20) + "***" : "NOT SET",
+});
 
 let blobServiceClient = null;
 let sharedKeyCredential = null;
@@ -36,10 +43,13 @@ if (connectionString) {
   );
 }
 
+const isConfigured = Boolean(blobServiceClient);
+console.log("[Azure Storage]", isConfigured ? "CONFIGURED OK" : "NOT CONFIGURED — file upload will be skipped");
+
 module.exports = {
   blobServiceClient,
   sharedKeyCredential,
   containerName,
   accountName: resolvedAccountName,
-  isConfigured: Boolean(blobServiceClient),
+  isConfigured,
 };
