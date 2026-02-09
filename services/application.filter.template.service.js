@@ -64,23 +64,25 @@ class TemplateService {
   }
 
   /**
-   * NEW METHOD - Get user templates + system default template
-   * Returns system default template + all user's personal templates
+   * Get user templates + system default template, filtered by type (e.g. application).
    * @param {string} userId - User ID
+   * @param {string} type - Template type (e.g. "application"). Default "application".
    * @returns {Promise<Array>} Array of templates (system default first, then user templates)
    */
-  async getUserTemplatesWithSystemDefault(userId) {
+  async getUserTemplatesWithSystemDefault(userId, type = "application") {
     try {
-      // Get system default template
+      const typeFilter = { templateType: type };
+
       const systemDefault = await Template.findOne({
         systemDefault: true,
         "meta.deleted": false,
+        ...typeFilter,
       });
 
-      // Get user's personal templates
       const userTemplates = await Template.find({
         userId,
         "meta.deleted": false,
+        ...typeFilter,
       }).sort({ isDefault: -1, createdAt: -1 });
 
       // Combine: system default first, then user templates

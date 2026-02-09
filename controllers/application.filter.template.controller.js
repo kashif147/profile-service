@@ -39,8 +39,8 @@ exports.createTemplate = async (req, res, next) => {
 };
 
 /**
- * Get all filter templates for the current user
- * Includes system default template + user's personal templates
+ * Get templates for the current user. Query param: type (e.g. application). Default: application.
+ * Response: data with total and templates (systemDefault, userTemplates).
  */
 exports.getUserTemplates = async (req, res, next) => {
   try {
@@ -48,19 +48,24 @@ exports.getUserTemplates = async (req, res, next) => {
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
-          "Access denied. Only CRM users can view filter templates."
+          "Access denied. Only CRM users can view templates."
         )
       );
     }
 
-    const templates =
-      await applicationFilterTemplateService.getUserTemplatesWithSystemDefault(creatorId);
+    const type = req.query.type || "application";
+    const list =
+      await applicationFilterTemplateService.getUserTemplatesWithSystemDefault(creatorId, type);
+
+    const systemDefault = list.find((t) => t.systemDefault) || null;
+    const userTemplates = list.filter((t) => !t.systemDefault);
 
     return res.success({
-      total: templates.length,
-      systemDefault: templates.find(t => t.systemDefault) || null,
-      userTemplates: templates.filter(t => !t.systemDefault),
-      templates,
+      total: list.length,
+      templates: {
+        systemDefault,
+        userTemplates,
+      },
     });
   } catch (error) {
     console.error(
