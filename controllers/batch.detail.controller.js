@@ -31,36 +31,34 @@ function requireCrm(req, res, next) {
  */
 async function createBatchDetail(req, res, next) {
   try {
-    console.log("[BatchDetail] createBatchDetail: ENTRY", {
-      method: req.method,
-      hasFile: !!(req.file && req.file.buffer),
-      fileName: req.file?.originalname,
-      bodyKeys: Object.keys(req.body || {}),
-      type: req.body?.type,
-      date: req.body?.date,
-      referenceNumber: req.body?.referenceNumber,
-      description: req.body?.description ? "(present)" : "(missing)",
-      tenantId: req.user?.tenantId,
-      userId: req.user?.userId || req.user?.id,
-    });
+    // Read from body (normal POST) or query params (fallback when redirect strips body)
+    const b = req.body || {};
+    const q = req.query || {};
 
     const tenantId = req.user?.tenantId || null;
     const createdBy = req.user?.userId || req.user?.id || "unknown";
 
-    const type = req.body.type;
-    const date = req.body.date;
-    const referenceNumber = req.body.referenceNumber;
-    const description = (req.body.description || "").trim();
-    const comments = (req.body.comments || "").trim();
+    const type = b.type || q.type;
+    const date = b.date || q.date;
+    const referenceNumber = b.referenceNumber || q.referenceNumber;
+    const description = (b.description || q.description || "").trim();
+    const comments = (b.comments || q.comments || "").trim();
+
+    console.log("[BatchDetail] createBatchDetail:", {
+      method: req.method,
+      type, date, referenceNumber,
+      description: description ? "(present)" : "(missing)",
+      hasFile: !!(req.file && req.file.buffer),
+      source: Object.keys(b).length > 0 ? "body" : "query",
+      tenantId,
+    });
 
     if (!type || !date || !referenceNumber) {
-      console.log("[BatchDetail] createBatchDetail: validation failed — missing type/date/referenceNumber");
       return next(
         AppError.badRequest("type, date, and referenceNumber are required")
       );
     }
     if (!description) {
-      console.log("[BatchDetail] createBatchDetail: validation failed — description required");
       return next(AppError.badRequest("description is required"));
     }
 
