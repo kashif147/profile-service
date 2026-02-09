@@ -170,6 +170,7 @@ app.get("/api", (req, res) => {
       personalDetails: "GET /api/personal-details (auth required)",
       professionalDetails: "GET /api/professional-details (auth required)",
       subscriptionDetails: "GET /api/subscription-details (auth required)",
+      aggregatedUserDetails: "GET /api/profile/aggregated-user-details (auth required, PORTAL)",
       profileValidate: "POST /api/profile/validate",
       applications: "GET /api/applications (auth required)",
     },

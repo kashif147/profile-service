@@ -189,6 +189,24 @@ class PersonalDetailsService {
     }
   }
 
+  async getPersonalDetailsByEmail(email, tenantId) {
+    try {
+      if (!email || typeof email !== "string" || !email.trim()) {
+        return null;
+      }
+      return await personalDetailsHandler.getByEmail(
+        email.trim().toLowerCase(),
+        tenantId
+      );
+    } catch (error) {
+      console.error(
+        "PersonalDetailsService [getPersonalDetailsByEmail] Error:",
+        error
+      );
+      throw error;
+    }
+  }
+
   /**
    * Check if personal details exist for user
    * @param {string} userId - User ID
