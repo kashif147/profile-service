@@ -18,12 +18,18 @@ class TemplateService {
       const { templateType, filters, columns, isDefault, pinned } = templateData;
       const type = templateType || "application";
 
-      // Only one template per user per type can have isDefault: true
       if (isDefault) {
-        await Template.updateMany(
-          { userId, templateType: type, "meta.deleted": false },
-          { $set: { isDefault: false } }
-        );
+        const existingDefault = await Template.findOne({
+          userId,
+          templateType: type,
+          isDefault: true,
+          "meta.deleted": false,
+        });
+        if (existingDefault) {
+          throw AppError.badRequest(
+            "You already have a default template for this type. Please unset the existing default template first, then set this one as default."
+          );
+        }
       }
 
       const template = new Template({
@@ -164,13 +170,22 @@ class TemplateService {
         throw AppError.notFound("Filter template not found");
       }
 
-      // Only one template per user per type can have isDefault: true
+      const type = templateType !== undefined ? templateType : template.templateType;
+
+      // When setting isDefault: true, ensure user does not already have another default for this type
       if (isDefault === true) {
-        const type = templateType !== undefined ? templateType : template.templateType;
-        await Template.updateMany(
-          { userId, templateType: type, _id: { $ne: templateId }, "meta.deleted": false },
-          { $set: { isDefault: false } }
-        );
+        const existingDefault = await Template.findOne({
+          userId,
+          templateType: type,
+          _id: { $ne: templateId },
+          isDefault: true,
+          "meta.deleted": false,
+        });
+        if (existingDefault) {
+          throw AppError.badRequest(
+            "You already have a default template for this type. Please unset the existing default template first, then set this one as default."
+          );
+        }
       }
 
       // Update fields
