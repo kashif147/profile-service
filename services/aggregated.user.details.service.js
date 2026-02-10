@@ -1,11 +1,14 @@
 /**
  * Aggregated User Details Service
- * Fetches personal, professional, and subscription details for the current user:
- * - First from profile-service (by email from token, then applicationId for pro/sub).
- * - Response in same format as individual my-personal-details, my-professional-details, my-subscription-details.
+ * - Supports both portal-created users (by userId) and CRM-created users (by email).
+ * - First checks portal service; if portal has data and the same email exists in profile service, returns from profile; otherwise returns from portal.
+ * - If portal has no data, returns from profile (userId first for portal-created, then email for CRM-created).
+ * Response format matches individual my-personal-details, my-professional-details, my-subscription-details.
  */
 
 const personalDetailsService = require("./personal.details.service.js");
+const professionalDetailsService = require("./professional.details.service.js");
+const subscriptionDetailsService = require("./subscription.details.service.js");
 const personalDetailsHandler = require("../handlers/personal.details.handler.js");
 const professionalDetailsHandler = require("../handlers/professional.details.handler.js");
 const subscriptionDetailsHandler = require("../handlers/subscription.details.handler.js");
@@ -15,7 +18,6 @@ const SOURCE_PORTAL_SERVICE = "portal-service";
 
 /**
  * Extract email from the request (user token or gateway headers).
- * Tries: req.user.email, x-user-email, req.user.preferred_username.
  * @param {Object} req - Express request
  * @returns {string|null} Email or null
  */
@@ -28,6 +30,22 @@ function extractEmailFromToken(req) {
     req.user.preferredEmail;
   if (typeof email !== "string" || !email.trim()) return null;
   return email.trim();
+}
+
+/**
+ * Extract userId from the request.
+ * @param {Object} req - Express request
+ * @returns {string|null} User ID or null
+ */
+function extractUserId(req) {
+  if (!req) return null;
+  return (
+    req.userId ||
+    req.user?.sub ||
+    req.user?.id ||
+    req.user?._id ||
+    req.headers["x-user-id"]
+  ) || null;
 }
 
 /**
@@ -76,15 +94,15 @@ async function getSubscriptionDetailsByApplicationId(
 }
 
 /**
- * Fetch aggregated user details from profile-service only.
- * 1) Get email from token.
- * 2) Find personal details by email (personalEmail or workEmail).
- * 3) If personal found, use applicationId to fetch professional and subscription details.
- * @param {Object} req - Express request (must have req.user, req.tenantId)
+ * Fetch from profile-service: try portal-created (by userId) first, then CRM-created (by email).
+ * Portal-created: getMyPersonalDetails(userId), getMyProfessionalDetails(userId), getMySubscriptionDetails(userId).
+ * CRM-created: getPersonalDetailsByEmail(email) → applicationId → professional + subscription.
+ * @param {Object} req - Express request (must have req.user, req.tenantId, req.userId)
  * @returns {Promise<{ personalDetails: Object|null, professionalDetails: Object|null, subscriptionDetails: Object|null, personalDetailsSource: string, professionalDetailsSource: string, subscriptionDetailsSource: string }>}
  */
 async function getAggregatedFromProfileService(req) {
   const tenantId = req.tenantId;
+  const userId = extractUserId(req);
   const email = extractEmailFromToken(req);
 
   const result = {
@@ -96,6 +114,24 @@ async function getAggregatedFromProfileService(req) {
     subscriptionDetailsSource: SOURCE_PROFILE_SERVICE,
   };
 
+  // 1) Portal-created users: lookup by userId first
+  if (userId) {
+    const [personalByUserId, professionalByUserId, subscriptionByUserId] =
+      await Promise.all([
+        personalDetailsService.getMyPersonalDetails(userId, tenantId),
+        professionalDetailsService.getMyProfessionalDetails(userId, tenantId),
+        subscriptionDetailsService.getMySubscriptionDetails(userId, tenantId),
+      ]);
+
+    if (personalByUserId) {
+      result.personalDetails = personalByUserId;
+      result.professionalDetails = professionalByUserId || null;
+      result.subscriptionDetails = subscriptionByUserId || null;
+      return result;
+    }
+  }
+
+  // 2) CRM-created users: lookup by email (personalEmail or workEmail)
   if (!email) {
     return result;
   }
@@ -121,11 +157,11 @@ async function getAggregatedFromProfileService(req) {
 }
 
 /**
- * Fetch aggregated user details from portal-service (gateway aggregation).
- * Used when profile-service has no data. Calls portal-service if configured.
- * @param {Object} req - Express request (userId, tenantId)
+ * Fetch aggregated user details from portal-service by calling its three "my" endpoints.
+ * Portal has GET /api/personal-details, GET /api/professional-details, GET /api/subscription-details.
+ * @param {Object} req - Express request (userId, tenantId, auth headers)
  * @returns {Promise<{ personalDetails: Object|null, professionalDetails: Object|null, subscriptionDetails: Object|null, personalDetailsSource: string, professionalDetailsSource: string, subscriptionDetailsSource: string }|null>}
- *   Null if portal is not configured or request fails.
+ *   Null if portal is not configured or all three calls fail / return no data.
  */
 async function getAggregatedFromPortalService(req) {
   const portalBaseUrl = process.env.PORTAL_SERVICE_URL;
@@ -133,43 +169,72 @@ async function getAggregatedFromPortalService(req) {
     return null;
   }
 
-  const userId = req.userId || req.user?.sub || req.user?.id;
   const tenantId = req.tenantId;
-  if (!userId || !tenantId) {
+  const authHeader =
+    req.headers?.authorization || req.headers?.Authorization;
+  if (!authHeader || !tenantId) {
     return null;
   }
 
+  const base = portalBaseUrl.replace(/\/$/, "");
+  const headers = {
+    Authorization: authHeader,
+    "x-tenant-id": tenantId,
+    "Content-Type": "application/json",
+  };
+
   try {
     const axios = require("axios");
-    const url = `${portalBaseUrl.replace(/\/$/, "")}/api/user/my-details`;
-    const authHeader =
-      req.headers?.authorization || req.headers?.Authorization;
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: authHeader || "",
-        "x-tenant-id": tenantId,
-        "Content-Type": "application/json",
-      },
-      timeout: 10000,
-      validateStatus: () => true,
-    });
 
-    if (response.status !== 200 || !response.data) {
+    const [personalRes, professionalRes, subscriptionRes] = await Promise.all([
+      axios.get(`${base}/api/personal-details`, {
+        headers,
+        timeout: 10000,
+        validateStatus: () => true,
+      }),
+      axios.get(`${base}/api/professional-details`, {
+        headers,
+        timeout: 10000,
+        validateStatus: () => true,
+      }),
+      axios.get(`${base}/api/subscription-details`, {
+        headers,
+        timeout: 10000,
+        validateStatus: () => true,
+      }),
+    ]);
+
+    const getData = (res) => {
+      if (res.status !== 200 || !res.data) return null;
+      const d = res.data;
+      if (d && typeof d.data !== "undefined") return d.data;
+      return d;
+    };
+
+    const personalDetails = getData(personalRes);
+    const professionalDetails = getData(professionalRes);
+    const subscriptionDetails = getData(subscriptionRes);
+
+    const hasAny =
+      personalDetails != null ||
+      professionalDetails != null ||
+      subscriptionDetails != null;
+
+    if (!hasAny) {
       return null;
     }
 
-    const data = response.data.data || response.data;
     return {
-      personalDetails: data.personalDetails ?? null,
-      professionalDetails: data.professionalDetails ?? null,
-      subscriptionDetails: data.subscriptionDetails ?? null,
+      personalDetails: personalDetails ?? null,
+      professionalDetails: professionalDetails ?? null,
+      subscriptionDetails: subscriptionDetails ?? null,
       personalDetailsSource: SOURCE_PORTAL_SERVICE,
       professionalDetailsSource: SOURCE_PORTAL_SERVICE,
       subscriptionDetailsSource: SOURCE_PORTAL_SERVICE,
     };
   } catch (err) {
     console.error(
-      "[aggregated.user.details.service] Portal fallback error:",
+      "[aggregated.user.details.service] Portal fetch error:",
       err.message
     );
     return null;
@@ -177,39 +242,84 @@ async function getAggregatedFromPortalService(req) {
 }
 
 /**
- * Get aggregated user details: try profile-service first, then portal-service (gateway aggregation).
- * Response format matches individual calls (same shape as my-personal-details, my-professional-details, my-subscription-details).
+ * Normalize email for comparison (lowercase, trim).
+ * @param {string} e - Email
+ * @returns {string|null}
+ */
+function normalizeEmailForCompare(e) {
+  if (typeof e !== "string" || !e.trim()) return null;
+  return e.trim().toLowerCase();
+}
+
+/**
+ * Return true if the given email matches the personal details (personalEmail or workEmail).
+ * @param {Object} personalDetails - Personal details document
+ * @param {string} email - Email to match (normalized)
+ * @returns {boolean}
+ */
+function personalDetailsMatchesEmail(personalDetails, email) {
+  if (!personalDetails || !email) return false;
+  const c = personalDetails.contactInfo || {};
+  const p = normalizeEmailForCompare(c.personalEmail);
+  const w = normalizeEmailForCompare(c.workEmail);
+  return p === email || w === email;
+}
+
+/**
+ * Get aggregated user details:
+ * 1) First check portal service.
+ * 2) If portal has data: check if profile service has the same (by email). If profile has it, return from profile; else return from portal.
+ * 3) If portal has no data: return from profile (userId first for portal-created, then email for CRM-created).
  * @param {Object} req - Express request
  * @returns {Promise<Object>} { personalDetails, professionalDetails, subscriptionDetails, personalDetailsSource, professionalDetailsSource, subscriptionDetailsSource }
  */
 async function getAggregatedUserDetails(req) {
-  const fromProfile = await getAggregatedFromProfileService(req);
-
-  const hasAnyFromProfile =
-    fromProfile.personalDetails ||
-    fromProfile.professionalDetails ||
-    fromProfile.subscriptionDetails;
-
-  if (hasAnyFromProfile) {
-    return fromProfile;
-  }
-
+  // 1) Check portal first
   const fromPortal = await getAggregatedFromPortalService(req);
-  if (fromPortal) {
+
+  // 2) If portal has data: see if profile has the same (by email); prefer profile when same email exists there
+  if (
+    fromPortal &&
+    (fromPortal.personalDetails ||
+      fromPortal.professionalDetails ||
+      fromPortal.subscriptionDetails)
+  ) {
+    const emailFromPortal =
+      fromPortal.personalDetails?.contactInfo?.personalEmail ||
+      fromPortal.personalDetails?.contactInfo?.workEmail ||
+      extractEmailFromToken(req);
+    const emailToUse = normalizeEmailForCompare(emailFromPortal);
+
+    const fromProfile = await getAggregatedFromProfileService(req);
+
+    // If profile has personal details for the same email, use profile (canonical source)
+    if (
+      emailToUse &&
+      fromProfile.personalDetails &&
+      personalDetailsMatchesEmail(fromProfile.personalDetails, emailToUse)
+    ) {
+      return fromProfile;
+    }
+
+    // Otherwise return from portal
     return fromPortal;
   }
 
-  return fromProfile;
+  // 3) Portal has no data: return from profile (portal-created by userId, or CRM-created by email)
+  return getAggregatedFromProfileService(req);
 }
 
 module.exports = {
   extractEmailFromToken,
+  extractUserId,
   getPersonalDetailsByEmail,
   getProfessionalDetailsByApplicationId,
   getSubscriptionDetailsByApplicationId,
   getAggregatedFromProfileService,
   getAggregatedFromPortalService,
   getAggregatedUserDetails,
+  personalDetailsMatchesEmail,
+  normalizeEmailForCompare,
   SOURCE_PROFILE_SERVICE,
   SOURCE_PORTAL_SERVICE,
 };
