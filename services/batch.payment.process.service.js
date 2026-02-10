@@ -160,6 +160,14 @@ async function processBatchDetail({ batchDetailId, tenantId }) {
         grade: pd.grade ?? null,
         primarySection: pd.primarySection ?? null,
         valueAddedServices: pref.valueAddedServices ?? false,
+        fileRow: {
+          membershipNumber: row.membershipNumber,
+          lastName: row.lastName,
+          firstName: row.firstName,
+          fullName: row.fullName,
+          valueForPeriodSelected: row.valueForPeriodSelected,
+          rowIndex: row.rowIndex,
+        },
       });
     } else {
       batchExceptions.push({
@@ -262,6 +270,14 @@ async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null
         grade: pd.grade ?? null,
         primarySection: pd.primarySection ?? null,
         valueAddedServices: pref.valueAddedServices ?? false,
+        fileRow: {
+          membershipNumber: row.membershipNumber,
+          lastName: row.lastName,
+          firstName: row.firstName,
+          fullName: row.fullName,
+          valueForPeriodSelected: row.valueForPeriodSelected,
+          rowIndex: row.rowIndex,
+        },
       });
     } else {
       batchExceptions.push({

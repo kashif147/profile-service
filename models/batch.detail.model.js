@@ -68,6 +68,15 @@ const BatchDetailSchema = new mongoose.Schema(
         primarySection: { type: String, default: null, trim: true },
         // From Profile: preferences
         valueAddedServices: { type: Boolean, default: false },
+        // All fields extracted from the file row (same shape as batchExceptions)
+        fileRow: {
+          membershipNumber: { type: String, default: null, trim: true },
+          lastName: { type: String, default: null, trim: true },
+          firstName: { type: String, default: null, trim: true },
+          fullName: { type: String, default: null, trim: true },
+          valueForPeriodSelected: { type: Number, default: null },
+          rowIndex: { type: Number, default: null },
+        },
       },
     ],
     // Populated when process API is run: members NOT found (fields from file only)
