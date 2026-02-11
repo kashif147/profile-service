@@ -1,4 +1,5 @@
 const BatchDetail = require("../models/batch.detail.model.js");
+const Profile = require("../models/profile.model.js");
 const { AppError } = require("../errors/AppError");
 const azureBlob = require("../services/azure.blob.service");
 const batchPaymentProcess = require("../services/batch.payment.process.service");
@@ -154,4 +155,110 @@ async function getAllBatchDetails(req, res) {
   }
 }
 
-module.exports = { createBatchDetail, getBatchDetailById, getAllBatchDetails };
+/**
+ * Resolve a batch exception by attaching a profile to it.
+ * POST body must include: batch ID (path), membership number (correct), and which exception (reference membership number or rowIndex).
+ * That exception row is removed from batch exceptions and added to batch payment with profile data.
+ * Body: { membershipNumber: string (required), referenceMembershipNumber?: string, rowIndex?: number } — one of referenceMembershipNumber or rowIndex required to identify the exception row.
+ */
+async function resolveBatchException(req, res) {
+  try {
+    if (req.user?.userType !== "CRM") {
+      return res.status(403).json({ success: false, message: "Only CRM users can resolve batch exceptions" });
+    }
+
+    const { batchDetailId } = req.params;
+    const { membershipNumber, referenceMembershipNumber, rowIndex } = req.body || {};
+    const tenantId = req.user?.tenantId || null;
+
+    const membershipNumberTrimmed = membershipNumber != null ? String(membershipNumber).trim() : "";
+    if (!membershipNumberTrimmed) {
+      return res.status(400).json({
+        success: false,
+        message: "membershipNumber is required (the correct membership number of the user)",
+      });
+    }
+    const hasRef = referenceMembershipNumber != null && String(referenceMembershipNumber).trim() !== "";
+    const hasRow = rowIndex !== undefined && rowIndex !== null && Number.isInteger(Number(rowIndex)) && Number(rowIndex) >= 1;
+    if (!hasRef && !hasRow) {
+      return res.status(400).json({
+        success: false,
+        message: "Either referenceMembershipNumber or rowIndex is required to identify the batch exception row",
+      });
+    }
+
+    const batch = await BatchDetail.findOne({ _id: batchDetailId, isDeleted: false });
+    if (!batch) {
+      return res.status(404).json({ success: false, message: "Batch detail not found" });
+    }
+
+    let exceptionIndex = -1;
+    if (hasRow) {
+      const rowIndexNum = Number(rowIndex);
+      exceptionIndex = (batch.batchExceptions || []).findIndex((ex) => ex.rowIndex === rowIndexNum);
+      if (exceptionIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          message: `No batch exception found with rowIndex ${rowIndexNum}`,
+        });
+      }
+    } else {
+      const refTrimmed = String(referenceMembershipNumber).trim();
+      exceptionIndex = (batch.batchExceptions || []).findIndex(
+        (ex) => String(ex.membershipNumber || "").trim() === refTrimmed
+      );
+      if (exceptionIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          message: `No batch exception found with reference membership number "${refTrimmed}"`,
+        });
+      }
+    }
+
+    const exceptionRow = batch.batchExceptions[exceptionIndex];
+    const profileQuery = { membershipNumber: membershipNumberTrimmed };
+    if (tenantId) profileQuery.tenantId = tenantId;
+    const profile = await Profile.findOne(profileQuery)
+      .select("membershipNumber personalInfo contactInfo professionalDetails preferences")
+      .lean();
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: "Profile not found for membership number " + membershipNumberTrimmed,
+      });
+    }
+
+    const fileRow = {
+      membershipNumber: exceptionRow.membershipNumber,
+      lastName: exceptionRow.lastName,
+      firstName: exceptionRow.firstName,
+      fullName: exceptionRow.fullName,
+      valueForPeriodSelected: exceptionRow.valueForPeriodSelected,
+      rowIndex: exceptionRow.rowIndex,
+    };
+    const paymentEntry = batchPaymentProcess.buildBatchPaymentEntryFromProfile(profile, fileRow);
+
+    batch.batchExceptions.splice(exceptionIndex, 1);
+    batch.batchPayments = batch.batchPayments || [];
+    batch.batchPayments.push(paymentEntry);
+    await batch.save();
+
+    const updated = await BatchDetail.findById(batch._id)
+      .populate("batchPayments.profileId", "membershipNumber personalInfo contactInfo professionalDetails preferences")
+      .lean();
+
+    return res.status(200).json({
+      message: "Batch exception resolved; row moved to batch payment",
+      data: updated,
+    });
+  } catch (error) {
+    console.error("[BatchDetail] resolveBatchException error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to resolve batch exception",
+    });
+  }
+}
+
+module.exports = { createBatchDetail, getBatchDetailById, getAllBatchDetails, resolveBatchException };

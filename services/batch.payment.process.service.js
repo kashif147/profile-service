@@ -175,8 +175,6 @@ async function processBatchDetail({ batchDetailId, tenantId }) {
       batchPayments.push({
         profileId: profile._id,
         membershipNumber: profile.membershipNumber || row.membershipNumber,
-        valueForPeriodSelected: valueInCents,
-        rowIndex: row.rowIndex,
         forename: pi.forename ?? null,
         surname: pi.surname ?? null,
         dateOfBirth: pi.dateOfBirth ?? null,
@@ -314,8 +312,6 @@ async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null
       batchPayments.push({
         profileId: profile._id,
         membershipNumber: profile.membershipNumber || row.membershipNumber,
-        valueForPeriodSelected: valueInCents,
-        rowIndex: row.rowIndex,
         forename: pi.forename ?? null,
         surname: pi.surname ?? null,
         dateOfBirth: pi.dateOfBirth ?? null,
@@ -368,8 +364,47 @@ async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null
   };
 }
 
+/**
+ * Build a single batch payment entry from a profile and a file row (e.g. from a batch exception).
+ * Used when resolving an exception: admin attaches the correct profile to a row that had wrong/missing membership number in file.
+ * @param {Object} profile - Profile document (lean) with personalInfo, contactInfo, professionalDetails, preferences
+ * @param {Object} fileRow - { membershipNumber, lastName, firstName, fullName, valueForPeriodSelected, rowIndex } (value already in cents if present)
+ * @returns {Object} One batchPayments element
+ */
+function buildBatchPaymentEntryFromProfile(profile, fileRow) {
+  const pi = profile.personalInfo || {};
+  const ci = profile.contactInfo || {};
+  const pd = profile.professionalDetails || {};
+  const pref = profile.preferences || {};
+  return {
+    profileId: profile._id,
+    membershipNumber: profile.membershipNumber || fileRow.membershipNumber,
+    forename: pi.forename ?? null,
+    surname: pi.surname ?? null,
+    dateOfBirth: pi.dateOfBirth ?? null,
+    gender: pi.gender ?? null,
+    personalEmail: ci.personalEmail ?? null,
+    workEmail: ci.workEmail ?? null,
+    mobileNumber: ci.mobileNumber ?? null,
+    fullAddress: ci.fullAddress ?? null,
+    workLocation: pd.workLocation ?? null,
+    grade: pd.grade ?? null,
+    primarySection: pd.primarySection ?? null,
+    valueAddedServices: pref.valueAddedServices ?? false,
+    fileRow: {
+      membershipNumber: fileRow.membershipNumber ?? null,
+      lastName: fileRow.lastName ?? null,
+      firstName: fileRow.firstName ?? null,
+      fullName: fileRow.fullName ?? null,
+      valueForPeriodSelected: fileRow.valueForPeriodSelected ?? null,
+      rowIndex: fileRow.rowIndex ?? null,
+    },
+  };
+}
+
 module.exports = {
   processBatchDetail,
   processBatchDetailWithBuffer,
   parseRows,
+  buildBatchPaymentEntryFromProfile,
 };

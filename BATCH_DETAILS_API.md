@@ -142,3 +142,60 @@ Content-Type: multipart/form-data; boundary=...
 **Query Params:** `?page=1&limit=20&type=deduction`
 
 Response: `{ "data": [...], "pagination": {...} }`
+
+---
+
+## Resolve Batch Exception (attach profile and move to batch payment)
+
+When a row in the file has a wrong or typo membership number (e.g. file has `M3245`, actual is `M12345`), it lands in **batch exceptions**. The admin can search for the user by the correct membership number (using the existing profile search API), then call this API to attach that profile to the exception row. The row is **removed from batch exceptions** and **added to batch payment**; all display data (name, email, etc.) comes from the profile, and the file row is kept as `fileRow` for reference.
+
+**Endpoint:** `POST /api/batch-details/:batchDetailId/resolve-exception`  
+**Auth:** Required (CRM users only)  
+**Content-Type:** `application/json`
+
+### Body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| rowIndex | number | Yes | The 1-based row index of the exception row (from the file). Identifies which exception to resolve. |
+| profileId | string | No* | Profile ID (e.g. from profile search result). |
+| membershipNumber | string | No* | Correct membership number (e.g. `M12345`). Used to look up the profile. |
+
+\* One of `profileId` or `membershipNumber` is required.
+
+### Example
+
+```json
+POST /api/batch-details/67.../resolve-exception
+{
+  "rowIndex": 5,
+  "membershipNumber": "M12345"
+}
+```
+
+Or with profileId (e.g. after profile search):
+
+```json
+{
+  "rowIndex": 5,
+  "profileId": "692b..."
+}
+```
+
+### Response (200 OK)
+
+```json
+{
+  "message": "Batch exception resolved; row moved to batch payment",
+  "data": { ... full batch detail with updated batchPayments and batchExceptions ... }
+}
+```
+
+### Frontend flow
+
+1. Batch exceptions list shows each row with **reference number** = membership number from file (e.g. `M3245`).
+2. Admin types the **correct** membership number (e.g. `M12345`) in a search field.
+3. Frontend calls **profile search** (e.g. `GET /api/profile/search?q=M12345`) and shows results.
+4. Admin selects the matching profile.
+5. Frontend calls **resolve-exception** with `batchDetailId`, `rowIndex` of that exception row, and `profileId` (or `membershipNumber`).
+6. That row disappears from exceptions and appears in batch payment with profile data and file row reference.

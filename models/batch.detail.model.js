@@ -69,8 +69,6 @@ const BatchDetailSchema = new mongoose.Schema(
       {
         profileId: { type: mongoose.Schema.Types.ObjectId, ref: "Profile", required: true },
         membershipNumber: { type: String, required: true, trim: true },
-        valueForPeriodSelected: { type: Number, default: null },
-        rowIndex: { type: Number, default: null },
         // From Profile: personalInfo
         forename: { type: String, default: null, trim: true },
         surname: { type: String, default: null, trim: true },
