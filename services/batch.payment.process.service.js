@@ -133,11 +133,40 @@ async function processBatchDetail({ batchDetailId, tenantId }) {
     profiles.map((p) => [String(p.membershipNumber).trim(), p])
   );
 
+  /** Convert Euro to cents: multiply by 100 when value is present and valid. */
+  function toCents(euroVal) {
+    if (euroVal == null || euroVal === "" || !Number.isFinite(Number(euroVal))) return null;
+    const n = Number(euroVal);
+    return n * 100;
+  }
+
+  /** Returns true if value is null, 0, or not present - row should go to exceptions when profile is matched. */
+  function isValueMissingOrZero(val) {
+    return val == null || val === "" || Number(val) === 0;
+  }
+
   const batchPayments = [];
   const batchExceptions = [];
   for (const row of rows) {
     const normalizedMembership = String(row.membershipNumber).trim();
     const profile = profileByMembership.get(normalizedMembership);
+    const valueMissingOrZero = isValueMissingOrZero(row.valueForPeriodSelected);
+    const valueInCents = toCents(row.valueForPeriodSelected);
+
+    // Matched profile with missing/zero value → exception (per requirement)
+    if (profile && valueMissingOrZero) {
+      batchExceptions.push({
+        profileId: profile._id,
+        membershipNumber: row.membershipNumber,
+        lastName: row.lastName,
+        firstName: row.firstName,
+        fullName: row.fullName,
+        valueForPeriodSelected: null,
+        rowIndex: row.rowIndex,
+      });
+      continue;
+    }
+
     if (profile) {
       const pi = profile.personalInfo || {};
       const ci = profile.contactInfo || {};
@@ -146,7 +175,7 @@ async function processBatchDetail({ batchDetailId, tenantId }) {
       batchPayments.push({
         profileId: profile._id,
         membershipNumber: profile.membershipNumber || row.membershipNumber,
-        valueForPeriodSelected: row.valueForPeriodSelected,
+        valueForPeriodSelected: valueInCents,
         rowIndex: row.rowIndex,
         forename: pi.forename ?? null,
         surname: pi.surname ?? null,
@@ -165,7 +194,7 @@ async function processBatchDetail({ batchDetailId, tenantId }) {
           lastName: row.lastName,
           firstName: row.firstName,
           fullName: row.fullName,
-          valueForPeriodSelected: row.valueForPeriodSelected,
+          valueForPeriodSelected: valueInCents,
           rowIndex: row.rowIndex,
         },
       });
@@ -175,7 +204,7 @@ async function processBatchDetail({ batchDetailId, tenantId }) {
         lastName: row.lastName,
         firstName: row.firstName,
         fullName: row.fullName,
-        valueForPeriodSelected: row.valueForPeriodSelected,
+        valueForPeriodSelected: valueInCents,
         rowIndex: row.rowIndex,
       });
     }
@@ -243,11 +272,40 @@ async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null
     profilesFound: profiles.length,
   });
 
+  /** Convert Euro to cents: multiply by 100 when value is present and valid. */
+  function toCents(euroVal) {
+    if (euroVal == null || euroVal === "" || !Number.isFinite(Number(euroVal))) return null;
+    const n = Number(euroVal);
+    return n * 100;
+  }
+
+  /** Returns true if value is null, 0, or not present - row should go to exceptions when profile is matched. */
+  function isValueMissingOrZero(val) {
+    return val == null || val === "" || Number(val) === 0;
+  }
+
   const batchPayments = [];
   const batchExceptions = [];
   for (const row of rows) {
     const normalizedMembership = String(row.membershipNumber).trim();
     const profile = profileByMembership.get(normalizedMembership);
+    const valueMissingOrZero = isValueMissingOrZero(row.valueForPeriodSelected);
+    const valueInCents = toCents(row.valueForPeriodSelected);
+
+    // Matched profile with missing/zero value → exception (per requirement)
+    if (profile && valueMissingOrZero) {
+      batchExceptions.push({
+        profileId: profile._id,
+        membershipNumber: row.membershipNumber,
+        lastName: row.lastName,
+        firstName: row.firstName,
+        fullName: row.fullName,
+        valueForPeriodSelected: null,
+        rowIndex: row.rowIndex,
+      });
+      continue;
+    }
+
     if (profile) {
       const pi = profile.personalInfo || {};
       const ci = profile.contactInfo || {};
@@ -256,7 +314,7 @@ async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null
       batchPayments.push({
         profileId: profile._id,
         membershipNumber: profile.membershipNumber || row.membershipNumber,
-        valueForPeriodSelected: row.valueForPeriodSelected,
+        valueForPeriodSelected: valueInCents,
         rowIndex: row.rowIndex,
         forename: pi.forename ?? null,
         surname: pi.surname ?? null,
@@ -275,7 +333,7 @@ async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null
           lastName: row.lastName,
           firstName: row.firstName,
           fullName: row.fullName,
-          valueForPeriodSelected: row.valueForPeriodSelected,
+          valueForPeriodSelected: valueInCents,
           rowIndex: row.rowIndex,
         },
       });
@@ -285,7 +343,7 @@ async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null
         lastName: row.lastName,
         firstName: row.firstName,
         fullName: row.fullName,
-        valueForPeriodSelected: row.valueForPeriodSelected,
+        valueForPeriodSelected: valueInCents,
         rowIndex: row.rowIndex,
       });
     }

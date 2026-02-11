@@ -16,10 +16,29 @@ const BatchDetailSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    date: {
+    batchDate: {
       type: Date,
       required: true,
       index: true,
+    },
+    paymentDate: {
+      type: Date,
+      required: true,
+    },
+    workLocation: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    bank: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    batchStatus: {
+      type: String,
+      trim: true,
+      default: "pending",
     },
     referenceNumber: {
       type: String,
@@ -79,9 +98,10 @@ const BatchDetailSchema = new mongoose.Schema(
         },
       },
     ],
-    // Populated when process API is run: members NOT found (fields from file only)
+    // Populated when process API is run: members NOT found OR matched but value null/0 (fields from file only)
     batchExceptions: [
       {
+        profileId: { type: mongoose.Schema.Types.ObjectId, ref: "Profile", required: false },
         membershipNumber: { type: String, required: true, trim: true },
         lastName: { type: String, default: null, trim: true },
         firstName: { type: String, default: null, trim: true },
@@ -108,7 +128,7 @@ const BatchDetailSchema = new mongoose.Schema(
 );
 
 BatchDetailSchema.index({ tenantId: 1, isDeleted: 1 });
-BatchDetailSchema.index({ type: 1, date: -1 });
+BatchDetailSchema.index({ type: 1, batchDate: -1 });
 
 module.exports = mongoose.model("BatchDetail", BatchDetailSchema);
 module.exports.BATCH_DETAIL_TYPES = BATCH_DETAIL_TYPES;

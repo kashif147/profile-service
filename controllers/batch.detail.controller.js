@@ -8,15 +8,18 @@ const { v4: uuidv4 } = require("uuid");
 async function createBatchDetail(req, res) {
   try {
     const type = req.body?.type || req.query?.type;
-    const date = req.body?.date || req.query?.date;
+    const batchDate = req.body?.batchDate || req.body?.date || req.query?.batchDate || req.query?.date;
+    const paymentDate = req.body?.paymentDate || req.query?.paymentDate;
     const referenceNumber = req.body?.referenceNumber || req.query?.referenceNumber;
     const description = (req.body?.description || req.query?.description || "").trim();
     const comments = (req.body?.comments || req.query?.comments || "").trim();
+    const workLocation = (req.body?.workLocation || req.query?.workLocation || "").trim() || null;
+    const bank = (req.body?.bank || req.query?.bank || "").trim() || null;
 
     console.log("[BatchDetail] create:", {
       method: req.method,
       url: req.originalUrl,
-      type, date, referenceNumber,
+      type, batchDate, referenceNumber,
       bodyKeys: Object.keys(req.body || {}),
       queryKeys: Object.keys(req.query || {}),
       hasFile: !!(req.file),
@@ -24,8 +27,11 @@ async function createBatchDetail(req, res) {
     });
 
     if (!type) return res.status(400).json({ success: false, message: "type is required" });
-    if (!date) return res.status(400).json({ success: false, message: "date is required" });
+    if (!batchDate) return res.status(400).json({ success: false, message: "batchDate (or date) is required" });
+    if (!paymentDate) return res.status(400).json({ success: false, message: "paymentDate is required" });
     if (!referenceNumber) return res.status(400).json({ success: false, message: "referenceNumber is required" });
+    if (type === "deduction" && !workLocation) return res.status(400).json({ success: false, message: "workLocation is required when type is deduction" });
+    if (type === "cheque" && !bank) return res.status(400).json({ success: false, message: "bank is required when type is cheque" });
 
     const tenantId = req.user?.tenantId || null;
     const createdBy = req.user?.userId || req.user?.id || "unknown";
@@ -49,7 +55,11 @@ async function createBatchDetail(req, res) {
     const batch = await BatchDetail.create({
       tenantId,
       type,
-      date: new Date(date),
+      batchDate: new Date(batchDate),
+      paymentDate: new Date(paymentDate),
+      workLocation,
+      bank,
+      batchStatus: "pending",
       referenceNumber: referenceNumber.trim(),
       description,
       comments,

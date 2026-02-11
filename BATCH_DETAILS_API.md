@@ -11,9 +11,12 @@
 | Field | Type | Example |
 |-------|------|---------|
 | type | string | `deduction`, `cheque`, or `other` |
-| date | string (date) | `2025-02-07` |
+| batchDate (or date) | string (date) | `2025-02-07` |
 | referenceNumber | string | `BATCH-001` |
 | description | string | `Batch payment file for February` |
+| paymentDate | string (date) | `2025-02-07` |
+| workLocation | string | Required when type is `deduction` |
+| bank | string | Required when type is `cheque` |
 
 ### Optional Fields
 
@@ -21,6 +24,11 @@
 |-------|------|-------------|
 | comments | string | Additional notes |
 | file | file | Excel file (.xlsx) with membership numbers |
+
+### Value and Exceptions
+
+- **Value per period (Euro → Cents)**: Values from the file are in Euro. They are multiplied by 100 and stored as cents.
+- **Exceptions**: When a profile is matched but value per period is null, 0, or not present, the row goes to `batchExceptions` (not `batchPayments`).
 
 ### Response (201 Created)
 
@@ -31,7 +39,11 @@
     "_id": "67...",
     "tenantId": "68cbf...",
     "type": "deduction",
-    "date": "2025-02-07T00:00:00.000Z",
+    "batchDate": "2025-02-07T00:00:00.000Z",
+    "paymentDate": null,
+    "workLocation": "Dublin",
+    "bank": null,
+    "batchStatus": "pending",
     "referenceNumber": "BATCH-001",
     "description": "Batch payment file for February",
     "comments": "Optional comments",
@@ -57,9 +69,11 @@
    - Select **form-data** (not raw, not JSON)
    - Add fields:
      - `type` = `deduction`
-     - `date` = `2025-02-07`
+     - `batchDate` or `date` = `2025-02-07`
      - `referenceNumber` = `BATCH-001`
      - `description` = `Test batch`
+     - `workLocation` = `Dublin` (required when type is deduction)
+     - `bank` = `Bank Name` (required when type is cheque)
      - `comments` = `Optional`
      - `file` = (select your .xlsx file)
 5. **Settings:**
@@ -93,9 +107,10 @@
 curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-service/api/batch-details" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -F "type=deduction" \
-  -F "date=2025-02-07" \
+  -F "batchDate=2025-02-07" \
   -F "referenceNumber=BATCH-001" \
   -F "description=Batch payment file" \
+  -F "workLocation=Dublin" \
   -F "file=@/path/to/file.xlsx"
 ```
 
