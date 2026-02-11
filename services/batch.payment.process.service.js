@@ -175,6 +175,8 @@ async function processBatchDetail({ batchDetailId, tenantId }) {
       batchPayments.push({
         profileId: profile._id,
         membershipNumber: profile.membershipNumber || row.membershipNumber,
+        valueForPeriodSelected: valueInCents,
+        rowIndex: row.rowIndex,
         forename: pi.forename ?? null,
         surname: pi.surname ?? null,
         dateOfBirth: pi.dateOfBirth ?? null,
@@ -312,6 +314,8 @@ async function processBatchDetailWithBuffer(batchDetail, buffer, tenantId = null
       batchPayments.push({
         profileId: profile._id,
         membershipNumber: profile.membershipNumber || row.membershipNumber,
+        valueForPeriodSelected: valueInCents,
+        rowIndex: row.rowIndex,
         forename: pi.forename ?? null,
         surname: pi.surname ?? null,
         dateOfBirth: pi.dateOfBirth ?? null,
@@ -379,6 +383,8 @@ function buildBatchPaymentEntryFromProfile(profile, fileRow) {
   return {
     profileId: profile._id,
     membershipNumber: profile.membershipNumber || fileRow.membershipNumber,
+    valueForPeriodSelected: fileRow.valueForPeriodSelected ?? null,
+    rowIndex: fileRow.rowIndex ?? null,
     forename: pi.forename ?? null,
     surname: pi.surname ?? null,
     dateOfBirth: pi.dateOfBirth ?? null,

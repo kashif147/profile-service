@@ -155,12 +155,7 @@ async function getAllBatchDetails(req, res) {
   }
 }
 
-/**
- * Resolve a batch exception by attaching a profile to it.
- * POST body must include: batch ID (path), membership number (correct), and which exception (reference membership number or rowIndex).
- * That exception row is removed from batch exceptions and added to batch payment with profile data.
- * Body: { membershipNumber: string (required), referenceMembershipNumber?: string, rowIndex?: number } — one of referenceMembershipNumber or rowIndex required to identify the exception row.
- */
+
 async function resolveBatchException(req, res) {
   try {
     if (req.user?.userType !== "CRM") {
@@ -168,51 +163,35 @@ async function resolveBatchException(req, res) {
     }
 
     const { batchDetailId } = req.params;
-    const { membershipNumber, referenceMembershipNumber, rowIndex } = req.body || {};
+    const { membershipNumber, exceptionMembershipNumber } = req.body || {};
     const tenantId = req.user?.tenantId || null;
 
     const membershipNumberTrimmed = membershipNumber != null ? String(membershipNumber).trim() : "";
+    const exceptionRefTrimmed = exceptionMembershipNumber != null ? String(exceptionMembershipNumber).trim() : "";
+
     if (!membershipNumberTrimmed) {
-      return res.status(400).json({
-        success: false,
-        message: "membershipNumber is required (the correct membership number of the user)",
-      });
+      return res.status(400).json({ success: false, message: "membershipNumber is required (correct profile membership number)" });
     }
-    const hasRef = referenceMembershipNumber != null && String(referenceMembershipNumber).trim() !== "";
-    const hasRow = rowIndex !== undefined && rowIndex !== null && Number.isInteger(Number(rowIndex)) && Number(rowIndex) >= 1;
-    if (!hasRef && !hasRow) {
-      return res.status(400).json({
-        success: false,
-        message: "Either referenceMembershipNumber or rowIndex is required to identify the batch exception row",
-      });
+    if (!exceptionRefTrimmed) {
+      return res.status(400).json({ success: false, message: "exceptionMembershipNumber is required (reference number from batch exception row)" });
     }
 
     const batch = await BatchDetail.findOne({ _id: batchDetailId, isDeleted: false });
     if (!batch) {
-      return res.status(404).json({ success: false, message: "Batch detail not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found. Please check the batch ID.",
+      });
     }
 
-    let exceptionIndex = -1;
-    if (hasRow) {
-      const rowIndexNum = Number(rowIndex);
-      exceptionIndex = (batch.batchExceptions || []).findIndex((ex) => ex.rowIndex === rowIndexNum);
-      if (exceptionIndex === -1) {
-        return res.status(404).json({
-          success: false,
-          message: `No batch exception found with rowIndex ${rowIndexNum}`,
-        });
-      }
-    } else {
-      const refTrimmed = String(referenceMembershipNumber).trim();
-      exceptionIndex = (batch.batchExceptions || []).findIndex(
-        (ex) => String(ex.membershipNumber || "").trim() === refTrimmed
-      );
-      if (exceptionIndex === -1) {
-        return res.status(404).json({
-          success: false,
-          message: `No batch exception found with reference membership number "${refTrimmed}"`,
-        });
-      }
+    const exceptionIndex = (batch.batchExceptions || []).findIndex(
+      (ex) => String(ex.membershipNumber || "").trim() === exceptionRefTrimmed
+    );
+    if (exceptionIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: `There is no member with this membership number in batch exceptions. No exception found for "${exceptionRefTrimmed}".`,
+      });
     }
 
     const exceptionRow = batch.batchExceptions[exceptionIndex];
@@ -225,10 +204,11 @@ async function resolveBatchException(req, res) {
     if (!profile) {
       return res.status(404).json({
         success: false,
-        message: "Profile not found for membership number " + membershipNumberTrimmed,
+        message: "Please provide the correct membership number. No profile found with this membership number.",
       });
     }
 
+    // File row from the batch exception (reference number, name, value, rowIndex from file)
     const fileRow = {
       membershipNumber: exceptionRow.membershipNumber,
       lastName: exceptionRow.lastName,
@@ -239,9 +219,11 @@ async function resolveBatchException(req, res) {
     };
     const paymentEntry = batchPaymentProcess.buildBatchPaymentEntryFromProfile(profile, fileRow);
 
-    batch.batchExceptions.splice(exceptionIndex, 1);
+    // 1. First add user to batch payment (profile details + file row from exception)
     batch.batchPayments = batch.batchPayments || [];
     batch.batchPayments.push(paymentEntry);
+    // 2. Then remove that user from batch exceptions
+    batch.batchExceptions.splice(exceptionIndex, 1);
     await batch.save();
 
     const updated = await BatchDetail.findById(batch._id)

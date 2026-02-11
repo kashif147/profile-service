@@ -147,38 +147,32 @@ Response: `{ "data": [...], "pagination": {...} }`
 
 ## Resolve Batch Exception (attach profile and move to batch payment)
 
-When a row in the file has a wrong or typo membership number (e.g. file has `M3245`, actual is `M12345`), it lands in **batch exceptions**. The admin can search for the user by the correct membership number (using the existing profile search API), then call this API to attach that profile to the exception row. The row is **removed from batch exceptions** and **added to batch payment**; all display data (name, email, etc.) comes from the profile, and the file row is kept as `fileRow` for reference.
+When a row in the file has a wrong or typo membership number (e.g. file has `M3245`, actual is `M12345`), it lands in **batch exceptions**. The admin calls this POST API with the **Batch ID** and the **two membership numbers**: the correct one (to find the user) and the exception reference (to identify the row). That user is **removed from batch exceptions** and **added to batch payment**; all display data comes from the profile.
 
 **Endpoint:** `POST /api/batch-details/:batchDetailId/resolve-exception`  
 **Auth:** Required (CRM users only)  
 **Content-Type:** `application/json`
 
+### Required in the API
+
+1. **Batch ID** – in the URL (`:batchDetailId`).
+2. **membershipNumber** – correct profile membership number (the user to attach; they will be removed from exceptions and added to batch payment).
+3. **exceptionMembershipNumber** – reference number from the batch exception row (the value from the file; identifies which exception row to resolve).
+
 ### Body
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| rowIndex | number | Yes | The 1-based row index of the exception row (from the file). Identifies which exception to resolve. |
-| profileId | string | No* | Profile ID (e.g. from profile search result). |
-| membershipNumber | string | No* | Correct membership number (e.g. `M12345`). Used to look up the profile. |
-
-\* One of `profileId` or `membershipNumber` is required.
+| membershipNumber | string | Yes | Correct profile membership number (e.g. `M12345`). Used to find the user and add them to batch payment. |
+| exceptionMembershipNumber | string | Yes | Reference number from the exception row (e.g. `M3245`). Identifies which row to remove from exceptions. |
 
 ### Example
 
 ```json
 POST /api/batch-details/67.../resolve-exception
 {
-  "rowIndex": 5,
-  "membershipNumber": "M12345"
-}
-```
-
-Or with profileId (e.g. after profile search):
-
-```json
-{
-  "rowIndex": 5,
-  "profileId": "692b..."
+  "membershipNumber": "M12345",
+  "exceptionMembershipNumber": "M3245"
 }
 ```
 
@@ -191,11 +185,45 @@ Or with profileId (e.g. after profile search):
 }
 ```
 
+### Validation errors (4xx)
+
+| Situation | HTTP | Message |
+|-----------|------|--------|
+| Batch ID invalid or batch not present | 404 | `Batch not found. Please check the batch ID.` |
+| Exception membership number not in this batch | 404 | `There is no member with this membership number in batch exceptions. No exception found for "<value>".` |
+| Correct membership number not in profiles | 404 | `Please provide the correct membership number. No profile found with this membership number.` |
+| Missing body fields | 400 | `membershipNumber is required...` / `exceptionMembershipNumber is required...` |
+
+### curl example (resolve exception)
+
+Replace `YOUR_TOKEN`, `BATCH_DETAIL_ID`, and the membership numbers as needed.
+
+```bash
+curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-service/api/batch-details/BATCH_DETAIL_ID/resolve-exception" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "membershipNumber": "M12345",
+    "exceptionMembershipNumber": "M3245"
+  }'
+```
+
+**Example with real values:**
+
+```bash
+curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-service/api/batch-details/67f1a2b3c4d5e6f7a8b9c0d1/resolve-exception" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{"membershipNumber":"M12345","exceptionMembershipNumber":"M3245"}'
+```
+
+**Success (200):** response body includes `message` and full batch `data` with updated `batchPayments` and `batchExceptions`.
+
+**Validation errors (404):** response body is JSON, e.g. `{"success":false,"message":"Please provide the correct membership number. No profile found with this membership number."}`.
+
 ### Frontend flow
 
 1. Batch exceptions list shows each row with **reference number** = membership number from file (e.g. `M3245`).
-2. Admin types the **correct** membership number (e.g. `M12345`) in a search field.
-3. Frontend calls **profile search** (e.g. `GET /api/profile/search?q=M12345`) and shows results.
-4. Admin selects the matching profile.
-5. Frontend calls **resolve-exception** with `batchDetailId`, `rowIndex` of that exception row, and `profileId` (or `membershipNumber`).
-6. That row disappears from exceptions and appears in batch payment with profile data and file row reference.
+2. Admin enters the **correct** membership number (e.g. `M12345`) for that user.
+3. Frontend calls **resolve-exception**: `POST /api/batch-details/:batchDetailId/resolve-exception` with body `{ "membershipNumber": "M12345", "exceptionMembershipNumber": "M3245" }`.
+4. That row is removed from exceptions and added to batch payment with profile data.
