@@ -1,5 +1,6 @@
 const Joi = require("joi");
 const {
+  APPLICATION_STATUS,
   PREFERRED_ADDRESS,
   PREFERRED_EMAIL,
   PAYMENT_TYPE,
