@@ -312,8 +312,11 @@ async function addPaymentToBatch(req, res) {
       return res.status(400).json({ success: false, message: "badgeReferenceNumber is required" });
     }
     if (amountNum == null || !Number.isFinite(amountNum)) {
-      return res.status(400).json({ success: false, message: "amount is required and must be a valid number (in cents)" });
+      return res.status(400).json({ success: false, message: "amount is required and must be a valid number (in Euro, same as in file)" });
     }
+
+    // Convert Euro to cents (same as file processing)
+    const amountInCents = Math.round(amountNum * 100);
 
     const batch = await BatchDetail.findOne({ _id: batchDetailId, isDeleted: false });
     if (!batch) {
@@ -350,7 +353,7 @@ async function addPaymentToBatch(req, res) {
       lastName: null,
       firstName: null,
       fullName: memberNameTrimmed,
-      valueForPeriodSelected: amountNum,
+      valueForPeriodSelected: amountInCents,
       rowIndex: 0,
     };
 

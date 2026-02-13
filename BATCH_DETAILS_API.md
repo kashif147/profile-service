@@ -245,7 +245,7 @@ Allows an admin to manually add a profile/payment to a batch without uploading a
 | membershipNumber | string | Membership number of the member (must exist in profiles) |
 | memberName | string | Full name of the member (stored in fileRow.fullName) |
 | badgeReferenceNumber | string | Must match the batch's referenceNumber (validation) |
-| amount | number | Amount in **cents** (stored in valueForPeriodSelected) |
+| amount | number | Amount in **Euro** (same as in file; converted to cents when stored) |
 
 ### Validation
 
@@ -272,8 +272,8 @@ curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-serv
     "membershipNumber": "M12345",
     "memberName": "John Smith",
     "badgeReferenceNumber": "BATCH-001",
-    "amount": 5000
+    "amount": 50
   }'
 ```
 
-*(amount 5000 = €50.00 in cents)*
+*(amount 50 = €50.00, stored as 5000 cents)*
