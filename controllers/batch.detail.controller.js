@@ -281,4 +281,101 @@ async function resolveBatchException(req, res) {
   }
 }
 
-module.exports = { createBatchDetail, getBatchDetailById, getAllBatchDetails, resolveBatchException };
+/**
+ * Add a payment to a batch detail manually.
+ * Admin provides: membershipNumber, memberName, badgeReferenceNumber, amount (in cents).
+ * Validates that batchDetailId, badgeReferenceNumber belong to the same batch.
+ * Fetches profile by membership number and adds to batchPayments with fileRow built from input.
+ */
+async function addPaymentToBatch(req, res) {
+  try {
+    if (req.user?.userType !== "CRM") {
+      return res.status(403).json({ success: false, message: "Only CRM users can add payments to batch details" });
+    }
+
+    const { batchDetailId } = req.params;
+    const { membershipNumber, memberName, badgeReferenceNumber, amount } = req.body || {};
+    const tenantId = req.user?.tenantId || null;
+
+    const membershipNumberTrimmed = membershipNumber != null ? String(membershipNumber).trim() : "";
+    const memberNameTrimmed = memberName != null ? String(memberName).trim() : "";
+    const badgeRefTrimmed = badgeReferenceNumber != null ? String(badgeReferenceNumber).trim() : "";
+    const amountNum = amount != null && amount !== "" ? Number(amount) : null;
+
+    if (!membershipNumberTrimmed) {
+      return res.status(400).json({ success: false, message: "membershipNumber is required" });
+    }
+    if (!memberNameTrimmed) {
+      return res.status(400).json({ success: false, message: "memberName is required" });
+    }
+    if (!badgeRefTrimmed) {
+      return res.status(400).json({ success: false, message: "badgeReferenceNumber is required" });
+    }
+    if (amountNum == null || !Number.isFinite(amountNum)) {
+      return res.status(400).json({ success: false, message: "amount is required and must be a valid number (in cents)" });
+    }
+
+    const batch = await BatchDetail.findOne({ _id: batchDetailId, isDeleted: false });
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch detail not found. Please check the batch ID.",
+      });
+    }
+
+    const batchRefTrimmed = String(batch.referenceNumber || "").trim();
+    if (batchRefTrimmed !== badgeRefTrimmed) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Badge reference number does not match this batch. The membership number, badge reference number, and batch ID must belong to the same batch.",
+      });
+    }
+
+    const profileQuery = { membershipNumber: membershipNumberTrimmed };
+    if (tenantId) profileQuery.tenantId = tenantId;
+    const profile = await Profile.findOne(profileQuery)
+      .select("membershipNumber personalInfo contactInfo professionalDetails preferences")
+      .lean();
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: "No profile found with this membership number. Please provide a valid membership number.",
+      });
+    }
+
+    const fileRow = {
+      membershipNumber: membershipNumberTrimmed,
+      lastName: null,
+      firstName: null,
+      fullName: memberNameTrimmed,
+      valueForPeriodSelected: amountNum,
+      rowIndex: 0,
+    };
+
+    const paymentEntry = batchPaymentProcess.buildBatchPaymentEntryFromProfile(profile, fileRow);
+    batch.batchPayments = batch.batchPayments || [];
+    batch.batchPayments.push(paymentEntry);
+    await batch.save();
+
+    const updated = await BatchDetail.findById(batch._id)
+      .populate("batchPayments.profileId", "membershipNumber personalInfo contactInfo professionalDetails preferences")
+      .lean();
+
+    const createdByName = await resolveCreatedByName(updated.createdBy, tenantId);
+
+    return res.status(200).json({
+      message: "Payment added to batch successfully.",
+      data: { ...updated, createdBy: createdByName },
+    });
+  } catch (error) {
+    console.error("[BatchDetail] addPaymentToBatch error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to add payment to batch",
+    });
+  }
+}
+
+module.exports = { createBatchDetail, getBatchDetailById, getAllBatchDetails, resolveBatchException, addPaymentToBatch };

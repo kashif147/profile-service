@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { authenticate } = require("../middlewares/auth");
 const { uploadSingleOptional } = require("../middlewares/upload.mw");
-const { createBatchDetail, getBatchDetailById, getAllBatchDetails, resolveBatchException } = require("../controllers/batch.detail.controller");
+const { createBatchDetail, getBatchDetailById, getAllBatchDetails, resolveBatchException, addPaymentToBatch } = require("../controllers/batch.detail.controller");
 
 router.use(authenticate);
 
@@ -23,6 +23,18 @@ router.get("/", getAllBatchDetails);
 
 // Get single batch detail by ID
 router.get("/:batchDetailId", getBatchDetailById);
+
+// Add a payment to a batch manually (membership number, member name, badge reference number, amount in cents)
+router.post(
+  "/:batchDetailId/add-payment",
+  (req, res, next) => {
+    if (req.user?.userType !== "CRM") {
+      return res.status(403).json({ success: false, message: "Only CRM users can add payments to batch details" });
+    }
+    next();
+  },
+  addPaymentToBatch
+);
 
 // Resolve a batch exception by attaching a profile (move row from exceptions to payments)
 router.post(

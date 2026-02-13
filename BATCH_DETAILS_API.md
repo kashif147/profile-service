@@ -227,3 +227,53 @@ curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-serv
 2. Admin enters the **correct** membership number (e.g. `M12345`) for that user.
 3. Frontend calls **resolve-exception**: `POST /api/batch-details/:batchDetailId/resolve-exception` with body `{ "membershipNumber": "M12345", "exceptionMembershipNumber": "M3245" }`.
 4. That row is removed from exceptions and added to batch payment with profile data.
+
+---
+
+## Add Payment to Batch (manual entry)
+
+Allows an admin to manually add a payment to a batch without uploading a file. The membership number, badge reference number, and batch ID must all belong to the same batch.
+
+**Endpoint:** `POST /api/batch-details/:batchDetailId/add-payment`  
+**Auth:** Required (CRM users only)  
+**Content-Type:** `application/json`
+
+### Required fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| membershipNumber | string | Membership number of the member (must exist in profiles) |
+| memberName | string | Full name of the member (stored in fileRow.fullName) |
+| badgeReferenceNumber | string | Must match the batch's referenceNumber (validation) |
+| amount | number | Amount in **cents** (stored in valueForPeriodSelected) |
+
+### Validation
+
+- Batch must exist and not be deleted.
+- `badgeReferenceNumber` must exactly match the batch's `referenceNumber` — otherwise returns 400.
+- Profile must exist for the given `membershipNumber` — otherwise returns 404.
+
+### Response (200 OK)
+
+```json
+{
+  "message": "Payment added to batch successfully.",
+  "data": { ... full batch detail with updated batchPayments ... }
+}
+```
+
+### curl example
+
+```bash
+curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-service/api/batch-details/6989e67794b7bd76a2eb211a/add-payment" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "membershipNumber": "M12345",
+    "memberName": "John Smith",
+    "badgeReferenceNumber": "BATCH-001",
+    "amount": 5000
+  }'
+```
+
+*(amount 5000 = €50.00 in cents)*
