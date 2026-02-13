@@ -53,6 +53,7 @@ async function fetchSubscriptionStartDates(profileIds, authHeader) {
 /**
  * Build batch recruitmentDetails from first profile (recruit-friend only).
  * Returns { recruitedBy, recruitedByMembershipNo, confirmedRecruiterProfileId } or all nulls.
+ * Profile model uses typo keys (recuritedBy, recuritedByMembershipNo); we read both and map to Batch keys.
  */
 function buildBatchRecruitmentDetails(profile) {
   if (!profile?.recruitmentDetails) {
@@ -64,8 +65,8 @@ function buildBatchRecruitmentDetails(profile) {
   }
   const rd = profile.recruitmentDetails;
   return {
-    recruitedBy: rd.recruitedBy ?? null,
-    recruitedByMembershipNo: rd.recruitedByMembershipNo ?? null,
+    recruitedBy: rd.recruitedBy ?? rd.recuritedBy ?? null,
+    recruitedByMembershipNo: rd.recruitedByMembershipNo ?? rd.recuritedByMembershipNo ?? null,
     confirmedRecruiterProfileId: rd.confirmedRecruiterProfileId ?? null,
   };
 }
