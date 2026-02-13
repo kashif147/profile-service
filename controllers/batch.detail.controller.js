@@ -435,6 +435,12 @@ async function processBatchDetail(req, res) {
       });
     }
 
+    // Mark batch as processed (from pending)
+    await BatchDetail.updateOne(
+      { _id: batchDetailId, isDeleted: false },
+      { $set: { batchStatus: "processed" } }
+    );
+
     return res.status(response.status).json({
       success: true,
       message: "Batch processed in account service",
