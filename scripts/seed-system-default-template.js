@@ -9,7 +9,7 @@
 
 const mongoose = require("mongoose");
 const Template = require("../models/template.model");
-const { APPLICATION_STATUS } = require("../constants/enums");
+const { APPLICATION_STATUS, APPLICATION_RESPONSE_COLUMNS } = require("../constants/enums");
 require("dotenv").config();
 
 // Database connection string - reads from environment variable or .env file
@@ -17,15 +17,19 @@ const MONGODB_URI = process.env.MONGODB_URI || process.env.DATABASE_URL || "mong
 
 // System Default Template Configuration
 const SYSTEM_DEFAULT_TEMPLATE = {
-  templateType: "application", // Type of template: "application" or any future type
-  userId: null, // System template doesn't belong to any user
+  name: "System default",
+  templateType: "application",
+  userId: null,
   filters: {
-    type: APPLICATION_STATUS.SUBMITTED, // Show only submitted applications by default
+    applicationStatus: {
+      operator: "equal_to",
+      values: [APPLICATION_STATUS.SUBMITTED],
+    },
   },
-  columns: [], // Empty array = return all fields
-  isDefault: false, // Not a user's default
+  columns: [...APPLICATION_RESPONSE_COLUMNS],
+  isDefault: false,
   pinned: false,
-  systemDefault: true, // THIS IS THE SYSTEM DEFAULT
+  systemDefault: true,
   meta: {
     deleted: false,
     deletedAt: null,

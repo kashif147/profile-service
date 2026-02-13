@@ -1,7 +1,18 @@
 const PersonalDetails = require("../models/personal.details.model");
 const ProfessionalDetails = require("../models/professional.details.model");
 const SubscriptionDetails = require("../models/subscription.model");
-const { APPLICATION_STATUS } = require("../constants/enums");
+const {
+  APPLICATION_STATUS,
+  FILTER_OPERATOR,
+  TEMPLATE_FILTER_KEYS,
+  FILTER_FIELD_MAP,
+} = require("../constants/enums");
+
+/** System default filters applied for template-based application listing (admin/system default). */
+const SYSTEM_DEFAULT_APPLICATION_FILTERS = {
+  /** Only non-deleted applications (max relevant results). */
+  "meta.deleted": false,
+};
 // membership number generation moved to Profile creation flow
 
 exports.getAllApplications = (statusFilters = []) =>
@@ -311,14 +322,80 @@ const filterByColumns = (obj, columns) => {
  * NEW METHOD - Get applications with template filters and column filtering
  * Completely separate from getAllApplicationsWithDetails
  * Used exclusively by the PUT API
+ * @param {Object} filters - Keyed by model field names (applicationStatus, membershipCategory). Each: { operator: "equal_to"|"not_equal_to", values: string[] }
  */
-exports.getApplicationsWithTemplateFilters = (statusFilters = [], page = 1, limit = 10, columns = []) =>
+exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10, columns = []) =>
   new Promise(async (resolve, reject) => {
     try {
-      let query = {};
+      // Start with system defaults: exclude deleted so we get maximum relevant results
+      const query = { ...SYSTEM_DEFAULT_APPLICATION_FILTERS };
 
-      if (statusFilters && statusFilters.length > 0) {
-        query.applicationStatus = { $in: statusFilters };
+      // Resolve filters: frontend sends camelCase keys (e.g. workLocation); we map to DB path and apply.
+      const applicationIdSets = [];
+
+      for (const [filterKey, filterEntry] of Object.entries(filters || {})) {
+        if (!filterEntry || !filterEntry.values || filterEntry.values.length === 0) continue;
+        const config = FILTER_FIELD_MAP[filterKey];
+        if (!config) continue;
+
+        const op = filterEntry.operator === FILTER_OPERATOR.EQUAL_TO ? "$in" : "$nin";
+        const values = filterEntry.values;
+
+        if (config.source === "personalDetails") {
+          query[config.path] = { [op]: values };
+        } else if (config.source === "both") {
+          // membershipCategory: from SubscriptionDetails or ProfessionalDetails
+          const categoryQuery = { $in: values };
+          const subs = await SubscriptionDetails.find({
+            [config.pathSubs]: categoryQuery,
+          }).select("applicationId");
+          const profs = await ProfessionalDetails.find({
+            [config.pathProf]: categoryQuery,
+          }).select("applicationId");
+          const ids = [...new Set([...subs.map((s) => s.applicationId), ...profs.map((p) => p.applicationId)])];
+          applicationIdSets.push({ ids, isEqual: filterEntry.operator === FILTER_OPERATOR.EQUAL_TO });
+        } else if (config.source === "professionalDetails") {
+          const q = { [config.path]: { [op]: values } };
+          const docs = await ProfessionalDetails.find(q).select("applicationId");
+          applicationIdSets.push({
+            ids: docs.map((d) => d.applicationId),
+            isEqual: filterEntry.operator === FILTER_OPERATOR.EQUAL_TO,
+          });
+        } else if (config.source === "subscriptionDetails") {
+          const q = { [config.path]: { [op]: values } };
+          const docs = await SubscriptionDetails.find(q).select("applicationId");
+          applicationIdSets.push({
+            ids: docs.map((d) => d.applicationId),
+            isEqual: filterEntry.operator === FILTER_OPERATOR.EQUAL_TO,
+          });
+        }
+      }
+
+      // applicationStatus: if not provided, default to submitted
+      if (!query.applicationStatus) {
+        query.applicationStatus = { $in: [APPLICATION_STATUS.SUBMITTED] };
+      }
+
+      // Intersect "equal_to" applicationId sets; then exclude "not_equal_to" ids
+      if (applicationIdSets.length > 0) {
+        const inSets = applicationIdSets.filter((s) => s.isEqual).map((s) => new Set(s.ids));
+        const notInSets = applicationIdSets.filter((s) => !s.isEqual).map((s) => new Set(s.ids));
+        let resultIds = null;
+        if (inSets.length > 0) {
+          resultIds = new Set(inSets[0]);
+          for (let i = 1; i < inSets.length; i++) {
+            resultIds = new Set([...resultIds].filter((id) => inSets[i].has(id)));
+          }
+          for (const notIn of notInSets) {
+            resultIds = new Set([...resultIds].filter((id) => !notIn.has(id)));
+          }
+        } else if (notInSets.length > 0) {
+          const unionNotIn = new Set(notInSets.flatMap((s) => [...s]));
+          query.applicationId = { $nin: [...unionNotIn] };
+        }
+        if (resultIds !== null) {
+          query.applicationId = resultIds.size > 0 ? { $in: [...resultIds] } : { $in: [] };
+        }
       }
 
       // Calculate pagination

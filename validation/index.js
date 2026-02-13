@@ -1,10 +1,12 @@
 const Joi = require("joi");
 const {
-  APPLICATION_STATUS,
   PREFERRED_ADDRESS,
   PREFERRED_EMAIL,
   PAYMENT_TYPE,
   PAYMENT_FREQUENCY,
+  FILTER_OPERATOR,
+  APPLICATION_RESPONSE_COLUMNS,
+  ALLOWED_FILTER_KEYS,
 } = require("../constants/enums");
 
 module.exports.personal_details_create = Joi.object({
@@ -316,38 +318,44 @@ module.exports.profile_update = Joi.object({
   }).optional(),
 });
 
+// Schema for a single filter: operator (equal_to | not_equal_to) + values array
+const filterEntrySchema = Joi.object({
+  operator: Joi.string()
+    .valid(FILTER_OPERATOR.EQUAL_TO, FILTER_OPERATOR.NOT_EQUAL_TO)
+    .required(),
+  values: Joi.array().items(Joi.string()).min(1).required(),
+});
+
+// No restriction on filter values; user sends values that match the model. Operator is required in filters only (not in columns).
 // Application Filter Template Validation
 module.exports.filter_template_create = Joi.object({
-  /** Type of template, e.g. "application". Can be any string. */
+  /** User-provided template name (e.g. "Submitted only") */
+  name: Joi.string().trim().allow("", null).optional().default(null),
+  /** Type of template, e.g. "application". */
   templateType: Joi.string().trim().optional().default("application"),
-  filters: Joi.object({
-    type: Joi.alternatives()
-      .try(
-        Joi.string().valid(...Object.values(APPLICATION_STATUS)),
-        Joi.array().items(
-          Joi.string().valid(...Object.values(APPLICATION_STATUS))
-        )
-      )
-      .optional(),
-  }).optional(),
-  columns: Joi.array().items(Joi.string()).optional().default([]),
+  /** Filters: camelCase keys (e.g. workLocation, applicationStatus). Each: { operator, values }. */
+  filters: Joi.object()
+    .pattern(Joi.string().valid(...ALLOWED_FILTER_KEYS), filterEntrySchema)
+    .optional()
+    .default({}),
+  /** Columns in camelCase; must be from APPLICATION_RESPONSE_COLUMNS. Operator is in filters only, not here. */
+  columns: Joi.array()
+    .items(Joi.string().valid(...APPLICATION_RESPONSE_COLUMNS))
+    .optional()
+    .default([]),
   isDefault: Joi.boolean().optional().default(false),
   pinned: Joi.boolean().optional().default(false),
 });
 
 module.exports.filter_template_update = Joi.object({
+  name: Joi.string().trim().allow("", null).optional(),
   templateType: Joi.string().trim().optional(),
-  filters: Joi.object({
-    type: Joi.alternatives()
-      .try(
-        Joi.string().valid(...Object.values(APPLICATION_STATUS)),
-        Joi.array().items(
-          Joi.string().valid(...Object.values(APPLICATION_STATUS))
-        )
-      )
-      .optional(),
-  }).optional(),
-  columns: Joi.array().items(Joi.string()).optional(),
+  filters: Joi.object()
+    .pattern(Joi.string().valid(...ALLOWED_FILTER_KEYS), filterEntrySchema)
+    .optional(),
+  columns: Joi.array()
+    .items(Joi.string().valid(...APPLICATION_RESPONSE_COLUMNS))
+    .optional(),
   isDefault: Joi.boolean().optional(),
   pinned: Joi.boolean().optional(),
 });

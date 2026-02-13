@@ -117,16 +117,16 @@ class ApplicationService {
   /**
    * NEW METHOD - Get applications with template-based filters and columns
    * Used by the PUT API for template-based filtering
-   * @param {Array} statusFilters - Array of status values to filter by
+   * @param {Object} filters - Filters keyed by model field names (applicationStatus, membershipCategory). Each: { operator: "equal_to"|"not_equal_to", values: string[] }
    * @param {number} page - Page number (default: 1)
    * @param {number} limit - Number of items per page (default: 10)
    * @param {Array} columns - Array of field names to include in response (empty = all fields)
    * @returns {Promise<Object>} Object containing applications array and pagination metadata
    */
-  async getApplicationsWithTemplateFilters(statusFilters = [], page = 1, limit = 10, columns = []) {
+  async getApplicationsWithTemplateFilters(filters = {}, page = 1, limit = 10, columns = []) {
     try {
       return await applicationHandler.getApplicationsWithTemplateFilters(
-        statusFilters,
+        filters,
         page,
         limit,
         columns

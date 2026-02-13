@@ -1,8 +1,20 @@
 const BatchDetail = require("../models/batch.detail.model.js");
 const Profile = require("../models/profile.model.js");
+const User = require("../models/user.model.js");
 const { AppError } = require("../errors/AppError");
 const azureBlob = require("../services/azure.blob.service");
 const batchPaymentProcess = require("../services/batch.payment.process.service");
+
+/**
+ * Resolve createdBy userId to userFullName for API responses
+ */
+async function resolveCreatedByName(createdBy, tenantId) {
+  if (!createdBy || createdBy === "unknown") return createdBy;
+  const user = await User.findOne({ userId: createdBy, tenantId })
+    .select("userFullName")
+    .lean();
+  return user?.userFullName || createdBy;
+}
 const { v4: uuidv4 } = require("uuid");
 
 
@@ -80,18 +92,20 @@ async function createBatchDetail(req, res) {
       } catch (err) {
         console.error("[BatchDetail] file processing error:", err.message);
         const saved = await BatchDetail.findById(batch._id).lean();
+        const createdByName = await resolveCreatedByName(saved.createdBy, tenantId);
         return res.status(201).json({
           message: "Batch is created. File processing failed: " + err.message,
-          data: saved,
+          data: { ...saved, createdBy: createdByName },
         });
       }
     }
 
-    // Return the created batch
+    // Return the created batch with creator name instead of ID
     const saved = await BatchDetail.findById(batch._id).lean();
+    const createdByName = await resolveCreatedByName(saved.createdBy, tenantId);
     return res.status(201).json({
       message: "Batch is created.",
-      data: saved,
+      data: { ...saved, createdBy: createdByName },
     });
   } catch (error) {
     console.error("[BatchDetail] create error:", error.message);
@@ -110,7 +124,9 @@ async function getBatchDetailById(req, res) {
     if (!batch) {
       return res.status(404).json({ success: false, message: "Batch detail not found" });
     }
-    return res.json({ data: batch });
+    const tenantId = req.user?.tenantId || null;
+    const createdByName = await resolveCreatedByName(batch.createdBy, tenantId);
+    return res.json({ data: { ...batch, createdBy: createdByName } });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -140,8 +156,22 @@ async function getAllBatchDetails(req, res) {
       BatchDetail.countDocuments(query),
     ]);
 
+    // Resolve createdBy IDs to user names
+    const creatorIds = [...new Set(batches.map((b) => b.createdBy).filter(Boolean))];
+    const users = await User.find({
+      userId: { $in: creatorIds },
+      tenantId,
+    })
+      .select("userId userFullName")
+      .lean();
+    const userMap = new Map(users.map((u) => [u.userId, u.userFullName]));
+    const batchesWithCreatorName = batches.map((b) => ({
+      ...b,
+      createdBy: userMap.get(b.createdBy) || b.createdBy,
+    }));
+
     return res.json({
-      data: batches,
+      data: batchesWithCreatorName,
       pagination: {
         page,
         limit,
@@ -184,17 +214,17 @@ async function resolveBatchException(req, res) {
       });
     }
 
-    const exceptionIndex = (batch.batchExceptions || []).findIndex(
+    const exceptions = batch.batchExceptions || [];
+    const matchingExceptions = exceptions.filter(
       (ex) => String(ex.membershipNumber || "").trim() === exceptionRefTrimmed
     );
-    if (exceptionIndex === -1) {
+    if (matchingExceptions.length === 0) {
       return res.status(404).json({
         success: false,
         message: `There is no member with this membership number in batch exceptions. No exception found for "${exceptionRefTrimmed}".`,
       });
     }
 
-    const exceptionRow = batch.batchExceptions[exceptionIndex];
     const profileQuery = { membershipNumber: membershipNumberTrimmed };
     if (tenantId) profileQuery.tenantId = tenantId;
     const profile = await Profile.findOne(profileQuery)
@@ -208,31 +238,39 @@ async function resolveBatchException(req, res) {
       });
     }
 
-    // File row from the batch exception (reference number, name, value, rowIndex from file)
-    const fileRow = {
-      membershipNumber: exceptionRow.membershipNumber,
-      lastName: exceptionRow.lastName,
-      firstName: exceptionRow.firstName,
-      fullName: exceptionRow.fullName,
-      valueForPeriodSelected: exceptionRow.valueForPeriodSelected,
-      rowIndex: exceptionRow.rowIndex,
-    };
-    const paymentEntry = batchPaymentProcess.buildBatchPaymentEntryFromProfile(profile, fileRow);
-
-    // 1. First add user to batch payment (profile details + file row from exception)
+    // For each matching exception row: one payment entry with profile + that row's amount/rowIndex
     batch.batchPayments = batch.batchPayments || [];
-    batch.batchPayments.push(paymentEntry);
-    // 2. Then remove that user from batch exceptions
-    batch.batchExceptions.splice(exceptionIndex, 1);
+    for (const exceptionRow of matchingExceptions) {
+      const fileRow = {
+        membershipNumber: exceptionRow.membershipNumber,
+        lastName: exceptionRow.lastName,
+        firstName: exceptionRow.firstName,
+        fullName: exceptionRow.fullName,
+        valueForPeriodSelected: exceptionRow.valueForPeriodSelected,
+        rowIndex: exceptionRow.rowIndex,
+      };
+      const paymentEntry = batchPaymentProcess.buildBatchPaymentEntryFromProfile(profile, fileRow);
+      batch.batchPayments.push(paymentEntry);
+    }
+
+    // Remove all matching exceptions from batch exceptions
+    batch.batchExceptions = exceptions.filter(
+      (ex) => String(ex.membershipNumber || "").trim() !== exceptionRefTrimmed
+    );
     await batch.save();
 
     const updated = await BatchDetail.findById(batch._id)
       .populate("batchPayments.profileId", "membershipNumber personalInfo contactInfo professionalDetails preferences")
       .lean();
 
+    const createdByName = await resolveCreatedByName(updated.createdBy, tenantId);
+
+    const count = matchingExceptions.length;
     return res.status(200).json({
-      message: "Batch exception resolved; row moved to batch payment",
-      data: updated,
+      message: count === 1
+        ? "Batch exception resolved; 1 row moved to batch payment"
+        : `Batch exception resolved; ${count} rows moved to batch payment`,
+      data: { ...updated, createdBy: createdByName },
     });
   } catch (error) {
     console.error("[BatchDetail] resolveBatchException error:", error.message);

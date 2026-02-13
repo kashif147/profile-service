@@ -2,6 +2,14 @@ const Template = require("../models/template.model");
 const { AppError } = require("../errors/AppError");
 const { APPLICATION_STATUS } = require("../constants/enums");
 
+/** Return template for API response (no meta, no __v) */
+function toTemplateResponse(doc) {
+  const obj = doc && typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+  delete obj.meta;
+  delete obj.__v;
+  return obj;
+}
+
 /**
  * Application Filter Template Service Layer
  * Contains business logic for filter template operations
@@ -15,7 +23,7 @@ class TemplateService {
    */
   async createTemplate(userId, templateData) {
     try {
-      const { templateType, filters, columns, isDefault, pinned } = templateData;
+      const { name, templateType, filters, columns, isDefault, pinned } = templateData;
       const type = templateType || "application";
 
       if (isDefault) {
@@ -34,6 +42,7 @@ class TemplateService {
 
       const template = new Template({
         userId,
+        name: name != null && name !== "" ? name : undefined,
         templateType: type,
         filters: filters || {},
         columns: columns || [],
@@ -41,7 +50,8 @@ class TemplateService {
         pinned: pinned || false,
       });
 
-      return await template.save();
+      const saved = await template.save();
+      return toTemplateResponse(saved);
     } catch (error) {
       console.error(
         "TemplateService [createTemplate] Error:",
@@ -158,7 +168,7 @@ class TemplateService {
    */
   async updateTemplate(templateId, userId, updateData) {
     try {
-      const { templateType, filters, columns, isDefault, pinned } = updateData;
+      const { name, templateType, filters, columns, isDefault, pinned } = updateData;
 
       const template = await Template.findOne({
         _id: templateId,
@@ -189,6 +199,9 @@ class TemplateService {
       }
 
       // Update fields
+      if (name !== undefined) {
+        template.name = name !== "" ? name : null;
+      }
       if (templateType !== undefined) {
         template.templateType = templateType;
       }
@@ -205,7 +218,8 @@ class TemplateService {
         template.pinned = pinned;
       }
 
-      return await template.save();
+      const saved = await template.save();
+      return toTemplateResponse(saved);
     } catch (error) {
       console.error(
         "TemplateService [updateTemplate] Error:",
@@ -266,7 +280,10 @@ class TemplateService {
           userId,
           templateType: "application",
           filters: {
-            type: APPLICATION_STATUS.SUBMITTED,
+            applicationStatus: {
+              operator: "equal_to",
+              values: [APPLICATION_STATUS.SUBMITTED],
+            },
           },
           columns: [],
           isDefault: true,

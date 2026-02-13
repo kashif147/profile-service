@@ -111,14 +111,14 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
       }
     }
 
-    // Extract filters from template
-    let statusFilters = [];
-    if (template.filters && template.filters.type) {
-      if (Array.isArray(template.filters.type)) {
-        statusFilters = template.filters.type;
-      } else {
-        statusFilters = [template.filters.type];
-      }
+    // Normalize filters: support new shape (applicationStatus: { operator, values }) and legacy (type: value or [values])
+    let filters = template.filters || {};
+    if (filters.type !== undefined && !filters.applicationStatus) {
+      const legacyValues = Array.isArray(filters.type) ? filters.type : [filters.type];
+      filters = {
+        ...filters,
+        applicationStatus: { operator: "equal_to", values: legacyValues },
+      };
     }
 
     // Extract columns from template
@@ -127,7 +127,7 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
     // Get applications with filters using the NEW service method
     const result =
       await applicationService.getApplicationsWithTemplateFilters(
-        statusFilters,
+        filters,
         page,
         limit,
         columns

@@ -1,8 +1,13 @@
 const mongoose = require("mongoose");
-const { APPLICATION_STATUS } = require("../constants/enums");
 
 const TemplateSchema = new mongoose.Schema(
   {
+    /** User-provided name for the template (e.g. "My submitted applications") */
+    name: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     templateType: {
       type: String,
       default: "application",
@@ -12,14 +17,13 @@ const TemplateSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: false, 
+      required: false,
       index: true,
-    }, 
+    },
+    
     filters: {
-      type: {
-        type: mongoose.Schema.Types.Mixed, 
-        required: false,
-      },
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
     },
     columns: {
       type: [String], 
