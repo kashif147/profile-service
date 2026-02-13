@@ -398,6 +398,14 @@ async function processBatchDetail(req, res) {
       return res.status(404).json({ success: false, message: "Batch detail not found" });
     }
 
+    if (batch.batchStatus === "processed") {
+      return res.status(400).json({
+        success: false,
+        message: "Batch is already processed",
+        batchStatus: batch.batchStatus,
+      });
+    }
+
     const batchPayments = Array.isArray(batch.batchPayments) ? batch.batchPayments : [];
     if (batchPayments.length === 0) {
       return res.status(400).json({
