@@ -149,7 +149,7 @@ Response: `{ "data": [...], "pagination": {...} }`
 
 When a row in the file has a wrong or typo membership number (e.g. file has `M3245`, actual is `M12345`), it lands in **batch exceptions**. The admin calls this POST API with the **Batch ID** and the **two membership numbers**: the correct one (to find the user) and the exception reference (to identify the row). That user is **removed from batch exceptions** and **added to batch payment**; all display data comes from the profile.
 
-**Endpoint:** `POST /api/batch-details/:batchDetailId/resolve-exception`  
+**Endpoint:** `POST /api/batch-details/resolve-exception/:batchDetailId`  
 **Auth:** Required (CRM users only)  
 **Content-Type:** `application/json`
 
@@ -169,7 +169,7 @@ When a row in the file has a wrong or typo membership number (e.g. file has `M32
 ### Example
 
 ```json
-POST /api/batch-details/67.../resolve-exception
+POST /api/batch-details/resolve-exception/67...
 {
   "membershipNumber": "M12345",
   "exceptionMembershipNumber": "M3245"
@@ -199,7 +199,7 @@ POST /api/batch-details/67.../resolve-exception
 Replace `YOUR_TOKEN`, `BATCH_DETAIL_ID`, and the membership numbers as needed.
 
 ```bash
-curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-service/api/batch-details/BATCH_DETAIL_ID/resolve-exception" \
+curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-service/api/batch-details/resolve-exception/BATCH_DETAIL_ID" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{
@@ -211,7 +211,7 @@ curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-serv
 **Example with real values:**
 
 ```bash
-curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-service/api/batch-details/67f1a2b3c4d5e6f7a8b9c0d1/resolve-exception" \
+curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-service/api/batch-details/resolve-exception/67f1a2b3c4d5e6f7a8b9c0d1" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..." \
   -d '{"membershipNumber":"M12345","exceptionMembershipNumber":"M3245"}'
@@ -225,16 +225,16 @@ curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-serv
 
 1. Batch exceptions list shows each row with **reference number** = membership number from file (e.g. `M3245`).
 2. Admin enters the **correct** membership number (e.g. `M12345`) for that user.
-3. Frontend calls **resolve-exception**: `POST /api/batch-details/:batchDetailId/resolve-exception` with body `{ "membershipNumber": "M12345", "exceptionMembershipNumber": "M3245" }`.
+3. Frontend calls **resolve-exception**: `POST /api/batch-details/resolve-exception/:batchDetailId` with body `{ "membershipNumber": "M12345", "exceptionMembershipNumber": "M3245" }`.
 4. That row is removed from exceptions and added to batch payment with profile data.
 
 ---
 
-## Add Payment to Batch (manual entry)
+## Add Profile to Batch (manual entry)
 
-Allows an admin to manually add a payment to a batch without uploading a file. The membership number, badge reference number, and batch ID must all belong to the same batch.
+Allows an admin to manually add a profile/payment to a batch without uploading a file. The membership number, badge reference number, and batch ID must all belong to the same batch.
 
-**Endpoint:** `POST /api/batch-details/:batchDetailId/add-payment`  
+**Endpoint:** `POST /api/batch-details/add-profile/:batchDetailId`  
 **Auth:** Required (CRM users only)  
 **Content-Type:** `application/json`
 
@@ -265,7 +265,7 @@ Allows an admin to manually add a payment to a batch without uploading a file. T
 ### curl example
 
 ```bash
-curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-service/api/batch-details/6989e67794b7bd76a2eb211a/add-payment" \
+curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-service/api/batch-details/add-profile/6989e67794b7bd76a2eb211a" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{

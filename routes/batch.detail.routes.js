@@ -21,12 +21,9 @@ router.post("/",
 // Get all batch details (list with pagination)
 router.get("/", getAllBatchDetails);
 
-// Get single batch detail by ID
-router.get("/:batchDetailId", getBatchDetailById);
-
-// Add a payment to a batch manually (membership number, member name, badge reference number, amount in cents)
+// Add a profile/payment to a batch manually — ID at end: /batch-details/add-profile/:batchDetailId
 router.post(
-  "/:batchDetailId/add-payment",
+  "/add-profile/:batchDetailId",
   (req, res, next) => {
     if (req.user?.userType !== "CRM") {
       return res.status(403).json({ success: false, message: "Only CRM users can add payments to batch details" });
@@ -36,9 +33,9 @@ router.post(
   addPaymentToBatch
 );
 
-// Resolve a batch exception by attaching a profile (move row from exceptions to payments)
+// Resolve a batch exception — ID at end: /batch-details/resolve-exception/:batchDetailId
 router.post(
-  "/:batchDetailId/resolve-exception",
+  "/resolve-exception/:batchDetailId",
   (req, res, next) => {
     if (req.user?.userType !== "CRM") {
       return res.status(403).json({ success: false, message: "Only CRM users can resolve batch exceptions" });
@@ -47,5 +44,8 @@ router.post(
   },
   resolveBatchException
 );
+
+// Get single batch detail by ID (must be last to avoid capturing add-payment, resolve-exception as IDs)
+router.get("/:batchDetailId", getBatchDetailById);
 
 module.exports = router;
