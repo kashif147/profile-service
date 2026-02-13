@@ -2,7 +2,14 @@ const express = require("express");
 const router = express.Router();
 const { authenticate } = require("../middlewares/auth");
 const { uploadSingleOptional } = require("../middlewares/upload.mw");
-const { createBatchDetail, getBatchDetailById, getAllBatchDetails, resolveBatchException, addPaymentToBatch } = require("../controllers/batch.detail.controller");
+const {
+  createBatchDetail,
+  getBatchDetailById,
+  getAllBatchDetails,
+  resolveBatchException,
+  addPaymentToBatch,
+  processBatchDetail,
+} = require("../controllers/batch.detail.controller");
 
 router.use(authenticate);
 
@@ -44,8 +51,19 @@ router.post(
   },
   resolveBatchException
 );
+// Process batch — call account-service to create GL entries for batchPayments; ID last: /process/:batchDetailId
+router.post(
+  "/process/:batchDetailId",
+  (req, res, next) => {
+    if (req.user?.userType !== "CRM") {
+      return res.status(403).json({ success: false, message: "Only CRM users can process batch details" });
+    }
+    next();
+  },
+  processBatchDetail
+);
 
-// Get single batch detail by ID (must be last to avoid capturing add-payment, resolve-exception as IDs)
+// Get single batch detail by ID (must be last to avoid capturing add-payment, resolve-exception, process as IDs)
 router.get("/:batchDetailId", getBatchDetailById);
 
 module.exports = router;

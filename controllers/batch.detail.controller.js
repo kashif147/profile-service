@@ -4,6 +4,7 @@ const User = require("../models/user.model.js");
 const { AppError } = require("../errors/AppError");
 const azureBlob = require("../services/azure.blob.service");
 const batchPaymentProcess = require("../services/batch.payment.process.service");
+const axios = require("axios");
 
 /**
  * Resolve createdBy userId to userFullName for API responses
@@ -381,4 +382,85 @@ async function addPaymentToBatch(req, res) {
   }
 }
 
-module.exports = { createBatchDetail, getBatchDetailById, getAllBatchDetails, resolveBatchException, addPaymentToBatch };
+/**
+ * Process batch: load batch by ID, then call account-service to create GL Receipts
+ * for each member in batchPayments (not batchExceptions).
+ */
+async function processBatchDetail(req, res) {
+  try {
+    if (req.user?.userType !== "CRM") {
+      return res.status(403).json({ success: false, message: "Only CRM users can process batch details" });
+    }
+
+    const { batchDetailId } = req.params;
+    const batch = await BatchDetail.findOne({ _id: batchDetailId, isDeleted: false }).lean();
+    if (!batch) {
+      return res.status(404).json({ success: false, message: "Batch detail not found" });
+    }
+
+    const batchPayments = Array.isArray(batch.batchPayments) ? batch.batchPayments : [];
+    if (batchPayments.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Batch has no batchPayments to process (only batchPayments are processed, not exceptions)",
+      });
+    }
+
+    const accountServiceUrl = process.env.ACCOUNT_SERVICE_URL || `https://projectshell-vm.northeurope.cloudapp.azure.com/account-service`;
+    const url = `${accountServiceUrl}/api/journal/process-batch`;
+    const headers = {
+      "Content-Type": "application/json",
+      ...(req.headers?.authorization && { Authorization: req.headers.authorization }),
+      ...(req.user?.tenantId && { "x-tenant-id": req.user.tenantId }),
+    };
+
+    const response = await axios.post(
+      url,
+      {
+        paymentDate: batch.paymentDate,
+        batchPayments,
+      },
+      {
+        headers,
+        timeout: 60000,
+        validateStatus: (status) => status < 500,
+      }
+    );
+
+    if (response.status >= 400) {
+      return res.status(response.status).json({
+        success: false,
+        message: response.data?.message || response.data?.error || "Account service error",
+        details: response.data,
+      });
+    }
+
+    return res.status(response.status).json({
+      success: true,
+      message: "Batch processed in account service",
+      data: response.data,
+    });
+  } catch (error) {
+    if (error.response) {
+      return res.status(error.response.status).json({
+        success: false,
+        message: error.response.data?.message || error.message,
+        details: error.response.data,
+      });
+    }
+    console.error("[BatchDetail] processBatchDetail error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to process batch",
+    });
+  }
+}
+
+module.exports = {
+  createBatchDetail,
+  getBatchDetailById,
+  getAllBatchDetails,
+  resolveBatchException,
+  addPaymentToBatch,
+  processBatchDetail,
+};
