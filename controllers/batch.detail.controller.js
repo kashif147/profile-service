@@ -16,6 +16,22 @@ async function resolveCreatedByName(createdBy, tenantId) {
     .lean();
   return user?.userFullName || createdBy;
 }
+
+/**
+ * Replace fileUrl with a time-limited SAS URL so clients can download from private blob storage.
+ * Uses fileBlobPath when available; falls back to raw fileUrl if SAS generation fails.
+ */
+function enrichBatchWithDownloadUrl(batch, expiryMinutes = 60) {
+  if (!batch || !batch.fileBlobPath || !azureBlob.isConfigured) return batch;
+  try {
+    const sasUrl = azureBlob.generateDownloadUrl(batch.fileBlobPath, expiryMinutes);
+    return { ...batch, fileUrl: sasUrl };
+  } catch (err) {
+    console.warn("[BatchDetail] SAS URL generation failed:", err.message);
+    return batch;
+  }
+}
+
 const { v4: uuidv4 } = require("uuid");
 
 
@@ -94,9 +110,10 @@ async function createBatchDetail(req, res) {
         console.error("[BatchDetail] file processing error:", err.message);
         const saved = await BatchDetail.findById(batch._id).lean();
         const createdByName = await resolveCreatedByName(saved.createdBy, tenantId);
+        const data = enrichBatchWithDownloadUrl({ ...saved, createdBy: createdByName });
         return res.status(201).json({
           message: "Batch is created. File processing failed: " + err.message,
-          data: { ...saved, createdBy: createdByName },
+          data,
         });
       }
     }
@@ -104,9 +121,10 @@ async function createBatchDetail(req, res) {
     // Return the created batch with creator name instead of ID
     const saved = await BatchDetail.findById(batch._id).lean();
     const createdByName = await resolveCreatedByName(saved.createdBy, tenantId);
+    const data = enrichBatchWithDownloadUrl({ ...saved, createdBy: createdByName });
     return res.status(201).json({
       message: "Batch is created.",
-      data: { ...saved, createdBy: createdByName },
+      data,
     });
   } catch (error) {
     console.error("[BatchDetail] create error:", error.message);
@@ -127,7 +145,8 @@ async function getBatchDetailById(req, res) {
     }
     const tenantId = req.user?.tenantId || null;
     const createdByName = await resolveCreatedByName(batch.createdBy, tenantId);
-    return res.json({ data: { ...batch, createdBy: createdByName } });
+    const data = enrichBatchWithDownloadUrl({ ...batch, createdBy: createdByName });
+    return res.json({ data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -171,8 +190,10 @@ async function getAllBatchDetails(req, res) {
       createdBy: userMap.get(b.createdBy) || b.createdBy,
     }));
 
+    const batchesWithDownloadUrl = batchesWithCreatorName.map((b) => enrichBatchWithDownloadUrl(b));
+
     return res.json({
-      data: batchesWithCreatorName,
+      data: batchesWithDownloadUrl,
       pagination: {
         page,
         limit,
@@ -267,11 +288,12 @@ async function resolveBatchException(req, res) {
     const createdByName = await resolveCreatedByName(updated.createdBy, tenantId);
 
     const count = matchingExceptions.length;
+    const data = enrichBatchWithDownloadUrl({ ...updated, createdBy: createdByName });
     return res.status(200).json({
       message: count === 1
         ? "Batch exception resolved; 1 row moved to batch payment"
         : `Batch exception resolved; ${count} rows moved to batch payment`,
-      data: { ...updated, createdBy: createdByName },
+      data,
     });
   } catch (error) {
     console.error("[BatchDetail] resolveBatchException error:", error.message);
@@ -369,9 +391,10 @@ async function addPaymentToBatch(req, res) {
 
     const createdByName = await resolveCreatedByName(updated.createdBy, tenantId);
 
+    const data = enrichBatchWithDownloadUrl({ ...updated, createdBy: createdByName });
     return res.status(200).json({
       message: "Payment added to batch successfully.",
-      data: { ...updated, createdBy: createdByName },
+      data,
     });
   } catch (error) {
     console.error("[BatchDetail] addPaymentToBatch error:", error.message);
