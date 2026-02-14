@@ -382,9 +382,13 @@ async function addPaymentToBatch(req, res) {
   }
 }
 
+/** Chunk size for process-batch calls to avoid 413 Request Entity Too Large (gateway/nginx). */
+const PROCESS_BATCH_CHUNK_SIZE = parseInt(process.env.PROCESS_BATCH_CHUNK_SIZE, 10) || 50;
+
 /**
  * Process batch: load batch by ID, then call account-service to create GL Receipts
  * for each member in batchPayments (not batchExceptions).
+ * Sends batchPayments in chunks to avoid 413 when array is large (e.g. hundreds).
  */
 async function processBatchDetail(req, res) {
   try {
@@ -422,25 +426,40 @@ async function processBatchDetail(req, res) {
       ...(req.user?.tenantId && { "x-tenant-id": req.user.tenantId }),
     };
 
-    const response = await axios.post(
-      url,
-      {
-        paymentDate: batch.paymentDate,
-        batchPayments,
-      },
-      {
-        headers,
-        timeout: 60000,
-        validateStatus: (status) => status < 500,
-      }
-    );
+    const chunkSize = Math.max(1, PROCESS_BATCH_CHUNK_SIZE);
+    const allResults = [];
+    const allErrors = [];
+    let totalProcessed = 0;
+    let totalFailed = 0;
 
-    if (response.status >= 400) {
-      return res.status(response.status).json({
-        success: false,
-        message: response.data?.message || response.data?.error || "Account service error",
-        details: response.data,
-      });
+    for (let offset = 0; offset < batchPayments.length; offset += chunkSize) {
+      const chunk = batchPayments.slice(offset, offset + chunkSize);
+      const response = await axios.post(
+        url,
+        {
+          paymentDate: batch.paymentDate,
+          batchPayments: chunk,
+        },
+        {
+          headers,
+          timeout: 60000,
+          validateStatus: (status) => status < 500,
+        }
+      );
+
+      if (response.status >= 400) {
+        return res.status(response.status).json({
+          success: false,
+          message: response.data?.message || response.data?.error || "Account service error",
+          details: response.data,
+        });
+      }
+
+      const data = response.data || {};
+      totalProcessed += data.processed ?? 0;
+      totalFailed += data.failed ?? 0;
+      if (Array.isArray(data.results)) allResults.push(...data.results);
+      if (Array.isArray(data.errors)) allErrors.push(...data.errors);
     }
 
     // Mark batch as processed (from pending)
@@ -449,10 +468,15 @@ async function processBatchDetail(req, res) {
       { $set: { batchStatus: "processed" } }
     );
 
-    return res.status(response.status).json({
+    return res.status(201).json({
       success: true,
       message: "Batch processed in account service",
-      data: response.data,
+      data: {
+        processed: totalProcessed,
+        failed: totalFailed,
+        results: allResults,
+        errors: allErrors.length ? allErrors : undefined,
+      },
     });
   } catch (error) {
     if (error.response) {
