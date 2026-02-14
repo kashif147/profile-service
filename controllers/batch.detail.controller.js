@@ -383,7 +383,7 @@ async function addPaymentToBatch(req, res) {
 }
 
 /** Chunk size for process-batch calls to avoid 413 Request Entity Too Large (gateway/nginx). */
-const PROCESS_BATCH_CHUNK_SIZE = parseInt(process.env.PROCESS_BATCH_CHUNK_SIZE, 10) || 50;
+const PROCESS_BATCH_CHUNK_SIZE = parseInt(process.env.PROCESS_BATCH_CHUNK_SIZE, 10) || 500;
 
 /**
  * Process batch: load batch by ID, then call account-service to create GL Receipts
