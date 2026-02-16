@@ -348,6 +348,7 @@ module.exports.filter_template_create = Joi.object({
   pinned: Joi.boolean().optional().default(false),
 });
 
+// Update template: every field is optional; partial updates supported (empty body allowed).
 module.exports.filter_template_update = Joi.object({
   name: Joi.string().trim().allow("", null).optional(),
   templateType: Joi.string().trim().optional(),
@@ -359,4 +360,4 @@ module.exports.filter_template_update = Joi.object({
     .optional(),
   isDefault: Joi.boolean().optional(),
   pinned: Joi.boolean().optional(),
-});
+}).min(0);

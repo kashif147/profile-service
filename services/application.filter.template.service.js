@@ -26,18 +26,17 @@ class TemplateService {
       const { name, templateType, filters, columns, isDefault, pinned } = templateData;
       const type = templateType || "application";
 
+      // When creating with isDefault: true, unset all other templates for this user+type so only one is default.
       if (isDefault) {
-        const existingDefault = await Template.findOne({
-          userId,
-          templateType: type,
-          isDefault: true,
-          "meta.deleted": false,
-        });
-        if (existingDefault) {
-          throw AppError.badRequest(
-            "You already have a default template for this type. Please unset the existing default template first, then set this one as default."
-          );
-        }
+        await Template.updateMany(
+          {
+            userId,
+            templateType: type,
+            isDefault: true,
+            "meta.deleted": false,
+          },
+          { $set: { isDefault: false } }
+        );
       }
 
       const template = new Template({
@@ -182,20 +181,17 @@ class TemplateService {
 
       const type = templateType !== undefined ? templateType : template.templateType;
 
-      // When setting isDefault: true, ensure user does not already have another default for this type
+      // When setting isDefault: true, unset all other templates for this user+type so only one is default.
       if (isDefault === true) {
-        const existingDefault = await Template.findOne({
-          userId,
-          templateType: type,
-          _id: { $ne: templateId },
-          isDefault: true,
-          "meta.deleted": false,
-        });
-        if (existingDefault) {
-          throw AppError.badRequest(
-            "You already have a default template for this type. Please unset the existing default template first, then set this one as default."
-          );
-        }
+        await Template.updateMany(
+          {
+            userId,
+            templateType: type,
+            _id: { $ne: templateId },
+            "meta.deleted": false,
+          },
+          { $set: { isDefault: false } }
+        );
       }
 
       // Update fields
