@@ -19,16 +19,19 @@ async function resolveCreatedByName(createdBy, tenantId) {
 
 /**
  * Replace fileUrl with a time-limited SAS URL so clients can download from private blob storage.
- * Uses fileBlobPath when available; falls back to raw fileUrl if SAS generation fails.
+ * Never returns the raw blob URL (avoids "Public access is not permitted" when account is private).
  */
 function enrichBatchWithDownloadUrl(batch, expiryMinutes = 60) {
-  if (!batch || !batch.fileBlobPath || !azureBlob.isConfigured) return batch;
+  if (!batch) return batch;
+  if (!batch.fileBlobPath || !azureBlob.isConfigured) {
+    return { ...batch, fileUrl: null };
+  }
   try {
     const sasUrl = azureBlob.generateDownloadUrl(batch.fileBlobPath, expiryMinutes);
     return { ...batch, fileUrl: sasUrl };
   } catch (err) {
     console.warn("[BatchDetail] SAS URL generation failed:", err.message);
-    return batch;
+    return { ...batch, fileUrl: null };
   }
 }
 
