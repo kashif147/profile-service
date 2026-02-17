@@ -4,7 +4,7 @@ const User = require("../models/user.model.js");
 const { AppError } = require("../errors/AppError");
 const azureBlob = require("../services/azure.blob.service");
 const batchPaymentProcess = require("../services/batch.payment.process.service");
-const axios = require("axios");
+const { publisher, BATCH_PROCESS_EVENTS } = require("../rabbitMQ/index.js");
 
 /**
  * Resolve createdBy userId to userFullName for API responses
@@ -405,13 +405,10 @@ async function addPaymentToBatch(req, res) {
   }
 }
 
-/** Chunk size for process-batch calls to avoid 413 Request Entity Too Large (gateway/nginx). */
-const PROCESS_BATCH_CHUNK_SIZE = parseInt(process.env.PROCESS_BATCH_CHUNK_SIZE, 10) || 500;
-
 /**
- * Process batch: load batch by ID, then call account-service to create GL Receipts
- * for each member in batchPayments (not batchExceptions).
- * Sends batchPayments in chunks to avoid 413 when array is large (e.g. hundreds).
+ * Process batch (async): enqueue job and return 202. Background worker processes in chunks
+ * and updates batch status; frontend can poll GET /batch-details/:id for status or listen for
+ * batch.process.completed (e.g. via future WebSocket).
  */
 async function processBatchDetail(req, res) {
   try {
@@ -441,78 +438,53 @@ async function processBatchDetail(req, res) {
       });
     }
 
-    const accountServiceUrl = process.env.ACCOUNT_SERVICE_URL || `https://projectshell-vm.northeurope.cloudapp.azure.com/account-service`;
-    const url = `${accountServiceUrl}/api/journal/process-batch`;
-    const headers = {
-      "Content-Type": "application/json",
-      ...(req.headers?.authorization && { Authorization: req.headers.authorization }),
-      ...(req.user?.tenantId && { "x-tenant-id": req.user.tenantId }),
-    };
+    const tenantId = req.user?.tenantId || null;
+    const userId = req.user?.userId || req.user?.id || null;
 
-    const chunkSize = Math.max(1, PROCESS_BATCH_CHUNK_SIZE);
-    const allResults = [];
-    const allErrors = [];
-    let totalProcessed = 0;
-    let totalFailed = 0;
-
-    for (let offset = 0; offset < batchPayments.length; offset += chunkSize) {
-      const chunk = batchPayments.slice(offset, offset + chunkSize);
-      const response = await axios.post(
-        url,
-        {
-          paymentDate: batch.paymentDate,
-          batchPayments: chunk,
-        },
-        {
-          headers,
-          timeout: 60000,
-          validateStatus: (status) => status < 500,
-        }
-      );
-
-      if (response.status >= 400) {
-        return res.status(response.status).json({
-          success: false,
-          message: response.data?.message || response.data?.error || "Account service error",
-          details: response.data,
-        });
-      }
-
-      const data = response.data || {};
-      totalProcessed += data.processed ?? 0;
-      totalFailed += data.failed ?? 0;
-      if (Array.isArray(data.results)) allResults.push(...data.results);
-      if (Array.isArray(data.errors)) allErrors.push(...data.errors);
-    }
-
-    // Mark batch as processed (from pending)
+    // Mark as processing so UI can show progress and avoid double-submit
     await BatchDetail.updateOne(
       { _id: batchDetailId, isDeleted: false },
-      { $set: { batchStatus: "processed" } }
+      { $set: { batchStatus: "processing" } }
     );
 
-    return res.status(201).json({
-      success: true,
-      message: "Batch processed in account service",
-      data: {
-        processed: totalProcessed,
-        failed: totalFailed,
-        results: allResults,
-        errors: allErrors.length ? allErrors : undefined,
+    const result = await publisher.publish(
+      BATCH_PROCESS_EVENTS.BATCH_PROCESS_REQUESTED,
+      {
+        batchDetailId,
+        tenantId,
+        userId,
+        authorization: req.headers?.authorization || req.headers?.Authorization || null,
       },
-    });
-  } catch (error) {
-    if (error.response) {
-      return res.status(error.response.status).json({
+      {
+        tenantId: tenantId || undefined,
+        exchange: "batch.events",
+        routingKey: BATCH_PROCESS_EVENTS.BATCH_PROCESS_REQUESTED,
+        metadata: { service: "profile-service", version: "1.0" },
+      }
+    );
+
+    if (!result.success) {
+      await BatchDetail.updateOne(
+        { _id: batchDetailId, isDeleted: false },
+        { $set: { batchStatus: "pending" } }
+      );
+      return res.status(503).json({
         success: false,
-        message: error.response.data?.message || error.message,
-        details: error.response.data,
+        message: "Failed to enqueue batch processing. Please try again.",
+        details: result.error,
       });
     }
+
+    return res.status(202).json({
+      success: true,
+      message: "Batch processing started",
+      batchId: batchDetailId,
+    });
+  } catch (error) {
     console.error("[BatchDetail] processBatchDetail error:", error.message);
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to process batch",
+      message: error.message || "Failed to start batch processing",
     });
   }
 }

@@ -71,6 +71,7 @@ exports.FILTER_OPERATOR = {
 exports.TEMPLATE_FILTER_KEYS = {
   APPLICATION_STATUS: "applicationStatus",
   MEMBERSHIP_CATEGORY: "membershipCategory",
+  GRADE: "grade",
 };
 
 /**

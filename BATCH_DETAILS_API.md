@@ -277,3 +277,40 @@ curl -X POST "http://projectshell-vm.northeurope.cloudapp.azure.com/profile-serv
 ```
 
 *(amount 50 = €50.00, stored as 5000 cents)*
+
+---
+
+## Process batch (async, 202)
+
+Batch processing runs in the background. The API returns **202 Accepted** immediately; the frontend should poll **GET /api/batch-details/:batchDetailId** until `batchStatus` is `processed` or `failed`, then show a toaster.
+
+**Endpoint:** `POST /api/batch-details/process/:batchDetailId`  
+**Auth:** Required (CRM users only)
+
+### Response (202 Accepted)
+
+```json
+{
+  "success": true,
+  "message": "Batch processing started",
+  "batchId": "67..."
+}
+```
+
+### Batch status values
+
+| Status      | Meaning                                      |
+|------------|-----------------------------------------------|
+| `pending`  | Not yet submitted for processing              |
+| `processing` | Job queued or running (worker in progress)  |
+| `processed`| Completed successfully                        |
+| `failed`   | Worker finished with error                    |
+
+### Frontend flow
+
+1. Call `POST .../process/:batchDetailId`.
+2. On **202**: show toaster “Batch processing started”, then poll `GET .../batch-details/:batchDetailId` every 5–10 seconds.
+3. When `data.batchStatus === "processed"`: show toaster “Batch completed” and stop polling.
+4. When `data.batchStatus === "failed"`: show toaster “Batch failed” and stop polling.
+
+See **BATCH_PROCESS_ASYNC_FRONTEND.md** for a React polling + toaster example.

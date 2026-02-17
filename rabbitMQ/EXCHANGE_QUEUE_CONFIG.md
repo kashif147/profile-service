@@ -24,6 +24,12 @@ This document outlines the RabbitMQ exchange and queue configuration for the Pro
 - **Type**: Topic Exchange
 - **Routing Pattern**: `members.member.created.requested.v1`
 
+### 4. `batch.events` Exchange
+
+- **Purpose**: Async batch processing (request + completion)
+- **Type**: Topic Exchange
+- **Routing Patterns**: `batch.process.requested`, `batch.process.completed`
+
 ## Queues
 
 ### 1. `profile.portal.events`
@@ -47,6 +53,13 @@ This document outlines the RabbitMQ exchange and queue configuration for the Pro
 - **Purpose**: Consumes membership creation events (internal)
 - **Handler**: `ApplicationApprovalEventListener`
 
+### 4. `profile.batch.process`
+
+- **Exchange**: `batch.events`
+- **Routing Key**: `batch.process.requested`
+- **Purpose**: Background processing of batch details (chunked calls to account-service)
+- **Handler**: `runBatchProcessing` from `batch.process.job.service.js`; publishes `batch.process.completed` when done
+
 ## Event Flow
 
 ### Application Approval Process
@@ -60,6 +73,13 @@ This document outlines the RabbitMQ exchange and queue configuration for the Pro
 
 1. **Portal Service** publishes `profile.application.create` to `portal.events` exchange
 2. **Profile Service** consumes from `profile.portal.events` queue (to create application records)
+
+### Batch Process (async)
+
+1. **Profile Service** API receives `POST .../process/:batchDetailId`, publishes `batch.process.requested` to `batch.events`, returns **202 Accepted**
+2. **Profile Service** consumer on `profile.batch.process` runs `runBatchProcessing` (chunks → account-service), updates batch status to `processed` or `failed`
+3. **Profile Service** publishes `batch.process.completed` to `batch.events` (for future WebSocket/notification service)
+4. Frontend polls `GET .../batch-details/:id` until `batchStatus` is `processed` or `failed`, then shows toaster
 
 ## Event Publishers
 
@@ -91,6 +111,7 @@ All queues have corresponding DLQs:
 - `profile.portal.events.dlq`
 - `profile.application.events.dlq`
 - `profile.membership.events.dlq`
+- `profile.batch.process.dlq` (if configured)
 
 ## Configuration
 

@@ -277,6 +277,7 @@ exports.getAllApplicationsWithDetails = (statusFilters = [], page = 1, limit = 1
 /**
  * NEW METHOD - Helper function to filter object by specified columns
  * Supports nested fields like "personalDetails.personalInfo.name"
+ * Preserves key order to match template column order (e.g. first column in template = first key in response)
  */
 const filterByColumns = (obj, columns) => {
   // If no columns specified, return all fields
@@ -315,7 +316,21 @@ const filterByColumns = (obj, columns) => {
     }
   });
 
-  return result;
+  // Ensure top-level key order matches template column order (drag-and-drop position)
+  const orderedTopKeys = [];
+  for (const column of columns) {
+    const topKey = column.split(".")[0];
+    if (topKey && !orderedTopKeys.includes(topKey)) {
+      orderedTopKeys.push(topKey);
+    }
+  }
+  const orderedResult = {};
+  for (const key of orderedTopKeys) {
+    if (result[key] !== undefined) {
+      orderedResult[key] = result[key];
+    }
+  }
+  return orderedResult;
 };
 
 /**
@@ -335,11 +350,18 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
 
       for (const [filterKey, filterEntry] of Object.entries(filters || {})) {
         if (!filterEntry || !filterEntry.values || filterEntry.values.length === 0) continue;
-        const config = FILTER_FIELD_MAP[filterKey];
+        // Resolve filter key case-insensitively (e.g. "ApplicationStatus" -> applicationStatus)
+        const resolvedKey = Object.keys(FILTER_FIELD_MAP).find(
+          (k) => k.toLowerCase() === (filterKey && String(filterKey).toLowerCase())
+        );
+        const config = resolvedKey ? FILTER_FIELD_MAP[resolvedKey] : null;
         if (!config) continue;
 
         const op = filterEntry.operator === FILTER_OPERATOR.EQUAL_TO ? "$in" : "$nin";
-        const values = filterEntry.values;
+        // Normalize string values to lowercase for case-insensitive filter matching (e.g. "SubmiTTed" -> "submitted")
+        const values = filterEntry.values.map((v) =>
+          typeof v === "string" ? v.trim().toLowerCase() : v
+        );
 
         if (config.source === "personalDetails") {
           query[config.path] = { [op]: values };
