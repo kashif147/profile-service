@@ -101,6 +101,7 @@ if (process.env.RABBIT_URL) {
     })
     .catch((error) => {
       console.error("❌ Failed to initialize RabbitMQ:", error.message);
+      console.error("❌ Stack:", error.stack);
       console.error("⚠️ App will continue without RabbitMQ (degraded mode)");
     });
 

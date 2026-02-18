@@ -44,6 +44,9 @@ async function initEventSystem() {
       prefetch: 10,
       connectionName: "profile-service",
       serviceName: "profile-service",
+      exchanges: [
+        { name: "batch.events", type: "topic", options: { durable: true } },
+      ],
     });
     console.log("✅ Event system initialized with middleware");
   } catch (error) {
@@ -111,6 +114,7 @@ async function setupConsumers() {
 
     await consumer.consume(PORTAL_QUEUE, { prefetch: 10 });
     console.log("✅ Portal service events consumer ready:", PORTAL_QUEUE);
+    console.log("   → profile.application.create from exchange portal.events → queue", PORTAL_QUEUE);
 
     // 2. Application events queue (application.events exchange) - for approval events
     const APPLICATION_QUEUE = "profile.application.events";

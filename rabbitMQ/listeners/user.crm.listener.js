@@ -3,7 +3,7 @@ const Profile = require("../../models/profile.model.js");
 const PersonalDetails = require("../../models/personal.details.model.js");
 const ProfessionalDetails = require("../../models/professional.details.model.js");
 const SubscriptionDetails = require("../../models/subscription.model.js");
-const { ApplicationApprovalEventPublisher } = require("../index.js");
+const ApplicationApprovalEventPublisher = require("../publishers/application.approval.publisher.js");
 const crypto = require("crypto");
 
 /**

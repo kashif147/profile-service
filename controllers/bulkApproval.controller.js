@@ -19,7 +19,7 @@ const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
 const { APPLICATION_STATUS } = require("../constants/enums.js");
 const { loadSubmission } = require("../services/submission.service.js");
-const { ApplicationApprovalEventPublisher } = require("../rabbitMQ/index.js");
+const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const {
   findOrCreateProfileByEmail,
 } = require("../services/profileLookup.service.js");

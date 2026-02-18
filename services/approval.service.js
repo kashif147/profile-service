@@ -21,7 +21,7 @@ const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
 const { loadSubmission } = require("./submission.service.js");
-const { ApplicationApprovalEventPublisher } = require("../rabbitMQ/index.js");
+const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const { APPLICATION_STATUS } = require("../constants/enums.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {

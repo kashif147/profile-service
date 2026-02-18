@@ -23,7 +23,7 @@ const {
   APPLICATION_REVIEW_EVENTS,
 } = require("../rabbitMQ/index.js");
 const { loadSubmission } = require("../services/submission.service.js");
-const { ApplicationApprovalEventPublisher } = require("../rabbitMQ/index.js");
+const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const {
   findOrCreateProfileByEmail,
 } = require("../services/profileLookup.service.js");
