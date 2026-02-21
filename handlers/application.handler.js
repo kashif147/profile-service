@@ -488,7 +488,12 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
             };
 
             // Apply column filtering based on template
-            return filterByColumns(fullApplication, columns);
+            const filtered = filterByColumns(fullApplication, columns);
+            // Always include applicationId - required for navigation/actions on each application
+            if (fullApplication.applicationId !== undefined) {
+              return { applicationId: fullApplication.applicationId, ...filtered };
+            }
+            return filtered;
           } catch (error) {
             console.error("Error fetching details for application:", error);
             return null;
