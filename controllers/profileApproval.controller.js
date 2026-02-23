@@ -338,6 +338,7 @@ async function approveApplication(req, res, next) {
           tenantId,
           profileId: String(profile._id),
           applicationId,
+          memberId,
           membershipCategory:
             sub.membershipCategory ??
             effective.professionalDetails?.membershipCategory ??

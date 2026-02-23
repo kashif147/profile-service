@@ -47,6 +47,7 @@ class ApplicationApprovalEventPublisher {
           crmUserId: crmUserId || null,
           memberId: memberId || null,
           userId: userId || null,
+          tenantId: tenantId || null,
           effective: {
             personalInfo: effective.personalInfo,
             contactInfo: effective.contactInfo,
@@ -159,6 +160,7 @@ class ApplicationApprovalEventPublisher {
     tenantId,
     profileId,
     applicationId,
+    memberId, // membership number - for account-service invoice/credit flow
     membershipCategory,
     dateJoined,
     paymentType,
@@ -184,6 +186,7 @@ class ApplicationApprovalEventPublisher {
         {
           profileId,
           applicationId,
+          memberId: memberId || null,
           membershipCategory,
           dateJoined: dateJoinedSerialized,
           paymentType,

@@ -64,6 +64,7 @@ async function handleCrmUserCreated(payload) {
           tenantId,
           profileId: String(profile._id),
           applicationId: null, // No application for CRM user direct subscription
+          memberId: profile?.membershipNumber ?? null,
           membershipCategory: null, // Will use default or existing
           dateJoined: profile.firstJoinedDate || new Date(),
           paymentType: null,
@@ -225,6 +226,7 @@ async function handleCrmUserUpdated(payload) {
           tenantId,
           profileId: String(profile._id),
           applicationId: null,
+          memberId: profile?.membershipNumber ?? null,
           membershipCategory: null,
           dateJoined: profile.firstJoinedDate || new Date(),
           paymentType: null,
