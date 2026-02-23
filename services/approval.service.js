@@ -285,6 +285,7 @@ async function approveApplication({
       isExistingProfile: !!existingProfile,
       crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
       memberId,
+      userId: updatedProfile?.userId ? String(updatedProfile.userId) : null,
       effective,
       subscriptionAttributes,
       tenantId,

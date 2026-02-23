@@ -1110,6 +1110,50 @@ async function getProfilesBatch(req, res, next) {
   }
 }
 
+// Internal endpoint: Get profile by email and tenantId (for membership check by user-service)
+async function getProfileByEmailInternal(req, res, next) {
+  try {
+    const isInternalRequest =
+      req.headers["x-internal-request"] === "true" ||
+      req.headers["x-internal-request"] === "1";
+
+    if (!isInternalRequest) {
+      return res.status(403).json({
+        success: false,
+        message: "Internal endpoint: x-internal-request header required",
+      });
+    }
+
+    const { email, tenantId } = req.query;
+    if (!email || !tenantId) {
+      return res.status(400).json({
+        success: false,
+        message: "email and tenantId query params are required",
+      });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const profile = await Profile.findOne({
+      tenantId,
+      normalizedEmail,
+    })
+      .select("_id")
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: profile ? { profileId: profile._id.toString() } : null,
+    });
+  } catch (error) {
+    console.error("ProfileController [getProfileByEmailInternal] Error:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch profile by email"
+      )
+    );
+  }
+}
+
 // Internal endpoint: Get profiles by user IDs (for service-to-service calls)
 async function getProfilesByUserIds(req, res, next) {
   try {
@@ -1250,4 +1294,5 @@ module.exports = {
   getMyAllDetails,
   getProfilesBatch,
   getProfilesByUserIds,
+  getProfileByEmailInternal,
 };

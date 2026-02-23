@@ -7,8 +7,8 @@ const { authenticate } = require("../middlewares/auth");
 
 router.post("/validate", profileValidationController.validateProfile);
 
-// Internal endpoint for service-to-service calls (before authenticate to allow internal header bypass)
-// Accepts JWT token OR internal header
+// Internal endpoints for service-to-service calls (before authenticate)
+router.get("/internal/by-email", profileController.getProfileByEmailInternal);
 router.post("/internal/by-user-ids", profileController.getProfilesByUserIds);
 
 router.post("/batch", profileController.getProfilesBatch);
