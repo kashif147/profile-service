@@ -22,7 +22,6 @@ class ApplicationApprovalEventPublisher {
     effective,
     subscriptionAttributes,
     tenantId,
-    userId,
     correlationId,
   }) {
     try {
