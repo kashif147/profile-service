@@ -30,7 +30,7 @@ exports.PAYMENT_TYPE = {
   PAYROLL_DEDUCTION: "Salary Deduction", // Matches portal-service
   DIRECT_DEBIT: "Direct Debit",
   CARD_PAYMENT: "Credit Card", // Matches portal-service
-  SBO_PAYMENT: "Standing Bank Order",
+  SBO_PAYMENT: "Standing Bankers Order",
 };
 
 // Payment Frequency Enums
@@ -86,17 +86,38 @@ exports.FILTER_FIELD_MAP = {
     pathSubs: "subscriptionDetails.membershipCategory",
     pathProf: "professionalDetails.membershipCategory",
   },
-  workLocation: { source: "professionalDetails", path: "professionalDetails.workLocation" },
+  workLocation: {
+    source: "professionalDetails",
+    path: "professionalDetails.workLocation",
+  },
   grade: { source: "professionalDetails", path: "professionalDetails.grade" },
   branch: { source: "professionalDetails", path: "professionalDetails.branch" },
   region: { source: "professionalDetails", path: "professionalDetails.region" },
-  submissionDate: { source: "subscriptionDetails", path: "subscriptionDetails.submissionDate" },
-  primarySection: { source: "subscriptionDetails", path: "subscriptionDetails.primarySection" },
-  paymentType: { source: "subscriptionDetails", path: "subscriptionDetails.paymentType" },
-  payrollNo: { source: "subscriptionDetails", path: "subscriptionDetails.payrollNo" },
+  submissionDate: {
+    source: "subscriptionDetails",
+    path: "subscriptionDetails.submissionDate",
+  },
+  primarySection: {
+    source: "subscriptionDetails",
+    path: "subscriptionDetails.primarySection",
+  },
+  paymentType: {
+    source: "subscriptionDetails",
+    path: "subscriptionDetails.paymentType",
+  },
+  payrollNo: {
+    source: "subscriptionDetails",
+    path: "subscriptionDetails.payrollNo",
+  },
   mobileNumber: { source: "personalDetails", path: "contactInfo.mobileNumber" },
-  preferredEmail: { source: "personalDetails", path: "contactInfo.preferredEmail" },
-  personalEmail: { source: "personalDetails", path: "contactInfo.personalEmail" },
+  preferredEmail: {
+    source: "personalDetails",
+    path: "contactInfo.preferredEmail",
+  },
+  personalEmail: {
+    source: "personalDetails",
+    path: "contactInfo.personalEmail",
+  },
   workEmail: { source: "personalDetails", path: "contactInfo.workEmail" },
 };
 

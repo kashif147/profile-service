@@ -39,14 +39,14 @@ const correctedDetails = enforcePaymentFrequencyRule(subscriptionDetails);
 
 ### Payment Types
 
-- `PAYMENT_TYPE.CARD_PAYMENT` = "Card Payment" → **Frequency: "Annually"**
-- `PAYMENT_TYPE.PAYROLL_DEDUCTION` = "Payroll Deduction" → **Frequency: "Monthly"**
+- `PAYMENT_TYPE.CARD_PAYMENT` = "Credit Card" → **Frequency: "Annually"**
+- `PAYMENT_TYPE.PAYROLL_DEDUCTION` = "Salary Deduction" → **Frequency: "Monthly"**
 - `PAYMENT_TYPE.DIRECT_DEBIT` = "Direct Debit" → **Frequency: "Monthly"**
-- `PAYMENT_TYPE.SBO_PAYMENT` = "Standing Bank Order" → **Frequency: "Monthly"**
+- `PAYMENT_TYPE.SBO_PAYMENT` = "Standing Bankers Order" → **Frequency: "Monthly"**
 
 ## Behavior
 
-- If payment type is changed to "Credit Card" (or "Card Payment"), frequency is automatically set to "Annually"
+- If payment type is changed to "Credit Card", frequency is automatically set to "Annually"
 - If payment type is changed from "Credit Card" to another type, frequency is automatically set to "Monthly"
 - The rule is enforced automatically - no manual intervention required
 - Logs are generated when the rule is applied for audit purposes
@@ -57,12 +57,12 @@ const correctedDetails = enforcePaymentFrequencyRule(subscriptionDetails);
 ### Example 1: Credit Card Payment
 ```javascript
 {
-  paymentType: "Card Payment",
+  paymentType: "Credit Card",
   paymentFrequency: "Monthly"  // ❌ Invalid
 }
 // After enforcement:
 {
-  paymentType: "Card Payment",
+  paymentType: "Credit Card",
   paymentFrequency: "Annually"  // ✅ Corrected
 }
 ```
