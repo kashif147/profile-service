@@ -289,6 +289,7 @@ async function approveApplication({
       effective,
       subscriptionAttributes,
       tenantId,
+      userId: updatedProfile?.userId ? String(updatedProfile.userId) : null,
       correlationId: crypto.randomUUID(),
     });
 

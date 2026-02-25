@@ -300,6 +300,7 @@ async function approveSingleApplication({
         },
         subscriptionAttributes: subAttrs(effective.subscriptionDetails),
         tenantId,
+        userId: updatedProfile?.userId ? String(updatedProfile.userId) : null,
         correlationId: crypto.randomUUID(),
       });
     } catch (publishError) {

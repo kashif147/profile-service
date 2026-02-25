@@ -13,7 +13,6 @@ const {
 
 router.use(authenticate);
 
-// ONE create API — POST only (form-data with file)
 router.post("/",
   (req, res, next) => {
     if (req.user?.userType !== "CRM") {

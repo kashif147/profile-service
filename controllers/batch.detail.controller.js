@@ -19,18 +19,24 @@ async function resolveCreatedByName(createdBy, tenantId) {
 
 /**
  * Replace fileUrl with a time-limited SAS URL so clients can download from private blob storage.
- * Never returns the raw blob URL (avoids "Public access is not permitted" when account is private).
+ * IMPORTANT: never expose the raw blob URL when the storage account blocks public access.
+ * - On success: fileUrl = SAS URL
+ * - On failure / not configured: fileUrl = null (frontend should handle \"no download\")
  */
 function enrichBatchWithDownloadUrl(batch, expiryMinutes = 60) {
   if (!batch) return batch;
+
+  // If we can't generate SAS (no blob path or storage not configured), don't leak raw blob URL.
   if (!batch.fileBlobPath || !azureBlob.isConfigured) {
     return { ...batch, fileUrl: null };
   }
+
   try {
     const sasUrl = azureBlob.generateDownloadUrl(batch.fileBlobPath, expiryMinutes);
     return { ...batch, fileUrl: sasUrl };
   } catch (err) {
     console.warn("[BatchDetail] SAS URL generation failed:", err.message);
+    // Fall back to no URL instead of a public (failing) blob URL
     return { ...batch, fileUrl: null };
   }
 }

@@ -350,7 +350,8 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
 
       for (const [filterKey, filterEntry] of Object.entries(filters || {})) {
         if (!filterEntry || !filterEntry.values || filterEntry.values.length === 0) continue;
-        // Resolve filter key case-insensitively (e.g. "ApplicationStatus" -> applicationStatus)
+
+        // Make filter key lookup case-insensitive (e.g. "Grade", "GRADE" -> applicationStatus)
         const resolvedKey = Object.keys(FILTER_FIELD_MAP).find(
           (k) => k.toLowerCase() === (filterKey && String(filterKey).toLowerCase())
         );
@@ -377,6 +378,14 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
           const ids = [...new Set([...subs.map((s) => s.applicationId), ...profs.map((p) => p.applicationId)])];
           applicationIdSets.push({ ids, isEqual: filterEntry.operator === FILTER_OPERATOR.EQUAL_TO });
         } else if (config.source === "professionalDetails") {
+          // Make grade filter value case-insensitive (match \"Grade\", \"grade\", etc.)
+          if (resolvedKey === "grade") {
+            values = values.map((v) =>
+              typeof v === "string"
+                ? new RegExp(`^${v.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}$`, "i")
+                : v
+            );
+          }
           const q = { [config.path]: { [op]: values } };
           const docs = await ProfessionalDetails.find(q).select("applicationId");
           applicationIdSets.push({

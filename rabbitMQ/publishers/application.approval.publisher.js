@@ -22,6 +22,7 @@ class ApplicationApprovalEventPublisher {
     effective,
     subscriptionAttributes,
     tenantId,
+    userId,
     correlationId,
   }) {
     try {
@@ -35,7 +36,7 @@ class ApplicationApprovalEventPublisher {
         }
       );
 
-      // Publish to portal-service for application status update (userId enables user-service role lookup)
+      // Publish to portal-service for application status update; include tenantId and userId so user-service can upgrade role to Member
       const result = await publisher.publish(
         APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_APPROVED,
         {
@@ -46,8 +47,8 @@ class ApplicationApprovalEventPublisher {
           isExistingProfile,
           crmUserId: crmUserId || null,
           memberId: memberId || null,
-          userId: userId || null,
           tenantId: tenantId || null,
+          userId: userId || null,
           effective: {
             personalInfo: effective.personalInfo,
             contactInfo: effective.contactInfo,
