@@ -87,6 +87,13 @@ const ProfileSchema = new mongoose.Schema(
       rejectionReason: String,
       comments: String,
     },
+    profileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Profile",
+      required: false,
+      default: null,
+      index: true,
+    },
 
     // Duplicate detection flags
     duplicateDetection: {

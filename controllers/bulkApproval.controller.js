@@ -240,6 +240,7 @@ async function approveSingleApplication({
             personalInfo: effective.personalInfo,
             contactInfo: effective.contactInfo,
             applicationStatus: "approved",
+            profileId: profile._id,
             "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
             "approvalDetails.approvedAt": new Date(),
           },

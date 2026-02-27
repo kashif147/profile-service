@@ -64,16 +64,29 @@ function applyDerivedFields(data = {}) {
 
   // Address formatting
   if (data.contactInfo) {
-    const fullAddress = [
-      data.contactInfo.buildingOrHouse,
-      data.contactInfo.streetOrRoad,
-      data.contactInfo.areaOrTown,
-      data.contactInfo.countyCityOrPostCode,
-      data.contactInfo.country,
-    ]
-      .filter(Boolean)
-      .join(", ");
-    data.contactInfo.fullAddress = fullAddress;
+    const parts = [];
+    
+    if (data.contactInfo.buildingOrHouse?.trim()) {
+      parts.push(data.contactInfo.buildingOrHouse.trim());
+    }
+    
+    if (data.contactInfo.streetOrRoad?.trim()) {
+      parts.push(data.contactInfo.streetOrRoad.trim());
+    }
+    
+    if (data.contactInfo.areaOrTown?.trim()) {
+      parts.push(data.contactInfo.areaOrTown.trim());
+    }
+    
+    if (data.contactInfo.countyCityOrPostCode?.trim()) {
+      parts.push(data.contactInfo.countyCityOrPostCode.trim());
+    }
+    
+    if (data.contactInfo.country?.trim()) {
+      parts.push(data.contactInfo.country.trim());
+    }
+    
+    data.contactInfo.fullAddress = parts.join(", ");
   }
 }
 

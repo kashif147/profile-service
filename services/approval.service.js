@@ -192,6 +192,7 @@ async function approveApplication({
       personalInfo: effective.personalInfo ?? null,
       contactInfo: effective.contactInfo ?? null,
       applicationStatus: APPLICATION_STATUS.APPROVED,
+      profileId: profile._id,
       approvalDetails: {
         approvedBy: getReviewerIdForDb(reviewerId),
         approvedAt: new Date(),
