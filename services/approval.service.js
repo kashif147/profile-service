@@ -20,6 +20,7 @@ const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
+const User = require("../models/user.model.js");
 const { loadSubmission } = require("./submission.service.js");
 const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const { APPLICATION_STATUS } = require("../constants/enums.js");
@@ -114,6 +115,26 @@ async function approveApplication({
       normalizedEmail,
     }).session(session);
 
+    // Try to find existing portal user by email to link userId
+    const existingUser = await User.findOne({
+      tenantId,
+      userEmail: normalizedEmail,
+      userType: "PORTAL",
+      isActive: true,
+    }).session(session);
+
+    const portalUserId = existingUser?.userId || null;
+
+    if (portalUserId) {
+      console.log(
+        `✅ Found existing portal user for email ${normalizedEmail}: ${portalUserId}`
+      );
+    } else {
+      console.log(
+        `ℹ️ No portal user found for email ${normalizedEmail}, userId will remain null until user is created`
+      );
+    }
+
     let profile;
     if (existingProfile) {
       // Update existing profile - keep existing membership number
@@ -125,6 +146,14 @@ async function approveApplication({
       // Only set if reviewerId is provided (the CRM user who is approving/improving the profile)
       if (reviewerId) {
         profileUpdate.crmUserId = getReviewerIdForDb(reviewerId);
+      }
+
+      // Link portal userId if found and not already set
+      if (portalUserId && !existingProfile.userId) {
+        profileUpdate.userId = portalUserId;
+        console.log(
+          `✅ Linking portal user ${portalUserId} to existing profile ${existingProfile._id}`
+        );
       }
 
       if (!existingProfile.membershipNumber) {
@@ -163,6 +192,14 @@ async function approveApplication({
         profileSetFields.crmUserId = getReviewerIdForDb(reviewerId);
       }
 
+      // Link portal userId if found
+      if (portalUserId) {
+        profileSetFields.userId = portalUserId;
+        console.log(
+          `✅ Linking portal user ${portalUserId} to new profile`
+        );
+      }
+
       await Profile.updateOne(
         { tenantId, normalizedEmail },
         {
@@ -199,6 +236,12 @@ async function approveApplication({
         comments: overlay.notes ?? undefined,
       },
     };
+
+    // Link portal userId if found
+    if (portalUserId) {
+      personalUpdate.userId = portalUserId;
+    }
+
     await PersonalDetails.updateOne(
       { applicationId: applicationId },
       { $set: personalUpdate }
@@ -206,9 +249,18 @@ async function approveApplication({
 
     // 2) Update ProfessionalDetails and SubscriptionDetails from effective
     if (effective.professionalDetails) {
+      const professionalUpdate = {
+        professionalDetails: effective.professionalDetails,
+      };
+
+      // Link portal userId if found
+      if (portalUserId) {
+        professionalUpdate.userId = portalUserId;
+      }
+
       await ProfessionalDetails.updateOne(
         { applicationId: applicationId },
-        { $set: { professionalDetails: effective.professionalDetails } },
+        { $set: professionalUpdate },
         { upsert: true, session }
       );
     }
@@ -220,9 +272,18 @@ async function approveApplication({
         dateJoined: effective.subscriptionDetails.dateJoined ?? new Date(),
       };
 
+      const subscriptionUpdate = {
+        subscriptionDetails: subscriptionDetailsToSave,
+      };
+
+      // Link portal userId if found
+      if (portalUserId) {
+        subscriptionUpdate.userId = portalUserId;
+      }
+
       await SubscriptionDetails.findOneAndUpdate(
         { applicationId: applicationId },
-        { $set: { subscriptionDetails: subscriptionDetailsToSave } },
+        { $set: subscriptionUpdate },
         { upsert: true, new: true, runValidators: true, session }
       );
       // Do not update Profile.currentSubscriptionId or hasHistory here.

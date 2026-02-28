@@ -439,6 +439,10 @@ async function getMyProfile(req, res, next) {
   try {
     const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
 
+    console.log("=== getMyProfile DEBUG ===");
+    console.log("Extracted context:", { userId, userType, tenantId });
+    console.log("req.user:", req.user);
+
     // Only allow PORTAL users
     if (userType !== "PORTAL") {
       return next(
@@ -458,14 +462,60 @@ async function getMyProfile(req, res, next) {
       return next(AppError.badRequest("Invalid user ID format"));
     }
 
+    console.log("Looking up profile with userId:", userIdObjectId.toString());
+
     // Find profile by userId
     const profile = await Profile.findOne({
       userId: userIdObjectId,
     })
-      .select("_id membershipNumber")
+      .select("_id membershipNumber userId normalizedEmail")
       .lean();
 
+    console.log("Profile found by userId:", profile);
+
     if (!profile) {
+      // Try to find by email from User table as fallback
+      const User = require("../models/user.model.js");
+      const user = await User.findOne({
+        userId: userId,
+        tenantId,
+        userType: "PORTAL",
+        isActive: true,
+      }).lean();
+
+      console.log("User found in User table:", user);
+
+      if (user?.userEmail) {
+        const profileByEmail = await Profile.findOne({
+          tenantId,
+          normalizedEmail: user.userEmail.toLowerCase(),
+          isActive: true,
+        })
+          .select("_id membershipNumber userId normalizedEmail")
+          .lean();
+
+        console.log("Profile found by email:", profileByEmail);
+
+        if (profileByEmail) {
+          // Link userId to profile for future requests
+          await Profile.updateOne(
+            { _id: profileByEmail._id },
+            { $set: { userId: userIdObjectId } }
+          );
+
+          console.log(
+            `✅ Auto-linked userId ${userId} to profile ${profileByEmail._id}`
+          );
+
+          return res.success({
+            profileId: profileByEmail._id,
+            membershipNumber: profileByEmail.membershipNumber,
+          });
+        }
+      }
+
+      console.log("No profile found by userId or email");
+
       return res.status(200).json({
         data: null,
         message: "Profile not found",
