@@ -61,6 +61,41 @@ exports.getApplicationById = (applicationId) =>
     }
   });
 
+exports.getApplicationsByProfileId = (profileId) =>
+  new Promise(async (resolve, reject) => {
+    try {
+      const applications = await PersonalDetails.find({
+        profileId: profileId,
+        "meta.deleted": false,
+      })
+        .populate("approvalDetails.approvedBy", "name email")
+        .sort({ createdAt: -1 })
+        .lean();
+
+      const enrichedApplications = await Promise.all(
+        applications.map(async (app) => {
+          const subscription = await SubscriptionDetails.findOne({
+            applicationId: app.applicationId,
+          }).lean();
+
+          return {
+            applicationId: app.applicationId,
+            membershipCategory: subscription?.subscriptionDetails?.membershipCategory || null,
+            submissionDate: app.createdAt,
+            approvalDate: app.approvalDetails?.approvedAt || null,
+            approvedBy: app.approvalDetails?.approvedBy || null,
+            applicationStatus: app.applicationStatus,
+          };
+        })
+      );
+
+      resolve(enrichedApplications);
+    } catch (error) {
+      console.error("ApplicationHandler [getApplicationsByProfileId] Error:", error);
+      reject(error);
+    }
+  });
+
 exports.updateApplicationStatus = (
   applicationId,
   newStatus,

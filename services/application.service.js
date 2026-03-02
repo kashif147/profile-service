@@ -160,6 +160,27 @@ class ApplicationService {
       throw error;
     }
   }
+
+  /**
+   * Get applications by profile ID
+   * @param {string} profileId - Profile ID
+   * @returns {Promise<Array>} Array of applications with summary details
+   */
+  async getApplicationsByProfileId(profileId) {
+    try {
+      if (!profileId) {
+        throw AppError.badRequest("Profile ID is required");
+      }
+
+      return await applicationHandler.getApplicationsByProfileId(profileId);
+    } catch (error) {
+      console.error(
+        "ApplicationService [getApplicationsByProfileId] Error:",
+        error
+      );
+      throw error;
+    }
+  }
 }
 
 module.exports = new ApplicationService();

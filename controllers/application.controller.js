@@ -259,3 +259,32 @@ exports.approveApplication = async (req, res, next) => {
     return next(error);
   }
 };
+
+exports.getApplicationsByProfileId = async (req, res, next) => {
+  try {
+    const { userType } = extractUserAndCreatorContext(req);
+    if (userType !== "CRM") {
+      return next(
+        AppError.forbidden(
+          "Access denied. Only CRM users can view applications."
+        )
+      );
+    }
+
+    const { profileId } = req.params;
+
+    const applications = await applicationService.getApplicationsByProfileId(profileId);
+
+    return res.success({
+      profileId,
+      count: applications.length,
+      applications,
+    });
+  } catch (error) {
+    console.error("ApplicationController [getApplicationsByProfileId] Error:", error);
+    if (error.message.includes("Profile ID is required")) {
+      return next(AppError.badRequest(error.message));
+    }
+    return next(error);
+  }
+};
