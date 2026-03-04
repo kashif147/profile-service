@@ -164,15 +164,16 @@ class ApplicationService {
   /**
    * Get applications by profile ID
    * @param {string} profileId - Profile ID
+   * @param {Array} [statusFilters] - Optional array of application status values to filter by (e.g. ["approved", "submitted"])
    * @returns {Promise<Array>} Array of applications with summary details
    */
-  async getApplicationsByProfileId(profileId) {
+  async getApplicationsByProfileId(profileId, statusFilters = []) {
     try {
       if (!profileId) {
         throw AppError.badRequest("Profile ID is required");
       }
 
-      return await applicationHandler.getApplicationsByProfileId(profileId);
+      return await applicationHandler.getApplicationsByProfileId(profileId, statusFilters);
     } catch (error) {
       console.error(
         "ApplicationService [getApplicationsByProfileId] Error:",

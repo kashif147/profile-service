@@ -1,6 +1,9 @@
 const PersonalDetails = require("../models/personal.details.model");
 const ProfessionalDetails = require("../models/professional.details.model");
 const SubscriptionDetails = require("../models/subscription.model");
+const mongoose = require("mongoose");
+// Ensure User model is registered for populate("approvalDetails.approvedBy")
+require("../models/user.model");
 const {
   APPLICATION_STATUS,
   FILTER_OPERATOR,
@@ -61,16 +64,35 @@ exports.getApplicationById = (applicationId) =>
     }
   });
 
-exports.getApplicationsByProfileId = (profileId) =>
+exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
   new Promise(async (resolve, reject) => {
     try {
-      const applications = await PersonalDetails.find({
-        profileId: profileId,
+      const objectId = new mongoose.Types.ObjectId(profileId);
+
+      const query = {
+        profileId: objectId,
         "meta.deleted": false,
-      })
-        .populate("approvalDetails.approvedBy", "name email")
-        .sort({ createdAt: -1 })
-        .lean();
+      };
+
+      if (statusFilters && statusFilters.length > 0) {
+        const normalized = statusFilters.map((s) =>
+          typeof s === "string" ? s.toLowerCase() : s
+        );
+        query.applicationStatus = { $in: normalized };
+      }
+
+      let applications;
+      try {
+        applications = await PersonalDetails.find(query)
+          .populate({ path: "approvalDetails.approvedBy", model: "User", select: "userFullName userEmail" })
+          .sort({ createdAt: -1 })
+          .lean();
+      } catch (populateErr) {
+        console.warn("ApplicationHandler [getApplicationsByProfileId] populate failed, returning without approvedBy details:", populateErr?.message);
+        applications = await PersonalDetails.find(query)
+          .sort({ createdAt: -1 })
+          .lean();
+      }
 
       const enrichedApplications = await Promise.all(
         applications.map(async (app) => {
@@ -78,12 +100,24 @@ exports.getApplicationsByProfileId = (profileId) =>
             applicationId: app.applicationId,
           }).lean();
 
+          const approvedBy = app.approvalDetails?.approvedBy;
+          const approvedByPayload =
+            !approvedBy
+              ? null
+              : approvedBy instanceof mongoose.Types.ObjectId
+                ? { id: approvedBy.toString() }
+                : approvedBy && typeof approvedBy === "object" && (approvedBy.userFullName !== undefined || approvedBy.userEmail !== undefined)
+                  ? { id: approvedBy._id != null ? String(approvedBy._id) : null, name: approvedBy.userFullName, email: approvedBy.userEmail }
+                  : approvedBy && typeof approvedBy === "object"
+                    ? { id: approvedBy._id != null ? String(approvedBy._id) : null }
+                    : null;
+
           return {
             applicationId: app.applicationId,
-            membershipCategory: subscription?.subscriptionDetails?.membershipCategory || null,
-            submissionDate: app.createdAt,
-            approvalDate: app.approvalDetails?.approvedAt || null,
-            approvedBy: app.approvalDetails?.approvedBy || null,
+            membershipCategory: subscription?.subscriptionDetails?.membershipCategory ?? null,
+            submissionDate: app.createdAt != null ? app.createdAt.toISOString?.() ?? app.createdAt : null,
+            approvalDate: app.approvalDetails?.approvedAt != null ? (app.approvalDetails.approvedAt.toISOString?.() ?? app.approvalDetails.approvedAt) : null,
+            approvedBy: approvedByPayload,
             applicationStatus: app.applicationStatus,
           };
         })

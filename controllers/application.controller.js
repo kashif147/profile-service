@@ -3,6 +3,8 @@ const applicationFilterTemplateService = require("../services/application.filter
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 const joischemas = require("../validation/index.js");
 const { AppError } = require("../errors/AppError");
+const mongoose = require("mongoose");
+const { APPLICATION_STATUS } = require("../constants/enums");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
 
 // Original GET API - unchanged
@@ -273,7 +275,24 @@ exports.getApplicationsByProfileId = async (req, res, next) => {
 
     const { profileId } = req.params;
 
-    const applications = await applicationService.getApplicationsByProfileId(profileId);
+    if (!profileId || !mongoose.Types.ObjectId.isValid(profileId)) {
+      return next(AppError.badRequest("Invalid profileId"));
+    }
+
+    const rawType = req.query.type;
+    const statusFilters = [];
+    if (rawType) {
+      const values = Array.isArray(rawType) ? rawType : [rawType];
+      const validStatuses = Object.values(APPLICATION_STATUS);
+      for (const v of values) {
+        const normalized = typeof v === "string" ? v.toLowerCase().trim() : v;
+        if (normalized && validStatuses.includes(normalized)) {
+          statusFilters.push(normalized);
+        }
+      }
+    }
+
+    const applications = await applicationService.getApplicationsByProfileId(profileId, statusFilters);
 
     return res.success({
       profileId,
@@ -281,8 +300,9 @@ exports.getApplicationsByProfileId = async (req, res, next) => {
       applications,
     });
   } catch (error) {
-    console.error("ApplicationController [getApplicationsByProfileId] Error:", error);
-    if (error.message.includes("Profile ID is required")) {
+    console.error("ApplicationController [getApplicationsByProfileId] Error:", error?.message || error);
+    if (error?.stack) console.error(error.stack);
+    if (error?.message?.includes("Profile ID is required")) {
       return next(AppError.badRequest(error.message));
     }
     return next(error);
