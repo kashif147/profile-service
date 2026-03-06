@@ -136,7 +136,18 @@ class TemplateService {
         systemDefault: true,
         "meta.deleted": false,
       });
-      if (systemDefault) return systemDefault;
+      if (systemDefault) {
+        const type = systemDefault.templateType || "application";
+        const userHasDefault = await Template.exists({
+          userId,
+          templateType: type,
+          isDefault: true,
+          "meta.deleted": false,
+        });
+        const out = toTemplateResponse(systemDefault);
+        if (!userHasDefault) out.isDefault = true;
+        return out;
+      }
 
       const template = await Template.findOne({
         _id: templateId,
@@ -169,11 +180,20 @@ class TemplateService {
     try {
       const { name, templateType, filters, columns, isDefault, pinned } = updateData;
 
-      const template = await Template.findOne({
+      // Allow system default by ID (same as getTemplateById)
+      let template = await Template.findOne({
         _id: templateId,
-        userId,
+        systemDefault: true,
         "meta.deleted": false,
       });
+
+      if (!template) {
+        template = await Template.findOne({
+          _id: templateId,
+          userId,
+          "meta.deleted": false,
+        });
+      }
 
       if (!template) {
         throw AppError.notFound("Filter template not found");
@@ -181,6 +201,28 @@ class TemplateService {
 
       const type = templateType !== undefined ? templateType : template.templateType;
 
+      if (template.systemDefault) {
+        // System default: only allow isDefault and pinned (name/filters/columns affect everyone)
+        if (isDefault === true) {
+          // Clear isDefault on all user templates so getDefaultTemplateForType returns null → fallback to system default
+          await Template.updateMany(
+            {
+              userId,
+              templateType: type,
+              "meta.deleted": false,
+            },
+            { $set: { isDefault: false } }
+          );
+        }
+        if (pinned !== undefined) template.pinned = pinned;
+        // Don't persist isDefault on system default (shared doc) – effective default is "no user default"
+        const saved = await template.save();
+        const response = toTemplateResponse(saved);
+        if (isDefault === true) response.isDefault = true;
+        return response;
+      }
+
+      // User-owned template
       // When setting isDefault: true, unset all other templates for this user+type so only one is default.
       if (isDefault === true) {
         await Template.updateMany(

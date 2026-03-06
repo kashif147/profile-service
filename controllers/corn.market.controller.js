@@ -66,7 +66,9 @@ async function getCornMarketProfiles(req, res, next) {
               timeout: 10000, // 10 second timeout
               validateStatus: (status) => status < 500, // Don't throw on 4xx
               headers: {
-                Authorization: req.headers.authorization || "", // Forward auth token
+                Authorization: req.headers.authorization || "",
+                "x-internal-request": "true",
+                "x-tenant-id": req.tenantId || "",
               },
             }
           );

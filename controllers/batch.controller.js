@@ -7,7 +7,7 @@ const axios = require("axios");
 /**
  * Helper function to fetch subscription startDate for profiles
  */
-async function fetchSubscriptionStartDates(profileIds, authHeader) {
+async function fetchSubscriptionStartDates(profileIds, authHeader, tenantId) {
   const subscriptionStartMap = new Map();
   if (profileIds.length === 0) return subscriptionStartMap;
 
@@ -24,6 +24,8 @@ async function fetchSubscriptionStartDates(profileIds, authHeader) {
           validateStatus: (status) => status < 500,
           headers: {
             Authorization: authHeader || "",
+            "x-internal-request": "true",
+            "x-tenant-id": tenantId || "",
           },
         }
       );
@@ -195,7 +197,8 @@ async function createBatch(req, res, next) {
       const profileIdStrings = profileIds.map((id) => id.toString());
       const subscriptionStartMap = await fetchSubscriptionStartDates(
         profileIdStrings,
-        req.headers.authorization
+        req.headers.authorization,
+        req.tenantId
       );
 
       // Create profile snapshots (all fields stored in batch)
@@ -578,7 +581,8 @@ async function refreshBatch(req, res, next) {
       const profileIdStrings = profileIds.map((id) => id.toString());
       const subscriptionStartMap = await fetchSubscriptionStartDates(
         profileIdStrings,
-        req.headers.authorization
+        req.headers.authorization,
+        req.tenantId
       );
 
       // Create new profile snapshots

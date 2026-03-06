@@ -59,6 +59,10 @@ exports.getUserTemplates = async (req, res, next) => {
 
     const systemDefault = list.find((t) => t.systemDefault) || null;
     const userTemplates = list.filter((t) => !t.systemDefault);
+    const userHasDefault = userTemplates.some((t) => t.isDefault);
+    if (systemDefault && !userHasDefault) {
+      systemDefault.isDefault = true;
+    }
 
     return res.success({
       total: list.length,
