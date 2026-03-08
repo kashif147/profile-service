@@ -16,6 +16,9 @@ const aggregatedUserDetailsController = require("./aggregated.user.details.contr
 const {
   enrichWithSubscriptionService,
 } = require("../services/aggregated.user.details.service.js");
+const {
+  fetchCurrentSubscriptionByProfileId,
+} = require("../services/subscription.service.client.js");
 
 /**
  * Apply derived fields (age, fullAddress, date conversions) to the payload.
@@ -150,13 +153,36 @@ async function getAllProfiles(req, res, next) {
       Profile.countDocuments(query),
     ]);
 
+    const enriched = await Promise.all(
+      profiles.map(async (p) => {
+        const sub = await fetchCurrentSubscriptionByProfileId(
+          p._id?.toString(),
+          tenantId,
+          req
+        );
+        const membershipCategory = sub?.membershipCategory ?? null;
+        return {
+          ...p,
+          membershipCategory,
+          ...(sub && {
+            _subscriptionService: {
+              paymentType: sub.paymentType ?? null,
+              paymentFrequency: sub.paymentFrequency ?? null,
+              startDate: sub.startDate ?? null,
+              endDate: sub.endDate ?? null,
+            },
+          }),
+        };
+      })
+    );
+
     return res.success({
-      count: profiles.length,
+      count: enriched.length,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
-      results: profiles,
+      results: enriched,
     });
   } catch (error) {
     return next(
@@ -281,7 +307,24 @@ async function getProfileById(req, res, next) {
       });
     }
 
-    return res.success(profile);
+    const sub = await fetchCurrentSubscriptionByProfileId(
+      profileId,
+      tenantId,
+      req
+    );
+    const enriched = {
+      ...profile,
+      membershipCategory: sub?.membershipCategory ?? null,
+      ...(sub && {
+        _subscriptionService: {
+          paymentType: sub.paymentType ?? null,
+          paymentFrequency: sub.paymentFrequency ?? null,
+          startDate: sub.startDate ?? null,
+          endDate: sub.endDate ?? null,
+        },
+      }),
+    };
+    return res.success(enriched);
   } catch (error) {
     return next(
       AppError.internalServerError(error.message || "Failed to fetch profile")
