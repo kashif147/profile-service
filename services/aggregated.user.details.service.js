@@ -314,9 +314,11 @@ async function enrichWithSubscriptionService(result, req) {
   const profileId = await resolveProfileId(req, result);
   if (!profileId) return;
 
+  const tenantId =
+    result.personalDetails?.tenantId ?? req.tenantId;
   const sub = await fetchCurrentSubscriptionByProfileId(
     profileId,
-    req.tenantId,
+    tenantId,
     req
   );
   if (sub) {

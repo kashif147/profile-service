@@ -157,7 +157,7 @@ async function getAllProfiles(req, res, next) {
       profiles.map(async (p) => {
         const sub = await fetchCurrentSubscriptionByProfileId(
           p._id?.toString(),
-          tenantId,
+          p.tenantId ?? tenantId,
           req
         );
         const membershipCategory = sub?.membershipCategory ?? null;
@@ -309,7 +309,7 @@ async function getProfileById(req, res, next) {
 
     const sub = await fetchCurrentSubscriptionByProfileId(
       profileId,
-      tenantId,
+      profile.tenantId ?? tenantId,
       req
     );
     const enriched = {

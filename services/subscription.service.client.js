@@ -45,21 +45,34 @@ async function fetchCurrentSubscriptionByProfileId(
   tenantId,
   req = null
 ) {
-  if (!profileId || !tenantId) return null;
+  if (!profileId) return null;
 
   const base = SUBSCRIPTION_SERVICE_URL.replace(/\/$/, "");
   const url = `${base}/api/v1/subscriptions/profile/${profileId}`;
 
   try {
-    const response = await axios.get(url, {
-      headers: buildHeaders(req, tenantId),
+    let response = await axios.get(url, {
+      headers: buildHeaders(req, tenantId || ""),
       timeout: 8000,
       validateStatus: (status) => status < 500,
     });
 
-    if (response.status !== 200 || !response.data?.data) return null;
+    let raw = Array.isArray(response.data?.data) ? response.data.data : [];
 
-    const raw = Array.isArray(response.data.data) ? response.data.data : [];
+    if (raw.length === 0 && tenantId) {
+      const fallback = await axios.get(url, {
+        headers: buildHeaders(req, ""),
+        timeout: 8000,
+        validateStatus: (status) => status < 500,
+      });
+      raw = Array.isArray(fallback.data?.data) ? fallback.data.data : [];
+      if (raw.length > 0) {
+        console.warn(
+          `[subscription.service.client] Fallback succeeded for profile ${profileId} (tenantId filter omitted)`
+        );
+      }
+    }
+
     const seen = new Set();
     const subscriptions = raw.filter((s) => {
       const id = s?._id?.toString?.() ?? JSON.stringify(s);
