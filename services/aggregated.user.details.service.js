@@ -12,6 +12,11 @@ const subscriptionDetailsService = require("./subscription.details.service.js");
 const personalDetailsHandler = require("../handlers/personal.details.handler.js");
 const professionalDetailsHandler = require("../handlers/professional.details.handler.js");
 const subscriptionDetailsHandler = require("../handlers/subscription.details.handler.js");
+const {
+  fetchCurrentSubscriptionByProfileId,
+  mergeSubscriptionServiceData,
+} = require("./subscription.service.client.js");
+const Profile = require("../models/profile.model.js");
 
 const SOURCE_PROFILE_SERVICE = "profile-service";
 const SOURCE_PORTAL_SERVICE = "portal-service";
@@ -252,6 +257,89 @@ function normalizeEmailForCompare(e) {
 }
 
 /**
+ * Resolve profileId for subscription-service lookup.
+ * Tries: Profile by userId, personalDetails.profileId, Profile by normalizedEmail.
+ * @param {Object} req - Express request
+ * @param {Object} result - Aggregated result with personalDetails
+ * @returns {Promise<string|null>} profileId or null
+ */
+async function resolveProfileId(req, result) {
+  const tenantId = req.tenantId;
+  const userId = extractUserId(req);
+  const mongoose = require("mongoose");
+
+  if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+    const profileByUserId = await Profile.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      tenantId,
+    })
+      .select("_id")
+      .lean();
+    if (profileByUserId?._id) return profileByUserId._id.toString();
+  }
+
+  const pd = result?.personalDetails;
+  if (pd?.profileId) {
+    return typeof pd.profileId === "string"
+      ? pd.profileId
+      : pd.profileId?.toString?.() ?? null;
+  }
+
+  const email =
+    pd?.contactInfo?.personalEmail ||
+    pd?.contactInfo?.workEmail ||
+    extractEmailFromToken(req);
+  const normalized = normalizeEmailForCompare(email);
+  if (normalized && tenantId) {
+    const profileByEmail = await Profile.findOne({
+      normalizedEmail: normalized,
+      tenantId,
+    })
+      .select("_id")
+      .lean();
+    if (profileByEmail?._id) return profileByEmail._id.toString();
+  }
+
+  return null;
+}
+
+/**
+ * Enrich result.subscriptionDetails with subscription-service data.
+ * Also propagates membershipCategory to professionalDetails when present.
+ * @param {Object} result - Aggregated result
+ * @param {Object} req - Express request
+ */
+async function enrichWithSubscriptionService(result, req) {
+  if (!result) return;
+  const profileId = await resolveProfileId(req, result);
+  if (!profileId) return;
+
+  const sub = await fetchCurrentSubscriptionByProfileId(
+    profileId,
+    req.tenantId,
+    req
+  );
+  if (sub) {
+    result.subscriptionDetails = mergeSubscriptionServiceData(
+      result.subscriptionDetails,
+      sub
+    );
+    if (sub.membershipCategory && result.professionalDetails) {
+      const pd = result.professionalDetails;
+      if (pd.professionalDetails && typeof pd.professionalDetails === "object") {
+        if (!pd.professionalDetails.membershipCategory) {
+          pd.professionalDetails.membershipCategory = sub.membershipCategory;
+        }
+      } else if (typeof pd === "object") {
+        if (!pd.membershipCategory) {
+          pd.membershipCategory = sub.membershipCategory;
+        }
+      }
+    }
+  }
+}
+
+/**
  * Return true if the given email matches the personal details (personalEmail or workEmail).
  * @param {Object} personalDetails - Personal details document
  * @param {string} email - Email to match (normalized)
@@ -278,6 +366,7 @@ async function getAggregatedUserDetails(req) {
   const fromPortal = await getAggregatedFromPortalService(req);
 
   // 2) If portal has data: see if profile has the same (by email); prefer profile when same email exists there
+  let finalResult;
   if (
     fromPortal &&
     (fromPortal.personalDetails ||
@@ -298,15 +387,17 @@ async function getAggregatedUserDetails(req) {
       fromProfile.personalDetails &&
       personalDetailsMatchesEmail(fromProfile.personalDetails, emailToUse)
     ) {
-      return fromProfile;
+      finalResult = fromProfile;
+    } else {
+      finalResult = fromPortal;
     }
-
-    // Otherwise return from portal
-    return fromPortal;
+  } else {
+    // 3) Portal has no data: return from profile (portal-created by userId, or CRM-created by email)
+    finalResult = await getAggregatedFromProfileService(req);
   }
 
-  // 3) Portal has no data: return from profile (portal-created by userId, or CRM-created by email)
-  return getAggregatedFromProfileService(req);
+  await enrichWithSubscriptionService(finalResult, req);
+  return finalResult;
 }
 
 module.exports = {
@@ -318,6 +409,7 @@ module.exports = {
   getAggregatedFromProfileService,
   getAggregatedFromPortalService,
   getAggregatedUserDetails,
+  enrichWithSubscriptionService,
   personalDetailsMatchesEmail,
   normalizeEmailForCompare,
   SOURCE_PROFILE_SERVICE,

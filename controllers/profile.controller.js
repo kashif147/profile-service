@@ -13,6 +13,9 @@ const personalDetailsService = require("../services/personal.details.service.js"
 const professionalDetailsService = require("../services/professional.details.service.js");
 const subscriptionDetailsService = require("../services/subscription.details.service.js");
 const aggregatedUserDetailsController = require("./aggregated.user.details.controller.js");
+const {
+  enrichWithSubscriptionService,
+} = require("../services/aggregated.user.details.service.js");
 
 /**
  * Apply derived fields (age, fullAddress, date conversions) to the payload.
@@ -979,20 +982,23 @@ async function getMySubscriptionDetails(req, res, next) {
       return next(AppError.badRequest("User ID is required"));
     }
 
-    const subscriptionDetails =
+    let subscriptionDetails =
       await subscriptionDetailsService.getMySubscriptionDetails(
         userId,
         tenantId
       );
 
-    if (!subscriptionDetails) {
+    const subResult = { personalDetails: null, subscriptionDetails };
+    await enrichWithSubscriptionService(subResult, req);
+
+    if (!subResult.subscriptionDetails) {
       return res.status(200).json({
         data: null,
         message: "Subscription details not found",
       });
     }
 
-    return res.success(subscriptionDetails);
+    return res.success(subResult.subscriptionDetails);
   } catch (error) {
     console.error("ProfileController [getMySubscriptionDetails] Error:", error);
     if (error.message === "Subscription details not found") {
@@ -1052,7 +1058,8 @@ async function getMyAllDetails(req, res, next) {
           : null,
     };
 
-    // If none of the details exist, return not found
+    await enrichWithSubscriptionService(result, req);
+
     if (
       !result.personalDetails &&
       !result.professionalDetails &&
