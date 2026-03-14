@@ -257,11 +257,11 @@ function normalizeEmailForCompare(e) {
 }
 
 /**
- * Resolve profileId for subscription-service lookup.
+ * Resolve profileId and currentSubscriptionId for subscription-service lookup.
  * Tries: Profile by userId, personalDetails.profileId, Profile by normalizedEmail.
  * @param {Object} req - Express request
  * @param {Object} result - Aggregated result with personalDetails
- * @returns {Promise<string|null>} profileId or null
+ * @returns {Promise<{ profileId: string|null, currentSubscriptionId: string|null }>}
  */
 async function resolveProfileId(req, result) {
   const tenantId = req.tenantId;
@@ -273,16 +273,30 @@ async function resolveProfileId(req, result) {
       userId: new mongoose.Types.ObjectId(userId),
       tenantId,
     })
-      .select("_id")
+      .select("_id currentSubscriptionId")
       .lean();
-    if (profileByUserId?._id) return profileByUserId._id.toString();
+    if (profileByUserId?._id) {
+      return {
+        profileId: profileByUserId._id.toString(),
+        currentSubscriptionId: profileByUserId.currentSubscriptionId?.toString() ?? null,
+      };
+    }
   }
 
   const pd = result?.personalDetails;
   if (pd?.profileId) {
-    return typeof pd.profileId === "string"
+    const pidStr = typeof pd.profileId === "string"
       ? pd.profileId
       : pd.profileId?.toString?.() ?? null;
+    if (pidStr) {
+      const profileDoc = await Profile.findById(pidStr)
+        .select("_id currentSubscriptionId")
+        .lean();
+      return {
+        profileId: pidStr,
+        currentSubscriptionId: profileDoc?.currentSubscriptionId?.toString() ?? null,
+      };
+    }
   }
 
   const email =
@@ -295,12 +309,17 @@ async function resolveProfileId(req, result) {
       normalizedEmail: normalized,
       tenantId,
     })
-      .select("_id")
+      .select("_id currentSubscriptionId")
       .lean();
-    if (profileByEmail?._id) return profileByEmail._id.toString();
+    if (profileByEmail?._id) {
+      return {
+        profileId: profileByEmail._id.toString(),
+        currentSubscriptionId: profileByEmail.currentSubscriptionId?.toString() ?? null,
+      };
+    }
   }
 
-  return null;
+  return { profileId: null, currentSubscriptionId: null };
 }
 
 /**
@@ -311,8 +330,8 @@ async function resolveProfileId(req, result) {
  */
 async function enrichWithSubscriptionService(result, req) {
   if (!result) return;
-  const profileId = await resolveProfileId(req, result);
-  if (!profileId) return;
+  const { profileId, currentSubscriptionId } = await resolveProfileId(req, result);
+  if (!profileId || !currentSubscriptionId) return;
 
   const tenantId =
     result.personalDetails?.tenantId ?? req.tenantId;

@@ -153,28 +153,38 @@ async function getAllProfiles(req, res, next) {
       Profile.countDocuments(query),
     ]);
 
-    const enriched = await Promise.all(
-      profiles.map(async (p) => {
-        const sub = await fetchCurrentSubscriptionByProfileId(
-          p._id?.toString(),
-          p.tenantId ?? tenantId,
-          req
-        );
-        const membershipCategory = sub?.membershipCategory ?? null;
-        return {
-          ...p,
-          membershipCategory,
-          ...(sub && {
-            _subscriptionService: {
-              paymentType: sub.paymentType ?? null,
-              paymentFrequency: sub.paymentFrequency ?? null,
-              startDate: sub.startDate ?? null,
-              endDate: sub.endDate ?? null,
-            },
-          }),
-        };
-      })
-    );
+    const profilesToEnrich = profiles.filter((p) => p.currentSubscriptionId);
+    const subMap = new Map();
+    if (profilesToEnrich.length > 0) {
+      const subs = await Promise.all(
+        profilesToEnrich.map((p) =>
+          fetchCurrentSubscriptionByProfileId(
+            p._id?.toString(),
+            p.tenantId ?? tenantId,
+            req
+          ).then((sub) => ({ profileId: p._id.toString(), sub }))
+        )
+      );
+      subs.forEach(({ profileId, sub }) => {
+        if (sub) subMap.set(profileId, sub);
+      });
+    }
+
+    const enriched = profiles.map((p) => {
+      const sub = subMap.get(p._id?.toString()) ?? null;
+      return {
+        ...p,
+        membershipCategory: sub?.membershipCategory ?? null,
+        ...(sub && {
+          _subscriptionService: {
+            paymentType: sub.paymentType ?? null,
+            paymentFrequency: sub.paymentFrequency ?? null,
+            startDate: sub.startDate ?? null,
+            endDate: sub.endDate ?? null,
+          },
+        }),
+      };
+    });
 
     return res.success({
       count: enriched.length,
@@ -307,11 +317,14 @@ async function getProfileById(req, res, next) {
       });
     }
 
-    const sub = await fetchCurrentSubscriptionByProfileId(
-      profileId,
-      profile.tenantId ?? tenantId,
-      req
-    );
+    let sub = null;
+    if (profile.currentSubscriptionId) {
+      sub = await fetchCurrentSubscriptionByProfileId(
+        profileId,
+        profile.tenantId ?? tenantId,
+        req
+      );
+    }
     const enriched = {
       ...profile,
       membershipCategory: sub?.membershipCategory ?? null,

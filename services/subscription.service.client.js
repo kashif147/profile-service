@@ -57,7 +57,13 @@ async function fetchCurrentSubscriptionByProfileId(
       validateStatus: (status) => status < 500,
     });
 
-    let raw = Array.isArray(response.data?.data) ? response.data.data : [];
+    const body = response.data;
+    let raw = [];
+    if (Array.isArray(body?.data?.data)) {
+      raw = body.data.data;
+    } else if (Array.isArray(body?.data)) {
+      raw = body.data;
+    }
 
     if (raw.length === 0 && tenantId) {
       const fallback = await axios.get(url, {
@@ -65,7 +71,12 @@ async function fetchCurrentSubscriptionByProfileId(
         timeout: 8000,
         validateStatus: (status) => status < 500,
       });
-      raw = Array.isArray(fallback.data?.data) ? fallback.data.data : [];
+      const fb = fallback.data;
+      if (Array.isArray(fb?.data?.data)) {
+        raw = fb.data.data;
+      } else if (Array.isArray(fb?.data)) {
+        raw = fb.data;
+      }
       if (raw.length > 0) {
         console.warn(
           `[subscription.service.client] Fallback succeeded for profile ${profileId} (tenantId filter omitted)`
