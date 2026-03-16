@@ -338,7 +338,8 @@ async function enrichWithSubscriptionService(result, req) {
   const sub = await fetchCurrentSubscriptionByProfileId(
     profileId,
     tenantId,
-    req
+    req,
+    currentSubscriptionId
   );
   if (sub) {
     result.subscriptionDetails = mergeSubscriptionServiceData(

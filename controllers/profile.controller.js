@@ -161,7 +161,8 @@ async function getAllProfiles(req, res, next) {
           fetchCurrentSubscriptionByProfileId(
             p._id?.toString(),
             p.tenantId ?? tenantId,
-            req
+            req,
+            p.currentSubscriptionId?.toString?.() ?? p.currentSubscriptionId
           ).then((sub) => ({ profileId: p._id.toString(), sub }))
         )
       );
@@ -319,10 +320,14 @@ async function getProfileById(req, res, next) {
 
     let sub = null;
     if (profile.currentSubscriptionId) {
+      const subId =
+        profile.currentSubscriptionId?.toString?.() ??
+        profile.currentSubscriptionId;
       sub = await fetchCurrentSubscriptionByProfileId(
         profileId,
         profile.tenantId ?? tenantId,
-        req
+        req,
+        subId
       );
     }
     const enriched = {

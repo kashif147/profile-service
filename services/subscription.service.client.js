@@ -34,16 +34,32 @@ function buildHeaders(req, tenantId) {
 }
 
 /**
+ * Parse subscription array from subscription-service response (handles multiple shapes).
+ * @param {*} body - response.data from axios
+ * @returns {Array} Array of subscription objects
+ */
+function parseSubscriptionsFromResponse(body) {
+  if (!body || typeof body !== "object") return [];
+  if (Array.isArray(body?.data?.data)) return body.data.data;
+  if (Array.isArray(body?.data)) return body.data;
+  if (Array.isArray(body)) return body;
+  return [];
+}
+
+/**
  * Fetch subscriptions for a profile from subscription-service.
+ * When currentSubscriptionId is provided, picks that subscription by _id; otherwise picks isCurrent or most recent.
  * @param {string} profileId - Profile ID (MongoDB ObjectId string)
  * @param {string} tenantId - Tenant ID
  * @param {Object} req - Express request (for auth/headers)
+ * @param {string|null} [currentSubscriptionId] - Optional subscription _id from Profile.currentSubscriptionId
  * @returns {Promise<Object|null>} Current subscription or null
  */
 async function fetchCurrentSubscriptionByProfileId(
   profileId,
   tenantId,
-  req = null
+  req = null,
+  currentSubscriptionId = null
 ) {
   if (!profileId) return null;
 
@@ -57,13 +73,7 @@ async function fetchCurrentSubscriptionByProfileId(
       validateStatus: (status) => status < 500,
     });
 
-    const body = response.data;
-    let raw = [];
-    if (Array.isArray(body?.data?.data)) {
-      raw = body.data.data;
-    } else if (Array.isArray(body?.data)) {
-      raw = body.data;
-    }
+    let raw = parseSubscriptionsFromResponse(response.data);
 
     if (raw.length === 0 && tenantId) {
       const fallback = await axios.get(url, {
@@ -71,12 +81,7 @@ async function fetchCurrentSubscriptionByProfileId(
         timeout: 8000,
         validateStatus: (status) => status < 500,
       });
-      const fb = fallback.data;
-      if (Array.isArray(fb?.data?.data)) {
-        raw = fb.data.data;
-      } else if (Array.isArray(fb?.data)) {
-        raw = fb.data;
-      }
+      raw = parseSubscriptionsFromResponse(fallback.data);
       if (raw.length > 0) {
         console.warn(
           `[subscription.service.client] Fallback succeeded for profile ${profileId} (tenantId filter omitted)`
@@ -94,7 +99,16 @@ async function fetchCurrentSubscriptionByProfileId(
 
     if (subscriptions.length === 0) return null;
 
-    // Pick exactly one: prefer isCurrent; else most recent by startDate, then createdAt
+    const currentSubIdStr =
+      currentSubscriptionId != null ? String(currentSubscriptionId).trim() : null;
+
+    if (currentSubIdStr) {
+      const byId = subscriptions.find(
+        (s) => (s?._id?.toString?.() ?? "") === currentSubIdStr
+      );
+      if (byId) return byId;
+    }
+
     const byRecency = [...subscriptions].sort((a, b) => {
       const aDate = a.startDate ? new Date(a.startDate).getTime() : 0;
       const bDate = b.startDate ? new Date(b.startDate).getTime() : 0;
