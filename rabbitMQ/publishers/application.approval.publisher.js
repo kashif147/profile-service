@@ -115,6 +115,8 @@ class ApplicationApprovalEventPublisher {
           tenantId: tenantId || null,
           applicationStatus,
           userId: userId || null,
+          // Consumers (e.g. portal-service) should set meta.isActive false on application records
+          isActive: false,
         },
         {
           tenantId,
