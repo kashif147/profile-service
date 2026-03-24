@@ -1,4 +1,5 @@
 const PersonalDetails = require("../models/personal.details.model");
+const { APPLICATION_STATUS } = require("../constants/enums");
 
 const generateFullAddress = (contactInfo) => {
   if (!contactInfo) return "";
@@ -365,13 +366,18 @@ exports.updateApplicationStatus = (applicationId, status, tenantId) =>
       if (tenantId) {
         query.tenantId = tenantId;
       }
+      const setPayload = { applicationStatus: status };
+      if (status === APPLICATION_STATUS.REJECTED) {
+        setPayload["meta.isActive"] = false;
+      }
+
       // Try lowercase first, then uppercase for backward compatibility
       let result = await PersonalDetails.findOneAndUpdate(
         query,
-        { applicationStatus: status },
+        { $set: setPayload },
         { new: true }
       );
-      
+
       if (!result) {
         const legacyQuery = { ApplicationId: applicationId };
         if (tenantId) {
@@ -379,7 +385,7 @@ exports.updateApplicationStatus = (applicationId, status, tenantId) =>
         }
         result = await PersonalDetails.findOneAndUpdate(
           legacyQuery,
-          { applicationStatus: status },
+          { $set: setPayload },
           { new: true }
         );
       }

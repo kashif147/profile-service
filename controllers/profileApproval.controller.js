@@ -442,6 +442,7 @@ async function rejectApplication(req, res, next) {
       {
         $set: {
           applicationStatus: APPLICATION_STATUS.REJECTED,
+          "meta.isActive": false,
           "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
           "approvalDetails.approvedAt": new Date(),
           "approvalDetails.rejectionReason": reason,

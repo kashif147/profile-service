@@ -148,10 +148,13 @@ exports.updateApplicationStatus = (
           comments: comments || "",
         },
       };
+      if (normalizedStatus === APPLICATION_STATUS.REJECTED) {
+        updateData["meta.isActive"] = false;
+      }
 
       const result = await PersonalDetails.findOneAndUpdate(
         { applicationId: applicationId },
-        updateData,
+        { $set: updateData },
         { new: true, runValidators: true }
       );
 

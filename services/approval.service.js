@@ -432,6 +432,7 @@ async function rejectApplication({
       {
         $set: {
           applicationStatus: APPLICATION_STATUS.REJECTED,
+          "meta.isActive": false,
           approvalDetails: {
             approvedBy: getReviewerIdForDb(reviewerId),
             approvedAt: new Date(),
