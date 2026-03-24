@@ -31,6 +31,20 @@ class ApplicationApprovalEventListener {
         }
       );
 
+      const applicationStatusNorm = (data.applicationStatus || "")
+        .toLowerCase()
+        .trim();
+      if (
+        applicationStatusNorm &&
+        applicationStatusNorm !== APPLICATION_STATUS.APPROVED
+      ) {
+        console.log(
+          "⏭️ [APPLICATION_APPROVAL_LISTENER] Skipping: payload is not an approval",
+          { applicationId: data.applicationId, applicationStatus: data.applicationStatus }
+        );
+        return;
+      }
+
       const {
         applicationId,
         profileId,
@@ -39,6 +53,28 @@ class ApplicationApprovalEventListener {
         subscriptionAttributes,
         tenantId,
       } = data;
+
+      if (!effective || typeof effective !== "object") {
+        console.warn(
+          "⏭️ [APPLICATION_APPROVAL_LISTENER] Skipping: missing effective payload",
+          { applicationId }
+        );
+        return;
+      }
+
+      const personalRow = await PersonalDetails.findOne({ applicationId })
+        .select("applicationStatus")
+        .lean();
+      if (
+        personalRow?.applicationStatus &&
+        personalRow.applicationStatus.toLowerCase() === APPLICATION_STATUS.REJECTED
+      ) {
+        console.log(
+          "⏭️ [APPLICATION_APPROVAL_LISTENER] Skipping: application already rejected",
+          { applicationId }
+        );
+        return;
+      }
 
       // Update main application models with approved data
       if (effective.personalInfo) {

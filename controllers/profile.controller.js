@@ -1267,6 +1267,7 @@ async function getProfileByEmailInternal(req, res, next) {
     const profile = await Profile.findOne({
       tenantId,
       normalizedEmail,
+      isActive: { $ne: false },
     })
       .select("_id")
       .lean();

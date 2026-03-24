@@ -3,11 +3,6 @@ const mongoose = require("mongoose");
 const jsonPatch = require("fast-json-patch");
 const { applyPatch } = jsonPatch;
 const crypto = require("crypto");
-const {
-  publishDomainEvent,
-  APPLICATION_REVIEW_EVENTS,
-} = require("../rabbitMQ/index.js");
-
 // Helper function to handle bypass user ObjectId conversion
 function getReviewerIdForDb(reviewerId) {
   if (reviewerId === "bypass-user") {
@@ -426,6 +421,13 @@ async function rejectApplication({
     }).session(session);
     if (!overlay) throw new Error("Open overlay not found");
 
+    const personalForEvent = await PersonalDetails.findOne({
+      applicationId: applicationId,
+    })
+      .select("userId")
+      .session(session)
+      .lean();
+
     // Update PersonalDetails status and approvalDetails
     await PersonalDetails.updateOne(
       { applicationId: applicationId },
@@ -449,15 +451,24 @@ async function rejectApplication({
     overlay.overlayVersion += 1;
     await overlay.save({ session });
 
-    await publishDomainEvent(
-      APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_REJECTED,
-      {
+    try {
+      await ApplicationApprovalEventPublisher.publishApplicationRejected({
         applicationId,
         reviewerId,
         reason,
-      },
-      { tenantId, correlationId: crypto.randomUUID() }
-    );
+        notes,
+        tenantId,
+        userId: personalForEvent?.userId
+          ? String(personalForEvent.userId)
+          : null,
+        correlationId: crypto.randomUUID(),
+      });
+    } catch (publishError) {
+      console.error(
+        "[approval.service rejectApplication] Failed to publish application rejected event:",
+        publishError.message
+      );
+    }
 
     await session.commitTransaction();
     return { applicationId, status: "rejected" };

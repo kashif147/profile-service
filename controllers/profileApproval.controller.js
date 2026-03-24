@@ -18,10 +18,6 @@ const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
 const { APPLICATION_STATUS } = require("../constants/enums.js");
-const {
-  publishDomainEvent,
-  APPLICATION_REVIEW_EVENTS,
-} = require("../rabbitMQ/index.js");
 const { loadSubmission } = require("../services/submission.service.js");
 const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const {
@@ -436,6 +432,13 @@ async function rejectApplication(req, res, next) {
       }
     }
 
+    const personalForEvent = await PersonalDetails.findOne({
+      applicationId: applicationId,
+    })
+      .select("userId")
+      .session(session)
+      .lean();
+
     // Update PersonalDetails with rejection status and details
     await PersonalDetails.updateOne(
       { applicationId: applicationId },
@@ -455,17 +458,24 @@ async function rejectApplication(req, res, next) {
     // Note: ProfessionalDetails and SubscriptionDetails are kept as-is (not deleted)
     // No Profile is created for rejected applications
 
-    // Publish rejection event for portal-service
-    await publishDomainEvent(
-      APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_REJECTED,
-      {
+    try {
+      await ApplicationApprovalEventPublisher.publishApplicationRejected({
         applicationId,
         reviewerId,
         reason,
         notes,
-      },
-      { tenantId, correlationId: crypto.randomUUID() }
-    );
+        tenantId,
+        userId: personalForEvent?.userId
+          ? String(personalForEvent.userId)
+          : null,
+        correlationId: crypto.randomUUID(),
+      });
+    } catch (publishError) {
+      console.error(
+        "[rejectApplication] Failed to publish application rejected event:",
+        publishError.message
+      );
+    }
 
     await session.commitTransaction();
     return res.status(200).json({ applicationId, status: "rejected" });

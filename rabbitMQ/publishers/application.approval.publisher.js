@@ -89,6 +89,63 @@ class ApplicationApprovalEventPublisher {
     }
   }
 
+  async publishApplicationRejected({
+    applicationId,
+    reviewerId,
+    reason,
+    notes,
+    tenantId,
+    applicationStatus = "REJECTED",
+    userId,
+    correlationId,
+  }) {
+    try {
+      console.log(
+        "📤 [APPLICATION_APPROVAL_PUBLISHER] Publishing application rejected event:",
+        { applicationId, tenantId }
+      );
+
+      const result = await publisher.publish(
+        APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_REJECTED,
+        {
+          applicationId,
+          reviewerId,
+          reason: reason ?? null,
+          notes: notes ?? null,
+          tenantId: tenantId || null,
+          applicationStatus,
+          userId: userId || null,
+        },
+        {
+          tenantId,
+          correlationId,
+          exchange: "application.events",
+          routingKey: APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_REJECTED,
+          metadata: {
+            service: "profile-service",
+            version: "1.0",
+          },
+        }
+      );
+
+      if (!result.success) {
+        throw new Error(
+          `Failed to publish application rejected event: ${result.error}`
+        );
+      }
+
+      console.log(
+        "✅ [APPLICATION_APPROVAL_PUBLISHER] Application rejected event published successfully"
+      );
+    } catch (error) {
+      console.error(
+        "❌ [APPLICATION_APPROVAL_PUBLISHER] Error publishing application rejected event:",
+        { error: error.message, applicationId }
+      );
+      throw error;
+    }
+  }
+
   async publishMemberCreatedRequested({
     applicationId,
     profileId,

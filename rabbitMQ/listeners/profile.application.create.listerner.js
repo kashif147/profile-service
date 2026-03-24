@@ -1,9 +1,14 @@
 const PersonalDetails = require("../../models/personal.details.model.js");
 const ProfessionalDetails = require("../../models/professional.details.model.js");
 const SubscriptionDetails = require("../../models/subscription.model.js");
+const { APPLICATION_STATUS } = require("../../constants/enums.js");
 const {
   detectDuplicates,
 } = require("../../services/duplicate.detection.service.js");
+
+function isRejectedStatus(value) {
+  return (value || "").toLowerCase() === APPLICATION_STATUS.REJECTED;
+}
 
 class ProfileApplicationCreateListener {
   constructor() {
@@ -30,6 +35,27 @@ class ProfileApplicationCreateListener {
         professionalDetails,
         subscriptionDetails,
       } = data;
+
+      const incomingAppStatus =
+        personalDetails?.applicationStatus || status || null;
+      if (isRejectedStatus(incomingAppStatus)) {
+        console.log(
+          "⏭️ [PROFILE_CREATE_LISTENER] Skipping: event indicates rejected application",
+          { applicationId, incomingAppStatus }
+        );
+        return;
+      }
+
+      const existingPersonal = await PersonalDetails.findOne({
+        applicationId,
+      }).lean();
+      if (isRejectedStatus(existingPersonal?.applicationStatus)) {
+        console.log(
+          "⏭️ [PROFILE_CREATE_LISTENER] Skipping: application already rejected in profile-service (stale portal sync)",
+          { applicationId }
+        );
+        return;
+      }
 
       console.log("🔍 [PROFILE_CREATE_LISTENER] Event data structure:", {
         applicationId,
