@@ -1222,7 +1222,10 @@ async function getProfilesBatch(req, res, next) {
     }
 
     const query = { _id: { $in: objectIds } };
-    if (req.tenantId) {
+    const relaxTenant =
+      isInternalRequest &&
+      (req.query?.relaxTenant === "true" || req.query?.relaxTenant === "1");
+    if (req.tenantId && !relaxTenant) {
       query.tenantId = req.tenantId;
     }
     const profiles = await Profile.find(query).lean();
