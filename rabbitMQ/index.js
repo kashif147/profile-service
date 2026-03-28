@@ -33,6 +33,11 @@ const {
   handlePortalUserCreated,
   handlePortalUserUpdated,
 } = require("./listeners/user.portal.listener.js");
+const {
+  handleSubscriptionResignedInactive,
+  handleSubscriptionCancelledInactive,
+  handleSubscriptionResignationUndoneActive,
+} = require("./listeners/subscription.personal.details.listener.js");
 const { runBatchProcessing } = require("../services/batch.process.job.service.js");
 
 // Initialize event system
@@ -150,7 +155,7 @@ async function setupConsumers() {
     console.log("   Queue:", MEMBERSHIP_QUEUE);
     console.log("   Exchange: membership.events");
     console.log(
-      "   Routing Keys: members.member.created.requested.v1, members.subscription.current.updated.v1"
+      "   Routing Keys: members.member.created.requested.v1, members.subscription.current.updated.v1, members.subscription.resigned.v1, members.subscription.cancelled.v1, members.subscription.resignation.undone.v1"
     );
 
     await consumer.createQueue(MEMBERSHIP_QUEUE, {
@@ -161,6 +166,9 @@ async function setupConsumers() {
     await consumer.bindQueue(MEMBERSHIP_QUEUE, "membership.events", [
       "members.member.created.requested.v1",
       "members.subscription.current.updated.v1",
+      "members.subscription.resigned.v1",
+      "members.subscription.cancelled.v1",
+      "members.subscription.resignation.undone.v1",
     ]);
 
     consumer.registerHandler(
@@ -189,6 +197,27 @@ async function setupConsumers() {
           update.hasHistory = true;
         }
         await Profile.updateOne({ _id: profileId }, { $set: update });
+      }
+    );
+
+    consumer.registerHandler(
+      "members.subscription.resigned.v1",
+      async (payload) => {
+        await handleSubscriptionResignedInactive(payload);
+      }
+    );
+
+    consumer.registerHandler(
+      "members.subscription.cancelled.v1",
+      async (payload) => {
+        await handleSubscriptionCancelledInactive(payload);
+      }
+    );
+
+    consumer.registerHandler(
+      "members.subscription.resignation.undone.v1",
+      async (payload) => {
+        await handleSubscriptionResignationUndoneActive(payload);
       }
     );
 
