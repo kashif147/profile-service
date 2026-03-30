@@ -497,6 +497,40 @@
           }
         },
         {
+          "name": "Get My Applications (Portal)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/applications/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "applications", "me"]
+            }
+          }
+        },
+        {
+          "name": "Get Applications by Profile ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/applications/profile/{{profileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "applications", "profile", "{{profileId}}"]
+            }
+          }
+        },
+        {
           "name": "Get Application by ID",
           "request": {
             "method": "GET",

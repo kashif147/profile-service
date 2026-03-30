@@ -5,7 +5,31 @@ const joischemas = require("../validation/index.js");
 const { AppError } = require("../errors/AppError");
 const mongoose = require("mongoose");
 const { APPLICATION_STATUS } = require("../constants/enums");
+const Profile = require("../models/profile.model");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
+
+function parseStatusFilters(rawType) {
+  const statusFilters = [];
+  if (!rawType) return statusFilters;
+
+  const values = Array.isArray(rawType) ? rawType : [rawType];
+  const validStatuses = Object.values(APPLICATION_STATUS);
+  for (const v of values) {
+    const normalized = typeof v === "string" ? v.toLowerCase().trim() : v;
+    if (normalized && validStatuses.includes(normalized)) {
+      statusFilters.push(normalized);
+    }
+  }
+  return statusFilters;
+}
+
+function buildPortalUserIdMatcher(userId) {
+  const values = [String(userId)];
+  if (mongoose.Types.ObjectId.isValid(userId)) {
+    values.push(new mongoose.Types.ObjectId(userId));
+  }
+  return { $in: values };
+}
 
 // Original GET API - unchanged
 exports.getAllApplications = async (req, res, next) => {
@@ -264,14 +288,7 @@ exports.approveApplication = async (req, res, next) => {
 
 exports.getApplicationsByProfileId = async (req, res, next) => {
   try {
-    const { userType } = extractUserAndCreatorContext(req);
-    if (userType !== "CRM") {
-      return next(
-        AppError.forbidden(
-          "Access denied. Only CRM users can view applications."
-        )
-      );
-    }
+    const { userType, userId, tenantId } = extractUserAndCreatorContext(req);
 
     const { profileId } = req.params;
 
@@ -279,19 +296,27 @@ exports.getApplicationsByProfileId = async (req, res, next) => {
       return next(AppError.badRequest("Invalid profileId"));
     }
 
-    const rawType = req.query.type;
-    const statusFilters = [];
-    if (rawType) {
-      const values = Array.isArray(rawType) ? rawType : [rawType];
-      const validStatuses = Object.values(APPLICATION_STATUS);
-      for (const v of values) {
-        const normalized = typeof v === "string" ? v.toLowerCase().trim() : v;
-        if (normalized && validStatuses.includes(normalized)) {
-          statusFilters.push(normalized);
-        }
+    if (userType !== "CRM" && userType !== "PORTAL") {
+      return next(AppError.forbidden("Access denied."));
+    }
+
+    if (userType === "PORTAL") {
+      if (!userId || !tenantId) {
+        return next(AppError.forbidden("Access denied."));
+      }
+      const ownsProfile = await Profile.exists({
+        _id: new mongoose.Types.ObjectId(profileId),
+        tenantId: String(tenantId),
+        userId: buildPortalUserIdMatcher(userId),
+      });
+      if (!ownsProfile) {
+        return next(
+          AppError.forbidden("Access denied. You can only view your own applications.")
+        );
       }
     }
 
+    const statusFilters = parseStatusFilters(req.query.type);
     const applications = await applicationService.getApplicationsByProfileId(profileId, statusFilters);
 
     return res.success({
@@ -305,6 +330,52 @@ exports.getApplicationsByProfileId = async (req, res, next) => {
     if (error?.message?.includes("Profile ID is required")) {
       return next(AppError.badRequest(error.message));
     }
+    return next(error);
+  }
+};
+
+exports.getMyApplications = async (req, res, next) => {
+  try {
+    const { userType, userId, tenantId } = extractUserAndCreatorContext(req);
+    if (userType !== "PORTAL") {
+      return next(
+        AppError.forbidden("Access denied. Only portal users can use this endpoint.")
+      );
+    }
+    if (!userId || !tenantId) {
+      return next(AppError.forbidden("Access denied."));
+    }
+
+    const profile = await Profile.findOne({
+      tenantId: String(tenantId),
+      userId: buildPortalUserIdMatcher(userId),
+    })
+      .sort({ updatedAt: -1 })
+      .select("_id")
+      .lean();
+
+    if (!profile?._id) {
+      return res.success({
+        profileId: null,
+        count: 0,
+        applications: [],
+      });
+    }
+
+    const statusFilters = parseStatusFilters(req.query.type);
+    const applications = await applicationService.getApplicationsByProfileId(
+      profile._id.toString(),
+      statusFilters
+    );
+
+    return res.success({
+      profileId: profile._id.toString(),
+      count: applications.length,
+      applications,
+    });
+  } catch (error) {
+    console.error("ApplicationController [getMyApplications] Error:", error?.message || error);
+    if (error?.stack) console.error(error.stack);
     return next(error);
   }
 };

@@ -18,6 +18,12 @@ router.put(
 );
 
 router.get(
+  "/me",
+  defaultPolicyMiddleware.requirePermission("portal", "read"),
+  applicationController.getMyApplications
+);
+
+router.get(
   "/profile/:profileId",
   defaultPolicyMiddleware.requirePermission("portal", "read"),
   applicationController.getApplicationsByProfileId
