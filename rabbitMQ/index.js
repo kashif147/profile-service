@@ -37,6 +37,7 @@ const {
   handleSubscriptionResignedInactive,
   handleSubscriptionCancelledInactive,
   handleSubscriptionResignationUndoneActive,
+  handleSubscriptionCancellationUndoneActive,
 } = require("./listeners/subscription.personal.details.listener.js");
 const { runBatchProcessing } = require("../services/batch.process.job.service.js");
 
@@ -155,7 +156,7 @@ async function setupConsumers() {
     console.log("   Queue:", MEMBERSHIP_QUEUE);
     console.log("   Exchange: membership.events");
     console.log(
-      "   Routing Keys: members.member.created.requested.v1, members.subscription.current.updated.v1, members.subscription.resigned.v1, members.subscription.cancelled.v1, members.subscription.resignation.undone.v1"
+      "   Routing Keys: members.member.created.requested.v1, members.subscription.current.updated.v1, members.subscription.resigned.v1, members.subscription.cancelled.v1, members.subscription.resignation.undone.v1, members.subscription.cancellation.undone.v1"
     );
 
     await consumer.createQueue(MEMBERSHIP_QUEUE, {
@@ -169,6 +170,7 @@ async function setupConsumers() {
       "members.subscription.resigned.v1",
       "members.subscription.cancelled.v1",
       "members.subscription.resignation.undone.v1",
+      "members.subscription.cancellation.undone.v1",
     ]);
 
     consumer.registerHandler(
@@ -218,6 +220,12 @@ async function setupConsumers() {
       "members.subscription.resignation.undone.v1",
       async (payload) => {
         await handleSubscriptionResignationUndoneActive(payload);
+      }
+    );
+    consumer.registerHandler(
+      "members.subscription.cancellation.undone.v1",
+      async (payload) => {
+        await handleSubscriptionCancellationUndoneActive(payload);
       }
     );
 

@@ -3,6 +3,7 @@
  */
 const mongoose = require("mongoose");
 const PersonalDetails = require("../../models/personal.details.model.js");
+const Profile = require("../../models/profile.model.js");
 
 function normalizeSubscriptionEventPayload(payload) {
   const data = payload?.data || payload;
@@ -48,26 +49,69 @@ async function setPersonalDetailsActiveFromSubscriptionEvent(data, isActive) {
   }
 }
 
+async function setProfileActiveFromSubscriptionEvent(data, isActive) {
+  const { profileId, tenantId } = data || {};
+  const tid = tenantId != null && String(tenantId).trim() ? String(tenantId) : null;
+
+  if (!profileId || !mongoose.Types.ObjectId.isValid(profileId)) {
+    console.warn(
+      "[subscription.profile] Missing/invalid profileId; skip profile isActive update",
+      { tenantId: tid || "(none)" }
+    );
+    return;
+  }
+
+  const filter = { _id: new mongoose.Types.ObjectId(profileId) };
+  if (tid) filter.tenantId = tid;
+
+  const update = {
+    $set: {
+      isActive,
+      deactivatedAt: isActive ? null : new Date(),
+    },
+  };
+
+  const result = await Profile.updateOne(filter, update);
+  if (result.matchedCount === 0) {
+    console.warn("[subscription.profile] No profile row matched", {
+      profileId: String(profileId),
+      tenantId: tid || "(none)",
+      isActive,
+    });
+  }
+}
+
 async function handleSubscriptionResignedInactive(payload) {
   const data = normalizeSubscriptionEventPayload(payload);
   if (!data) return;
   await setPersonalDetailsActiveFromSubscriptionEvent(data, false);
+  await setProfileActiveFromSubscriptionEvent(data, false);
 }
 
 async function handleSubscriptionCancelledInactive(payload) {
   const data = normalizeSubscriptionEventPayload(payload);
   if (!data) return;
   await setPersonalDetailsActiveFromSubscriptionEvent(data, false);
+  await setProfileActiveFromSubscriptionEvent(data, false);
 }
 
 async function handleSubscriptionResignationUndoneActive(payload) {
   const data = normalizeSubscriptionEventPayload(payload);
   if (!data) return;
   await setPersonalDetailsActiveFromSubscriptionEvent(data, true);
+  await setProfileActiveFromSubscriptionEvent(data, true);
+}
+
+async function handleSubscriptionCancellationUndoneActive(payload) {
+  const data = normalizeSubscriptionEventPayload(payload);
+  if (!data) return;
+  await setPersonalDetailsActiveFromSubscriptionEvent(data, true);
+  await setProfileActiveFromSubscriptionEvent(data, true);
 }
 
 module.exports = {
   handleSubscriptionResignedInactive,
   handleSubscriptionCancelledInactive,
   handleSubscriptionResignationUndoneActive,
+  handleSubscriptionCancellationUndoneActive,
 };
