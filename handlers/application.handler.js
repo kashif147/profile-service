@@ -143,6 +143,11 @@ exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
                 : null,
             approvedBy: approvedByPayload,
             applicationStatus: app.applicationStatus,
+            personalDetails: {
+              meta: {
+                isActive: app.meta?.isActive ?? true,
+              },
+            },
           };
         }),
       );
