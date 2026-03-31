@@ -51,7 +51,12 @@ exports.createPersonalDetails = async (req, res, next) => {
         email,
         tenantId
       );
-      if (existingPersonalDetails) {
+      const hasActiveApplication =
+        existingPersonalDetails &&
+        (existingPersonalDetails.meta?.isActive === undefined ||
+          existingPersonalDetails.meta?.isActive === true);
+
+      if (hasActiveApplication) {
         return next(
           AppError.conflict(
             "Personal details already exist, please update existing details"
@@ -69,7 +74,12 @@ exports.createPersonalDetails = async (req, res, next) => {
         userId,
         tenantId
       );
-      if (existingPersonalDetails) {
+      const hasActiveApplication =
+        existingPersonalDetails &&
+        (existingPersonalDetails.meta?.isActive === undefined ||
+          existingPersonalDetails.meta?.isActive === true);
+
+      if (hasActiveApplication) {
         return next(
           AppError.conflict(
             "Personal details already exist, please update existing details"
