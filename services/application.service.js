@@ -50,7 +50,7 @@ class ApplicationService {
     applicationId,
     newStatus,
     approvedBy,
-    comments
+    comments,
   ) {
     try {
       if (!applicationId) {
@@ -72,7 +72,7 @@ class ApplicationService {
       const validStatuses = ["approved", "rejected", "pending"];
       if (!validStatuses.includes(normalizedStatus)) {
         throw AppError.badRequest(
-          `Invalid status. Must be one of: ${validStatuses.join(", ")}`
+          `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
         );
       }
 
@@ -80,12 +80,12 @@ class ApplicationService {
         applicationId,
         normalizedStatus,
         approvedBy,
-        comments
+        comments,
       );
     } catch (error) {
       console.error(
         "ApplicationService [updateApplicationStatus] Error:",
-        error
+        error,
       );
       throw error;
     }
@@ -98,17 +98,21 @@ class ApplicationService {
    * @param {number} limit - Number of items per page (default: 10)
    * @returns {Promise<Object>} Object containing applications array and pagination metadata
    */
-  async getAllApplicationsWithDetails(statusFilters = [], page = 1, limit = 10) {
+  async getAllApplicationsWithDetails(
+    statusFilters = [],
+    page = 1,
+    limit = 10,
+  ) {
     try {
       return await applicationHandler.getAllApplicationsWithDetails(
         statusFilters,
         page,
-        limit
+        limit,
       );
     } catch (error) {
       console.error(
         "ApplicationService [getAllApplicationsWithDetails] Error:",
-        error
+        error,
       );
       throw error;
     }
@@ -123,18 +127,23 @@ class ApplicationService {
    * @param {Array} columns - Array of field names to include in response (empty = all fields)
    * @returns {Promise<Object>} Object containing applications array and pagination metadata
    */
-  async getApplicationsWithTemplateFilters(filters = {}, page = 1, limit = 10, columns = []) {
+  async getApplicationsWithTemplateFilters(
+    filters = {},
+    page = 1,
+    limit = 10,
+    columns = [],
+  ) {
     try {
       return await applicationHandler.getApplicationsWithTemplateFilters(
         filters,
         page,
         limit,
-        columns
+        columns,
       );
     } catch (error) {
       console.error(
         "ApplicationService [getApplicationsWithTemplateFilters] Error:",
-        error
+        error,
       );
       throw error;
     }
@@ -155,7 +164,7 @@ class ApplicationService {
     } catch (error) {
       console.error(
         "ApplicationService [getApplicationWithDetails] Error:",
-        error
+        error,
       );
       throw error;
     }
@@ -173,11 +182,14 @@ class ApplicationService {
         throw AppError.badRequest("Profile ID is required");
       }
 
-      return await applicationHandler.getApplicationsByProfileId(profileId, statusFilters);
+      return await applicationHandler.getApplicationsByProfileId(
+        profileId,
+        statusFilters,
+      );
     } catch (error) {
       console.error(
         "ApplicationService [getApplicationsByProfileId] Error:",
-        error
+        error,
       );
       throw error;
     }

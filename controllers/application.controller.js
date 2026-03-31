@@ -34,8 +34,8 @@ exports.getAllApplications = async (req, res, next) => {
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
-          "Access denied. Only CRM user can view applications."
-        )
+          "Access denied. Only CRM user can view applications.",
+        ),
       );
     }
 
@@ -54,12 +54,11 @@ exports.getAllApplications = async (req, res, next) => {
     const page = validatedQuery.page || 1;
     const limit = validatedQuery.limit || 10;
 
-    const result =
-      await applicationService.getAllApplicationsWithDetails(
-        statusFilters,
-        page,
-        limit
-      );
+    const result = await applicationService.getAllApplicationsWithDetails(
+      statusFilters,
+      page,
+      limit,
+    );
 
     return res.success({
       filter: validatedQuery.type || "all",
@@ -89,8 +88,8 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
-          "Access denied. Only CRM users can view applications."
-        )
+          "Access denied. Only CRM users can view applications.",
+        ),
       );
     }
 
@@ -104,39 +103,45 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
     if (templateId) {
       template = await applicationFilterTemplateService.getTemplateById(
         templateId,
-        creatorId
+        creatorId,
       );
-      
+
       if (!template) {
         return next(
           AppError.notFound(
-            "Template not found or you don't have permission to access it"
-          )
+            "Template not found or you don't have permission to access it",
+          ),
         );
       }
       // This API returns applications; only allow templates of type "application"
       if (template.templateType && template.templateType !== "application") {
         return next(
           AppError.badRequest(
-            "This template is not an application template. Use a template with templateType 'application'."
-          )
+            "This template is not an application template. Use a template with templateType 'application'.",
+          ),
         );
       }
     } else {
       // No templateId: use user's default template for application, else system default
-      template = await applicationFilterTemplateService.getDefaultTemplateForType(
-        creatorId,
-        "application"
-      );
+      template =
+        await applicationFilterTemplateService.getDefaultTemplateForType(
+          creatorId,
+          "application",
+        );
       if (!template) {
-        template = await applicationFilterTemplateService.getSystemDefaultTemplate("application");
+        template =
+          await applicationFilterTemplateService.getSystemDefaultTemplate(
+            "application",
+          );
       }
     }
 
     // Normalize filters: support new shape (applicationStatus: { operator, values }) and legacy (type: value or [values])
     let filters = template.filters || {};
     if (filters.type !== undefined && !filters.applicationStatus) {
-      const legacyValues = Array.isArray(filters.type) ? filters.type : [filters.type];
+      const legacyValues = Array.isArray(filters.type)
+        ? filters.type
+        : [filters.type];
       filters = {
         ...filters,
         applicationStatus: { operator: "equal_to", values: legacyValues },
@@ -147,13 +152,12 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
     const columns = template.columns || [];
 
     // Get applications with filters using the NEW service method
-    const result =
-      await applicationService.getApplicationsWithTemplateFilters(
-        filters,
-        page,
-        limit,
-        columns
-      );
+    const result = await applicationService.getApplicationsWithTemplateFilters(
+      filters,
+      page,
+      limit,
+      columns,
+    );
 
     return res.success({
       filter: template.filters || "default",
@@ -172,14 +176,15 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
       },
     });
   } catch (error) {
-    console.error("ApplicationController [getApplicationsWithTemplate] Error:", error);
+    console.error(
+      "ApplicationController [getApplicationsWithTemplate] Error:",
+      error,
+    );
     if (error.isJoi) {
       return next(AppError.badRequest("Validation error: " + error.message));
     }
     if (error.message && error.message.includes("not found")) {
-      return next(
-        AppError.notFound(error.message)
-      );
+      return next(AppError.notFound(error.message));
     }
     return next(error);
   }
@@ -187,23 +192,61 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
 
 exports.getApplicationById = async (req, res, next) => {
   try {
-    const { userType } = extractUserAndCreatorContext(req);
-    if (userType !== "CRM") {
-      return next(
-        AppError.forbidden(
-          "Access denied. Only CRM users can view applications."
-        )
-      );
+    const { userType, userId, tenantId } = extractUserAndCreatorContext(req);
+    if (userType !== "CRM" && userType !== "PORTAL") {
+      return next(AppError.forbidden("Access denied."));
     }
     const { applicationId } = req.params;
 
     const applicationDetails =
       await applicationService.getApplicationWithDetails(applicationId);
-    
+
     if (!applicationDetails) {
       return res.notFoundRecord("Application not found");
     }
-    
+
+    if (userType === "PORTAL") {
+      if (!userId || !tenantId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+        return next(
+          AppError.forbidden(
+            "Access denied. You can only view your own applications.",
+          ),
+        );
+      }
+
+      const personalDetails = applicationDetails.personalDetails || {};
+      const personalUserId = personalDetails.userId
+        ? String(personalDetails.userId)
+        : null;
+      const personalTenantId = personalDetails.tenantId
+        ? String(personalDetails.tenantId)
+        : null;
+
+      let ownsApplication =
+        personalUserId === String(userId) &&
+        personalTenantId === String(tenantId);
+
+      if (!ownsApplication) {
+        const profileId = personalDetails.profileId;
+        if (profileId && mongoose.Types.ObjectId.isValid(String(profileId))) {
+          const ownsProfile = await Profile.exists({
+            _id: new mongoose.Types.ObjectId(String(profileId)),
+            tenantId: String(tenantId),
+            userId: buildPortalUserIdMatcher(String(userId)),
+          });
+          ownsApplication = !!ownsProfile;
+        }
+      }
+
+      if (!ownsApplication) {
+        return next(
+          AppError.forbidden(
+            "Access denied. You can only view your own applications.",
+          ),
+        );
+      }
+    }
+
     return res.success(applicationDetails);
   } catch (error) {
     console.error("ApplicationController [getApplicationById] Error:", error);
@@ -221,8 +264,8 @@ exports.approveApplication = async (req, res, next) => {
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
-          "Access denied. Only CRM users can approve applications."
-        )
+          "Access denied. Only CRM users can approve applications.",
+        ),
       );
     }
 
@@ -230,7 +273,7 @@ exports.approveApplication = async (req, res, next) => {
 
     // Validate request body
     const validatedData = await joischemas.application_approve.validateAsync(
-      req.body
+      req.body,
     );
     const { comments, applicationStatus } = validatedData;
 
@@ -239,7 +282,7 @@ exports.approveApplication = async (req, res, next) => {
       applicationId,
       applicationStatus,
       creatorId,
-      comments
+      comments,
     );
 
     // // Get subscription details for the user
@@ -302,7 +345,9 @@ exports.getApplicationsByProfileId = async (req, res, next) => {
       }
       if (!mongoose.Types.ObjectId.isValid(String(userId))) {
         return next(
-          AppError.forbidden("Access denied. You can only view your own applications.")
+          AppError.forbidden(
+            "Access denied. You can only view your own applications.",
+          ),
         );
       }
       const ownsProfile = await Profile.exists({
@@ -312,13 +357,18 @@ exports.getApplicationsByProfileId = async (req, res, next) => {
       });
       if (!ownsProfile) {
         return next(
-          AppError.forbidden("Access denied. You can only view your own applications.")
+          AppError.forbidden(
+            "Access denied. You can only view your own applications.",
+          ),
         );
       }
     }
 
     const statusFilters = parseStatusFilters(req.query.type);
-    const applications = await applicationService.getApplicationsByProfileId(profileId, statusFilters);
+    const applications = await applicationService.getApplicationsByProfileId(
+      profileId,
+      statusFilters,
+    );
 
     return res.success({
       profileId,
@@ -326,7 +376,10 @@ exports.getApplicationsByProfileId = async (req, res, next) => {
       applications,
     });
   } catch (error) {
-    console.error("ApplicationController [getApplicationsByProfileId] Error:", error?.message || error);
+    console.error(
+      "ApplicationController [getApplicationsByProfileId] Error:",
+      error?.message || error,
+    );
     if (error?.stack) console.error(error.stack);
     if (error?.message?.includes("Profile ID is required")) {
       return next(AppError.badRequest(error.message));
@@ -340,7 +393,9 @@ exports.getMyApplications = async (req, res, next) => {
     const { userType, userId, tenantId } = extractUserAndCreatorContext(req);
     if (userType !== "PORTAL") {
       return next(
-        AppError.forbidden("Access denied. Only portal users can use this endpoint.")
+        AppError.forbidden(
+          "Access denied. Only portal users can use this endpoint.",
+        ),
       );
     }
     if (!userId || !tenantId) {
@@ -373,7 +428,7 @@ exports.getMyApplications = async (req, res, next) => {
     const statusFilters = parseStatusFilters(req.query.type);
     const applications = await applicationService.getApplicationsByProfileId(
       profile._id.toString(),
-      statusFilters
+      statusFilters,
     );
 
     return res.success({
@@ -382,7 +437,10 @@ exports.getMyApplications = async (req, res, next) => {
       applications,
     });
   } catch (error) {
-    console.error("ApplicationController [getMyApplications] Error:", error?.message || error);
+    console.error(
+      "ApplicationController [getMyApplications] Error:",
+      error?.message || error,
+    );
     if (error?.stack) console.error(error.stack);
     return next(error);
   }

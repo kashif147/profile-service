@@ -26,8 +26,8 @@ exports.getAllApplications = (statusFilters = []) =>
       // If status filters are provided, filter by them
       // Normalize to lowercase to handle both cases
       if (statusFilters && statusFilters.length > 0) {
-        const normalizedFilters = statusFilters.map(filter => 
-          typeof filter === 'string' ? filter.toLowerCase() : filter
+        const normalizedFilters = statusFilters.map((filter) =>
+          typeof filter === "string" ? filter.toLowerCase() : filter,
         );
         query.applicationStatus = { $in: normalizedFilters };
       }
@@ -76,7 +76,7 @@ exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
 
       if (statusFilters && statusFilters.length > 0) {
         const normalized = statusFilters.map((s) =>
-          typeof s === "string" ? s.toLowerCase() : s
+          typeof s === "string" ? s.toLowerCase() : s,
         );
         query.applicationStatus = { $in: normalized };
       }
@@ -84,11 +84,18 @@ exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
       let applications;
       try {
         applications = await PersonalDetails.find(query)
-          .populate({ path: "approvalDetails.approvedBy", model: "User", select: "userFullName userEmail" })
+          .populate({
+            path: "approvalDetails.approvedBy",
+            model: "User",
+            select: "userFullName userEmail",
+          })
           .sort({ createdAt: -1 })
           .lean();
       } catch (populateErr) {
-        console.warn("ApplicationHandler [getApplicationsByProfileId] populate failed, returning without approvedBy details:", populateErr?.message);
+        console.warn(
+          "ApplicationHandler [getApplicationsByProfileId] populate failed, returning without approvedBy details:",
+          populateErr?.message,
+        );
         applications = await PersonalDetails.find(query)
           .sort({ createdAt: -1 })
           .lean();
@@ -101,31 +108,51 @@ exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
           }).lean();
 
           const approvedBy = app.approvalDetails?.approvedBy;
-          const approvedByPayload =
-            !approvedBy
-              ? null
-              : approvedBy instanceof mongoose.Types.ObjectId
-                ? { id: approvedBy.toString() }
-                : approvedBy && typeof approvedBy === "object" && (approvedBy.userFullName !== undefined || approvedBy.userEmail !== undefined)
-                  ? { id: approvedBy._id != null ? String(approvedBy._id) : null, name: approvedBy.userFullName, email: approvedBy.userEmail }
-                  : approvedBy && typeof approvedBy === "object"
-                    ? { id: approvedBy._id != null ? String(approvedBy._id) : null }
-                    : null;
+          const approvedByPayload = !approvedBy
+            ? null
+            : approvedBy instanceof mongoose.Types.ObjectId
+              ? { id: approvedBy.toString() }
+              : approvedBy &&
+                  typeof approvedBy === "object" &&
+                  (approvedBy.userFullName !== undefined ||
+                    approvedBy.userEmail !== undefined)
+                ? {
+                    id: approvedBy._id != null ? String(approvedBy._id) : null,
+                    name: approvedBy.userFullName,
+                    email: approvedBy.userEmail,
+                  }
+                : approvedBy && typeof approvedBy === "object"
+                  ? {
+                      id:
+                        approvedBy._id != null ? String(approvedBy._id) : null,
+                    }
+                  : null;
 
           return {
             applicationId: app.applicationId,
-            membershipCategory: subscription?.subscriptionDetails?.membershipCategory ?? null,
-            submissionDate: app.createdAt != null ? app.createdAt.toISOString?.() ?? app.createdAt : null,
-            approvalDate: app.approvalDetails?.approvedAt != null ? (app.approvalDetails.approvedAt.toISOString?.() ?? app.approvalDetails.approvedAt) : null,
+            membershipCategory:
+              subscription?.subscriptionDetails?.membershipCategory ?? null,
+            submissionDate:
+              app.createdAt != null
+                ? (app.createdAt.toISOString?.() ?? app.createdAt)
+                : null,
+            approvalDate:
+              app.approvalDetails?.approvedAt != null
+                ? (app.approvalDetails.approvedAt.toISOString?.() ??
+                  app.approvalDetails.approvedAt)
+                : null,
             approvedBy: approvedByPayload,
             applicationStatus: app.applicationStatus,
           };
-        })
+        }),
       );
 
       resolve(enrichedApplications);
     } catch (error) {
-      console.error("ApplicationHandler [getApplicationsByProfileId] Error:", error);
+      console.error(
+        "ApplicationHandler [getApplicationsByProfileId] Error:",
+        error,
+      );
       reject(error);
     }
   });
@@ -134,7 +161,7 @@ exports.updateApplicationStatus = (
   applicationId,
   newStatus,
   approvedBy,
-  comments
+  comments,
 ) =>
   new Promise(async (resolve, reject) => {
     try {
@@ -155,7 +182,7 @@ exports.updateApplicationStatus = (
       const result = await PersonalDetails.findOneAndUpdate(
         { applicationId: applicationId },
         { $set: updateData },
-        { new: true, runValidators: true }
+        { new: true, runValidators: true },
       );
 
       if (!result) {
@@ -169,7 +196,7 @@ exports.updateApplicationStatus = (
     } catch (error) {
       console.error(
         "ApplicationHandler [updateApplicationStatus] Error:",
-        error
+        error,
       );
       reject(error);
     }
@@ -201,8 +228,8 @@ exports.getApplicationWithDetails = (applicationId) =>
             membershipCategory,
           }
         : membershipCategory !== null
-        ? { membershipCategory }
-        : null;
+          ? { membershipCategory }
+          : null;
 
       const subscriptionPayload = subscriptionDetails
         ? {
@@ -212,8 +239,8 @@ exports.getApplicationWithDetails = (applicationId) =>
               membershipCategory,
           }
         : membershipCategory !== null
-        ? { membershipCategory }
-        : null;
+          ? { membershipCategory }
+          : null;
 
       const applicationDetails = {
         applicationId: personalDetails.applicationId,
@@ -234,14 +261,18 @@ exports.getApplicationWithDetails = (applicationId) =>
     } catch (error) {
       console.error(
         "ApplicationHandler [getApplicationWithDetails] Error:",
-        error
+        error,
       );
       reject(error);
     }
   });
 
 // Original method - unchanged, returns all fields
-exports.getAllApplicationsWithDetails = (statusFilters = [], page = 1, limit = 10) =>
+exports.getAllApplicationsWithDetails = (
+  statusFilters = [],
+  page = 1,
+  limit = 10,
+) =>
   new Promise(async (resolve, reject) => {
     try {
       let query = {};
@@ -288,8 +319,8 @@ exports.getAllApplicationsWithDetails = (statusFilters = [], page = 1, limit = 1
                   membershipCategory,
                 }
               : membershipCategory !== null
-              ? { membershipCategory }
-              : null;
+                ? { membershipCategory }
+                : null;
 
             const subscriptionPayload = subscriptionDetails
               ? {
@@ -299,8 +330,8 @@ exports.getAllApplicationsWithDetails = (statusFilters = [], page = 1, limit = 1
                       ?.membershipCategory ?? membershipCategory,
                 }
               : membershipCategory !== null
-              ? { membershipCategory }
-              : null;
+                ? { membershipCategory }
+                : null;
 
             return {
               applicationId: application.applicationId,
@@ -320,11 +351,13 @@ exports.getAllApplicationsWithDetails = (statusFilters = [], page = 1, limit = 1
             console.error("Error fetching details for application:", error);
             return null;
           }
-        })
+        }),
       );
 
       // Filter out null values (from errors)
-      const filteredApplications = applicationsWithDetails.filter(app => app !== null);
+      const filteredApplications = applicationsWithDetails.filter(
+        (app) => app !== null,
+      );
 
       resolve({
         applications: filteredApplications,
@@ -340,7 +373,7 @@ exports.getAllApplicationsWithDetails = (statusFilters = [], page = 1, limit = 1
     } catch (error) {
       console.error(
         "ApplicationHandler [getAllApplicationsWithDetails] Error:",
-        error
+        error,
       );
       reject(error);
     }
@@ -411,7 +444,12 @@ const filterByColumns = (obj, columns) => {
  * Used exclusively by the PUT API
  * @param {Object} filters - Keyed by model field names (applicationStatus, membershipCategory). Each: { operator: "equal_to"|"not_equal_to", values: string[] }
  */
-exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10, columns = []) =>
+exports.getApplicationsWithTemplateFilters = (
+  filters = {},
+  page = 1,
+  limit = 10,
+  columns = [],
+) =>
   new Promise(async (resolve, reject) => {
     try {
       // Start with system defaults: exclude deleted so we get maximum relevant results
@@ -421,19 +459,26 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
       const applicationIdSets = [];
 
       for (const [filterKey, filterEntry] of Object.entries(filters || {})) {
-        if (!filterEntry || !filterEntry.values || filterEntry.values.length === 0) continue;
+        if (
+          !filterEntry ||
+          !filterEntry.values ||
+          filterEntry.values.length === 0
+        )
+          continue;
 
         // Make filter key lookup case-insensitive (e.g. "Grade", "GRADE" -> applicationStatus)
         const resolvedKey = Object.keys(FILTER_FIELD_MAP).find(
-          (k) => k.toLowerCase() === (filterKey && String(filterKey).toLowerCase())
+          (k) =>
+            k.toLowerCase() === (filterKey && String(filterKey).toLowerCase()),
         );
         const config = resolvedKey ? FILTER_FIELD_MAP[resolvedKey] : null;
         if (!config) continue;
 
-        const op = filterEntry.operator === FILTER_OPERATOR.EQUAL_TO ? "$in" : "$nin";
+        const op =
+          filterEntry.operator === FILTER_OPERATOR.EQUAL_TO ? "$in" : "$nin";
         // Normalize string values to lowercase for case-insensitive filter matching (e.g. "SubmiTTed" -> "submitted")
         const values = filterEntry.values.map((v) =>
-          typeof v === "string" ? v.trim().toLowerCase() : v
+          typeof v === "string" ? v.trim().toLowerCase() : v,
         );
 
         if (config.source === "personalDetails") {
@@ -447,26 +492,39 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
           const profs = await ProfessionalDetails.find({
             [config.pathProf]: categoryQuery,
           }).select("applicationId");
-          const ids = [...new Set([...subs.map((s) => s.applicationId), ...profs.map((p) => p.applicationId)])];
-          applicationIdSets.push({ ids, isEqual: filterEntry.operator === FILTER_OPERATOR.EQUAL_TO });
+          const ids = [
+            ...new Set([
+              ...subs.map((s) => s.applicationId),
+              ...profs.map((p) => p.applicationId),
+            ]),
+          ];
+          applicationIdSets.push({
+            ids,
+            isEqual: filterEntry.operator === FILTER_OPERATOR.EQUAL_TO,
+          });
         } else if (config.source === "professionalDetails") {
           // Make grade filter value case-insensitive (match \"Grade\", \"grade\", etc.)
           if (resolvedKey === "grade") {
             values = values.map((v) =>
               typeof v === "string"
-                ? new RegExp(`^${v.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}$`, "i")
-                : v
+                ? new RegExp(
+                    `^${v.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}$`,
+                    "i",
+                  )
+                : v,
             );
           }
           const q = { [config.path]: { [op]: values } };
-          const docs = await ProfessionalDetails.find(q).select("applicationId");
+          const docs =
+            await ProfessionalDetails.find(q).select("applicationId");
           applicationIdSets.push({
             ids: docs.map((d) => d.applicationId),
             isEqual: filterEntry.operator === FILTER_OPERATOR.EQUAL_TO,
           });
         } else if (config.source === "subscriptionDetails") {
           const q = { [config.path]: { [op]: values } };
-          const docs = await SubscriptionDetails.find(q).select("applicationId");
+          const docs =
+            await SubscriptionDetails.find(q).select("applicationId");
           applicationIdSets.push({
             ids: docs.map((d) => d.applicationId),
             isEqual: filterEntry.operator === FILTER_OPERATOR.EQUAL_TO,
@@ -481,13 +539,19 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
 
       // Intersect "equal_to" applicationId sets; then exclude "not_equal_to" ids
       if (applicationIdSets.length > 0) {
-        const inSets = applicationIdSets.filter((s) => s.isEqual).map((s) => new Set(s.ids));
-        const notInSets = applicationIdSets.filter((s) => !s.isEqual).map((s) => new Set(s.ids));
+        const inSets = applicationIdSets
+          .filter((s) => s.isEqual)
+          .map((s) => new Set(s.ids));
+        const notInSets = applicationIdSets
+          .filter((s) => !s.isEqual)
+          .map((s) => new Set(s.ids));
         let resultIds = null;
         if (inSets.length > 0) {
           resultIds = new Set(inSets[0]);
           for (let i = 1; i < inSets.length; i++) {
-            resultIds = new Set([...resultIds].filter((id) => inSets[i].has(id)));
+            resultIds = new Set(
+              [...resultIds].filter((id) => inSets[i].has(id)),
+            );
           }
           for (const notIn of notInSets) {
             resultIds = new Set([...resultIds].filter((id) => !notIn.has(id)));
@@ -497,7 +561,8 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
           query.applicationId = { $nin: [...unionNotIn] };
         }
         if (resultIds !== null) {
-          query.applicationId = resultIds.size > 0 ? { $in: [...resultIds] } : { $in: [] };
+          query.applicationId =
+            resultIds.size > 0 ? { $in: [...resultIds] } : { $in: [] };
         }
       }
 
@@ -539,8 +604,8 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
                   membershipCategory,
                 }
               : membershipCategory !== null
-              ? { membershipCategory }
-              : null;
+                ? { membershipCategory }
+                : null;
 
             const subscriptionPayload = subscriptionDetails
               ? {
@@ -550,8 +615,8 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
                       ?.membershipCategory ?? membershipCategory,
                 }
               : membershipCategory !== null
-              ? { membershipCategory }
-              : null;
+                ? { membershipCategory }
+                : null;
 
             const fullApplication = {
               applicationId: application.applicationId,
@@ -572,18 +637,23 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
             const filtered = filterByColumns(fullApplication, columns);
             // Always include applicationId - required for navigation/actions on each application
             if (fullApplication.applicationId !== undefined) {
-              return { applicationId: fullApplication.applicationId, ...filtered };
+              return {
+                applicationId: fullApplication.applicationId,
+                ...filtered,
+              };
             }
             return filtered;
           } catch (error) {
             console.error("Error fetching details for application:", error);
             return null;
           }
-        })
+        }),
       );
 
       // Filter out null values (from errors)
-      const filteredApplications = applicationsWithDetails.filter(app => app !== null);
+      const filteredApplications = applicationsWithDetails.filter(
+        (app) => app !== null,
+      );
 
       resolve({
         applications: filteredApplications,
@@ -599,7 +669,7 @@ exports.getApplicationsWithTemplateFilters = (filters = {}, page = 1, limit = 10
     } catch (error) {
       console.error(
         "ApplicationHandler [getApplicationsWithTemplateFilters] Error:",
-        error
+        error,
       );
       reject(error);
     }
