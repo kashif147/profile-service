@@ -130,14 +130,18 @@ exports.getByUserId = (userId, tenantId) =>
 
       const query = { 
         userId: userIdQuery,
-        "meta.deleted": { $ne: true }
+        "meta.deleted": { $ne: true },
+        "meta.isActive": true,
       };
       
       if (tenantId) {
         query.tenantId = tenantId;
       }
       
-      const result = await ProfessionalDetails.findOne(query);
+      const result = await ProfessionalDetails.findOne(query).sort({
+        updatedAt: -1,
+        createdAt: -1,
+      });
       resolve(result);
     } catch (error) {
       console.error("ProfessionalDetailsHandler [getByUserId] Error:", error);

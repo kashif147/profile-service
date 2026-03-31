@@ -413,14 +413,18 @@ exports.getByUserIdForPortal = (userId, tenantId) =>
       const query = {
         userId: userIdQuery,
         "meta.userType": "PORTAL",
-        "meta.deleted": { $ne: true }
+        "meta.deleted": { $ne: true },
+        "meta.isActive": true,
       };
       
       if (tenantId) {
         query.tenantId = tenantId;
       }
       
-      const result = await PersonalDetails.findOne(query);
+      const result = await PersonalDetails.findOne(query).sort({
+        updatedAt: -1,
+        createdAt: -1,
+      });
 
       console.log("[getByUserIdForPortal] Query result:", result ? "Found" : "Not found");
       
