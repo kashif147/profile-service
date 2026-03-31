@@ -24,11 +24,7 @@ function parseStatusFilters(rawType) {
 }
 
 function buildPortalUserIdMatcher(userId) {
-  const values = [String(userId)];
-  if (mongoose.Types.ObjectId.isValid(userId)) {
-    values.push(new mongoose.Types.ObjectId(userId));
-  }
-  return { $in: values };
+  return new mongoose.Types.ObjectId(String(userId));
 }
 
 // Original GET API - unchanged
@@ -304,10 +300,15 @@ exports.getApplicationsByProfileId = async (req, res, next) => {
       if (!userId || !tenantId) {
         return next(AppError.forbidden("Access denied."));
       }
+      if (!mongoose.Types.ObjectId.isValid(String(userId))) {
+        return next(
+          AppError.forbidden("Access denied. You can only view your own applications.")
+        );
+      }
       const ownsProfile = await Profile.exists({
         _id: new mongoose.Types.ObjectId(profileId),
         tenantId: String(tenantId),
-        userId: buildPortalUserIdMatcher(userId),
+        userId: buildPortalUserIdMatcher(String(userId)),
       });
       if (!ownsProfile) {
         return next(
@@ -345,10 +346,17 @@ exports.getMyApplications = async (req, res, next) => {
     if (!userId || !tenantId) {
       return next(AppError.forbidden("Access denied."));
     }
+    if (!mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.success({
+        profileId: null,
+        count: 0,
+        applications: [],
+      });
+    }
 
     const profile = await Profile.findOne({
       tenantId: String(tenantId),
-      userId: buildPortalUserIdMatcher(userId),
+      userId: buildPortalUserIdMatcher(String(userId)),
     })
       .sort({ updatedAt: -1 })
       .select("_id")
