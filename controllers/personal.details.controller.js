@@ -195,7 +195,8 @@ exports.updatePersonalDetails = async (req, res, next) => {
 
     const updatePayload = {
       ...validatedData,
-      meta: { updatedBy: creatorId, userType },
+      "meta.updatedBy": creatorId,
+      "meta.userType": userType,
     };
 
     let result;

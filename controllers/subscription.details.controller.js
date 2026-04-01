@@ -109,7 +109,8 @@ exports.updateSubscriptionDetails = async (req, res, next) => {
       await joischemas.subscription_details_update.validateAsync(req.body);
     const updatePayload = {
       ...validatedData,
-      meta: { updatedBy: creatorId, userType },
+      "meta.updatedBy": creatorId,
+      "meta.userType": userType,
     };
 
     const result = await subscriptionDetailsService.updateSubscriptionDetails(

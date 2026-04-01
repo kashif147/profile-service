@@ -326,7 +326,8 @@ class SubscriptionDetailsService {
 
       const updatePayload = {
         ...safeUpdateData,
-        meta: { updatedBy: userId, userType },
+        "meta.updatedBy": userId,
+        "meta.userType": userType,
       };
 
       let result;

@@ -157,7 +157,8 @@ class ProfessionalDetailsService {
 
       const updatePayload = {
         ...updateData,
-        meta: { updatedBy: userId, userType },
+        "meta.updatedBy": userId,
+        "meta.userType": userType,
       };
 
       let result;
