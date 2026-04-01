@@ -62,21 +62,7 @@ class ApplicationApprovalEventListener {
         return;
       }
 
-      const personalRow = await PersonalDetails.findOne({ applicationId })
-        .select("applicationStatus")
-        .lean();
-      if (
-        personalRow?.applicationStatus &&
-        personalRow.applicationStatus.toLowerCase() === APPLICATION_STATUS.REJECTED
-      ) {
-        console.log(
-          "⏭️ [APPLICATION_APPROVAL_LISTENER] Skipping: application already rejected",
-          { applicationId }
-        );
-        return;
-      }
-
-      // Update main application models with approved data
+      // Update main application models with approved data (including re-approval after rejection)
       if (effective.personalInfo) {
         await PersonalDetails.updateOne(
           { applicationId: applicationId },
@@ -85,6 +71,7 @@ class ApplicationApprovalEventListener {
               personalInfo: effective.personalInfo,
               contactInfo: effective.contactInfo,
               applicationStatus: APPLICATION_STATUS.APPROVED,
+              "meta.isActive": true,
               "approvalDetails.approvedBy": getReviewerIdForDb(data.reviewerId),
               "approvalDetails.approvedAt": new Date(),
             },
@@ -117,6 +104,15 @@ class ApplicationApprovalEventListener {
           "✅ [APPLICATION_APPROVAL_LISTENER] Subscription details updated"
         );
       }
+
+      await ProfessionalDetails.updateMany(
+        { applicationId },
+        { $set: { "meta.isActive": true } }
+      );
+      await SubscriptionDetails.updateMany(
+        { applicationId },
+        { $set: { "meta.isActive": true } }
+      );
 
       console.log(
         "✅ [APPLICATION_APPROVAL_LISTENER] Application approval processed successfully:",

@@ -182,6 +182,8 @@ exports.updateApplicationStatus = (
       };
       if (normalizedStatus === APPLICATION_STATUS.REJECTED) {
         updateData["meta.isActive"] = false;
+      } else if (normalizedStatus === APPLICATION_STATUS.APPROVED) {
+        updateData["meta.isActive"] = true;
       }
 
       const result = await PersonalDetails.findOneAndUpdate(
@@ -193,6 +195,21 @@ exports.updateApplicationStatus = (
       if (!result) {
         reject(new Error("Application not found"));
         return;
+      }
+
+      const active = normalizedStatus === APPLICATION_STATUS.APPROVED;
+      if (
+        normalizedStatus === APPLICATION_STATUS.APPROVED ||
+        normalizedStatus === APPLICATION_STATUS.REJECTED
+      ) {
+        await ProfessionalDetails.updateMany(
+          { applicationId },
+          { $set: { "meta.isActive": active } },
+        );
+        await SubscriptionDetails.updateMany(
+          { applicationId },
+          { $set: { "meta.isActive": active } },
+        );
       }
 
       // Membership number is generated only when a new Profile is created

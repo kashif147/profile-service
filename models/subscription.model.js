@@ -78,6 +78,8 @@ const SubscriptionSchema = new mongoose.Schema(
       createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
       updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
       userType: { type: String, enum: Object.values(USER_TYPE) },
+      isActive: { type: Boolean, default: true },
+      deleted: { type: Boolean, default: false },
     },
     deleted: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },

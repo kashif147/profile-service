@@ -216,6 +216,7 @@ async function approveApplication(req, res, next) {
             personalInfo: effective.personalInfo,
             contactInfo: effective.contactInfo,
             applicationStatus: "approved",
+            "meta.isActive": true,
             "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
             "approvalDetails.approvedAt": new Date(),
           },

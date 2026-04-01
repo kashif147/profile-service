@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const applicationService = require("../services/application.service");
 const applicationFilterTemplateService = require("../services/application.filter.template.service");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
@@ -6,6 +7,10 @@ const { AppError } = require("../errors/AppError");
 const mongoose = require("mongoose");
 const { APPLICATION_STATUS } = require("../constants/enums");
 const Profile = require("../models/profile.model");
+const PersonalDetails = require("../models/personal.details.model.js");
+const ProfessionalDetails = require("../models/professional.details.model.js");
+const SubscriptionDetails = require("../models/subscription.model.js");
+const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
 
 function parseStatusFilters(rawType) {
@@ -260,7 +265,7 @@ exports.getApplicationById = async (req, res, next) => {
 exports.approveApplication = async (req, res, next) => {
   try {
     // Check if user is CRM
-    const { userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userType, creatorId, tenantId } = extractUserAndCreatorContext(req);
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
@@ -285,25 +290,96 @@ exports.approveApplication = async (req, res, next) => {
       comments,
     );
 
-    // // Get subscription details for the user
-    // const subscriptionDetails = await SubscriptionDetails.findOne({
-    //   userId: updatedApplication.userId,
-    //   "meta.deleted": false,
-    // });
-
-    // // Prepare event data
-    // const eventData = {
-    //   personalDetails: updatedApplication,
-    //   subscriptionDetails: subscriptionDetails,
-    //   approvalDetails: updatedApplication.approvalDetails,
-    // };
-
-    // // Emit appropriate event based on status
-    // if (applicationStatus === "approved") {
-    //   await emitApplicationApproved(eventData);
-    // } else if (applicationStatus === "rejected") {
-    //   await emitApplicationRejected(eventData);
-    // }
+    const decision = (applicationStatus || "").toLowerCase().trim();
+    if (decision === APPLICATION_STATUS.APPROVED) {
+      try {
+        const [personal, professional, subscription] = await Promise.all([
+          PersonalDetails.findOne({ applicationId }).lean(),
+          ProfessionalDetails.findOne({ applicationId }).lean(),
+          SubscriptionDetails.findOne({ applicationId }).lean(),
+        ]);
+        const profileDoc =
+          personal?.profileId &&
+          mongoose.Types.ObjectId.isValid(String(personal.profileId))
+            ? await Profile.findById(personal.profileId).lean()
+            : null;
+        const effective = {
+          personalInfo: personal?.personalInfo,
+          contactInfo: personal?.contactInfo,
+          professionalDetails: professional?.professionalDetails,
+          subscriptionDetails: subscription?.subscriptionDetails,
+        };
+        const sub = subscription?.subscriptionDetails || {};
+        await ApplicationApprovalEventPublisher.publishApplicationApproved({
+          applicationId,
+          reviewerId: creatorId,
+          profileId: personal?.profileId ? String(personal.profileId) : null,
+          applicationStatus: "APPROVED",
+          isExistingProfile: !!profileDoc,
+          crmUserId: profileDoc?.crmUserId
+            ? String(profileDoc.crmUserId)
+            : null,
+          memberId: profileDoc?.membershipNumber || null,
+          userId: profileDoc?.userId ? String(profileDoc.userId) : null,
+          effective: {
+            personalInfo: effective.personalInfo,
+            contactInfo: effective.contactInfo,
+            professionalDetails: effective.professionalDetails,
+            subscriptionDetails: effective.subscriptionDetails,
+          },
+          subscriptionAttributes: {
+            payrollNo: sub?.payrollNo ?? null,
+            otherIrishTradeUnion: !!sub?.otherIrishTradeUnion,
+            otherIrishTradeUnionName: sub?.otherIrishTradeUnionName ?? null,
+            otherScheme: !!sub?.otherScheme,
+            recuritedBy: sub?.recuritedBy ?? null,
+            recuritedByMembershipNo: sub?.recuritedByMembershipNo ?? null,
+            confirmedRecruiterProfileId: sub?.confirmedRecruiterProfileId ?? null,
+            primarySection: sub?.primarySection ?? null,
+            otherPrimarySection: sub?.otherPrimarySection ?? null,
+            secondarySection: sub?.secondarySection ?? null,
+            otherSecondarySection: sub?.otherSecondarySection ?? null,
+            incomeProtectionScheme: !!sub?.incomeProtectionScheme,
+            inmoRewards: !!sub?.inmoRewards,
+            valueAddedServices: !!sub?.valueAddedServices,
+            termsAndConditions: sub?.termsAndConditions !== false,
+            membershipCategory: sub?.membershipCategory ?? null,
+            membershipStatus: sub?.membershipStatus ?? null,
+            dateJoined: sub?.dateJoined ?? null,
+            submissionDate: sub?.submissionDate ?? null,
+            dateLeft: sub?.dateLeft ?? null,
+            reasonLeft: sub?.reasonLeft ?? null,
+          },
+          tenantId: tenantId != null ? String(tenantId) : null,
+          correlationId: crypto.randomUUID(),
+        });
+      } catch (publishError) {
+        console.error(
+          "[approveApplication] Failed to publish application approved event:",
+          publishError.message,
+        );
+      }
+    } else if (decision === APPLICATION_STATUS.REJECTED) {
+      try {
+        const personal = await PersonalDetails.findOne({ applicationId })
+          .select("userId")
+          .lean();
+        await ApplicationApprovalEventPublisher.publishApplicationRejected({
+          applicationId,
+          reviewerId: creatorId,
+          reason: comments || null,
+          notes: null,
+          tenantId: tenantId != null ? String(tenantId) : null,
+          userId: personal?.userId ? String(personal.userId) : null,
+          correlationId: crypto.randomUUID(),
+        });
+      } catch (publishError) {
+        console.error(
+          "[approveApplication] Failed to publish application rejected event:",
+          publishError.message,
+        );
+      }
+    }
 
     return res.success({
       applicationId: updatedApplication.applicationId,

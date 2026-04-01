@@ -71,27 +71,27 @@ function applyDerivedFields(data = {}) {
   // Address formatting
   if (data.contactInfo) {
     const parts = [];
-    
+
     if (data.contactInfo.buildingOrHouse?.trim()) {
       parts.push(data.contactInfo.buildingOrHouse.trim());
     }
-    
+
     if (data.contactInfo.streetOrRoad?.trim()) {
       parts.push(data.contactInfo.streetOrRoad.trim());
     }
-    
+
     if (data.contactInfo.areaOrTown?.trim()) {
       parts.push(data.contactInfo.areaOrTown.trim());
     }
-    
+
     if (data.contactInfo.countyCityOrPostCode?.trim()) {
       parts.push(data.contactInfo.countyCityOrPostCode.trim());
     }
-    
+
     if (data.contactInfo.country?.trim()) {
       parts.push(data.contactInfo.country.trim());
     }
-    
+
     data.contactInfo.fullAddress = parts.join(", ");
   }
 }
@@ -162,9 +162,9 @@ async function getAllProfiles(req, res, next) {
             p._id?.toString(),
             p.tenantId ?? tenantId,
             req,
-            p.currentSubscriptionId?.toString?.() ?? p.currentSubscriptionId
-          ).then((sub) => ({ profileId: p._id.toString(), sub }))
-        )
+            p.currentSubscriptionId?.toString?.() ?? p.currentSubscriptionId,
+          ).then((sub) => ({ profileId: p._id.toString(), sub })),
+        ),
       );
       subs.forEach(({ profileId, sub }) => {
         if (sub) subMap.set(profileId, sub);
@@ -197,7 +197,7 @@ async function getAllProfiles(req, res, next) {
     });
   } catch (error) {
     return next(
-      AppError.internalServerError(error.message || "Failed to fetch profiles")
+      AppError.internalServerError(error.message || "Failed to fetch profiles"),
     );
   }
 }
@@ -218,7 +218,7 @@ async function searchProfiles(req, res, next) {
     if (searchTerm.length >= 3) {
       const membershipNumberRegex = new RegExp(
         `^${escapeRegex(searchTerm)}`,
-        "i"
+        "i",
       );
       conditions.push({ membershipNumber: membershipNumberRegex });
     }
@@ -280,7 +280,9 @@ async function searchProfiles(req, res, next) {
     });
   } catch (error) {
     return next(
-      AppError.internalServerError(error.message || "Failed to search profiles")
+      AppError.internalServerError(
+        error.message || "Failed to search profiles",
+      ),
     );
   }
 }
@@ -296,7 +298,7 @@ async function getProfileById(req, res, next) {
       return aggregatedUserDetailsController.getAggregatedUserDetails(
         req,
         res,
-        next
+        next,
       );
     }
 
@@ -327,7 +329,7 @@ async function getProfileById(req, res, next) {
         profileId,
         profile.tenantId ?? tenantId,
         req,
-        subId
+        subId,
       );
     }
     const enriched = {
@@ -345,7 +347,7 @@ async function getProfileById(req, res, next) {
     return res.success(enriched);
   } catch (error) {
     return next(
-      AppError.internalServerError(error.message || "Failed to fetch profile")
+      AppError.internalServerError(error.message || "Failed to fetch profile"),
     );
   }
 }
@@ -368,8 +370,7 @@ async function updateProfile(req, res, next) {
     const profile = await Profile.findOne({
       _id: profileId,
       tenantId,
-    })
-      .populate("crmUserId", "userFullName");
+    }).populate("crmUserId", "userFullName");
 
     if (!profile) {
       return next(AppError.notFound("Profile not found"));
@@ -444,11 +445,11 @@ async function updateProfile(req, res, next) {
       return next(
         AppError.conflict("Duplicate value for unique field", {
           duplicateKey: error.keyValue,
-        })
+        }),
       );
     }
     return next(
-      AppError.internalServerError(error.message || "Failed to update profile")
+      AppError.internalServerError(error.message || "Failed to update profile"),
     );
   }
 }
@@ -465,8 +466,7 @@ async function softDeleteProfile(req, res, next) {
     const profile = await Profile.findOne({
       _id: profileId,
       tenantId,
-    })
-      .populate("crmUserId", "userFullName");
+    }).populate("crmUserId", "userFullName");
 
     if (!profile) {
       return next(AppError.notFound("Profile not found"));
@@ -489,7 +489,7 @@ async function softDeleteProfile(req, res, next) {
     });
   } catch (error) {
     return next(
-      AppError.internalServerError(error.message || "Failed to delete profile")
+      AppError.internalServerError(error.message || "Failed to delete profile"),
     );
   }
 }
@@ -510,7 +510,7 @@ async function getMyProfile(req, res, next) {
     // Only allow PORTAL users
     if (userType !== "PORTAL") {
       return next(
-        AppError.forbidden("This endpoint is only available for Portal users")
+        AppError.forbidden("This endpoint is only available for Portal users"),
       );
     }
 
@@ -564,11 +564,11 @@ async function getMyProfile(req, res, next) {
           // Link userId to profile for future requests
           await Profile.updateOne(
             { _id: profileByEmail._id },
-            { $set: { userId: userIdObjectId } }
+            { $set: { userId: userIdObjectId } },
           );
 
           console.log(
-            `✅ Auto-linked userId ${userId} to profile ${profileByEmail._id}`
+            `✅ Auto-linked userId ${userId} to profile ${profileByEmail._id}`,
           );
 
           return res.success({
@@ -594,8 +594,8 @@ async function getMyProfile(req, res, next) {
     console.error("ProfileController [getMyProfile] Error:", error);
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch profile information"
-      )
+        error.message || "Failed to fetch profile information",
+      ),
     );
   }
 }
@@ -611,8 +611,8 @@ async function updateMyProfile(req, res, next) {
     if (!userId) {
       return next(
         AppError.badRequest(
-          "User ID is required. Please ensure you are properly authenticated."
-        )
+          "User ID is required. Please ensure you are properly authenticated.",
+        ),
       );
     }
 
@@ -624,7 +624,7 @@ async function updateMyProfile(req, res, next) {
     }
 
     const validatedData = await joischemas.profile_update.validateAsync(
-      req.body
+      req.body,
     );
 
     const profile = await Profile.findOne({
@@ -683,12 +683,12 @@ async function updateMyProfile(req, res, next) {
       return next(
         AppError.conflict("Duplicate value for unique field", {
           duplicateKey: error.keyValue,
-        })
+        }),
       );
     if (error.message === "Profile not found")
       return next(AppError.notFound("Profile not found"));
     return next(
-      AppError.internalServerError(error.message || "Failed to update profile")
+      AppError.internalServerError(error.message || "Failed to update profile"),
     );
   }
 }
@@ -700,7 +700,7 @@ async function getCornMarketNew(req, res, next) {
     // Only allow CRM users
     if (userType !== "CRM") {
       return next(
-        AppError.forbidden("This endpoint is only available for CRM users")
+        AppError.forbidden("This endpoint is only available for CRM users"),
       );
     }
 
@@ -722,7 +722,7 @@ async function getCornMarketNew(req, res, next) {
       ...new Set(
         subscriptions
           .map((sub) => sub.userId)
-          .filter((id) => id !== null && id !== undefined)
+          .filter((id) => id !== null && id !== undefined),
       ),
     ];
 
@@ -763,8 +763,8 @@ async function getCornMarketNew(req, res, next) {
   } catch (error) {
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch corn market new profiles"
-      )
+        error.message || "Failed to fetch corn market new profiles",
+      ),
     );
   }
 }
@@ -776,7 +776,7 @@ async function getCornMarketGraduate(req, res, next) {
     // Only allow CRM users
     if (userType !== "CRM") {
       return next(
-        AppError.forbidden("This endpoint is only available for CRM users")
+        AppError.forbidden("This endpoint is only available for CRM users"),
       );
     }
 
@@ -798,7 +798,7 @@ async function getCornMarketGraduate(req, res, next) {
       ...new Set(
         subscriptions
           .map((sub) => sub.userId)
-          .filter((id) => id !== null && id !== undefined)
+          .filter((id) => id !== null && id !== undefined),
       ),
     ];
 
@@ -839,8 +839,8 @@ async function getCornMarketGraduate(req, res, next) {
   } catch (error) {
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch corn market graduate profiles"
-      )
+        error.message || "Failed to fetch corn market graduate profiles",
+      ),
     );
   }
 }
@@ -859,7 +859,11 @@ async function checkEmailExists(req, res, next) {
 
     // Validate email format - must contain @ symbol
     if (typeof email !== "string" || !email.includes("@")) {
-      return next(AppError.badRequest("Invalid email format. Email must contain @ symbol"));
+      return next(
+        AppError.badRequest(
+          "Invalid email format. Email must contain @ symbol",
+        ),
+      );
     }
 
     // Normalize email (same as when profile is created)
@@ -918,8 +922,8 @@ async function checkEmailExists(req, res, next) {
     console.error("ProfileController [checkEmailExists] Error:", error);
     return next(
       AppError.internalServerError(
-        error.message || "Failed to check email existence"
-      )
+        error.message || "Failed to check email existence",
+      ),
     );
   }
 }
@@ -936,7 +940,7 @@ async function getMyPersonalDetails(req, res, next) {
     // Only allow PORTAL users
     if (userType !== "PORTAL") {
       return next(
-        AppError.forbidden("This endpoint is only available for Portal users")
+        AppError.forbidden("This endpoint is only available for Portal users"),
       );
     }
 
@@ -946,7 +950,7 @@ async function getMyPersonalDetails(req, res, next) {
 
     const personalDetails = await personalDetailsService.getMyPersonalDetails(
       userId,
-      tenantId
+      tenantId,
     );
 
     if (!personalDetails) {
@@ -967,8 +971,8 @@ async function getMyPersonalDetails(req, res, next) {
     }
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch personal details"
-      )
+        error.message || "Failed to fetch personal details",
+      ),
     );
   }
 }
@@ -985,7 +989,7 @@ async function getMyProfessionalDetails(req, res, next) {
     // Only allow PORTAL users
     if (userType !== "PORTAL") {
       return next(
-        AppError.forbidden("This endpoint is only available for Portal users")
+        AppError.forbidden("This endpoint is only available for Portal users"),
       );
     }
 
@@ -996,7 +1000,7 @@ async function getMyProfessionalDetails(req, res, next) {
     const professionalDetails =
       await professionalDetailsService.getMyProfessionalDetails(
         userId,
-        tenantId
+        tenantId,
       );
 
     if (!professionalDetails) {
@@ -1017,8 +1021,8 @@ async function getMyProfessionalDetails(req, res, next) {
     }
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch professional details"
-      )
+        error.message || "Failed to fetch professional details",
+      ),
     );
   }
 }
@@ -1035,7 +1039,7 @@ async function getMySubscriptionDetails(req, res, next) {
     // Only allow PORTAL users
     if (userType !== "PORTAL") {
       return next(
-        AppError.forbidden("This endpoint is only available for Portal users")
+        AppError.forbidden("This endpoint is only available for Portal users"),
       );
     }
 
@@ -1046,7 +1050,7 @@ async function getMySubscriptionDetails(req, res, next) {
     let subscriptionDetails =
       await subscriptionDetailsService.getMySubscriptionDetails(
         userId,
-        tenantId
+        tenantId,
       );
 
     const subResult = { personalDetails: null, subscriptionDetails };
@@ -1070,8 +1074,8 @@ async function getMySubscriptionDetails(req, res, next) {
     }
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch subscription details"
-      )
+        error.message || "Failed to fetch subscription details",
+      ),
     );
   }
 }
@@ -1088,7 +1092,7 @@ async function getMyAllDetails(req, res, next) {
     // Only allow PORTAL users
     if (userType !== "PORTAL") {
       return next(
-        AppError.forbidden("This endpoint is only available for Portal users")
+        AppError.forbidden("This endpoint is only available for Portal users"),
       );
     }
 
@@ -1106,9 +1110,7 @@ async function getMyAllDetails(req, res, next) {
 
     const result = {
       personalDetails:
-        personalDetails.status === "fulfilled"
-          ? personalDetails.value
-          : null,
+        personalDetails.status === "fulfilled" ? personalDetails.value : null,
       professionalDetails:
         professionalDetails.status === "fulfilled"
           ? professionalDetails.value
@@ -1137,8 +1139,8 @@ async function getMyAllDetails(req, res, next) {
     console.error("ProfileController [getMyAllDetails] Error:", error);
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch user details"
-      )
+        error.message || "Failed to fetch user details",
+      ),
     );
   }
 }
@@ -1166,7 +1168,8 @@ async function getProfilesBatch(req, res, next) {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
         req.userId = decoded.sub || decoded.id;
-        req.tenantId = decoded.tenantId || decoded.tid || decoded.extension_tenantId;
+        req.tenantId =
+          decoded.tenantId || decoded.tid || decoded.extension_tenantId;
         hasValidJWT = true;
       } catch (err) {
         // JWT invalid; will allow if internal header present
@@ -1190,17 +1193,22 @@ async function getProfilesBatch(req, res, next) {
     let profileIds = req.body?.profileIds;
     if (!profileIds || !Array.isArray(profileIds)) {
       const q = req.query?.profileIds;
-      profileIds = typeof q === "string"
-        ? q.split(",").map((s) => s.trim()).filter(Boolean)
-        : Array.isArray(q)
-          ? q.filter((id) => id != null && String(id).trim())
-          : [];
+      profileIds =
+        typeof q === "string"
+          ? q
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : Array.isArray(q)
+            ? q.filter((id) => id != null && String(id).trim())
+            : [];
     }
 
     if (!profileIds || profileIds.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "profileIds array is required and must not be empty (body.profileIds or query.profileIds)",
+        message:
+          "profileIds array is required and must not be empty (body.profileIds or query.profileIds)",
       });
     }
 
@@ -1238,8 +1246,8 @@ async function getProfilesBatch(req, res, next) {
     console.error("ProfileController [getProfilesBatch] Error:", error);
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch profiles by IDs"
-      )
+        error.message || "Failed to fetch profiles by IDs",
+      ),
     );
   }
 }
@@ -1280,11 +1288,14 @@ async function getProfileByEmailInternal(req, res, next) {
       data: profile ? { profileId: profile._id.toString() } : null,
     });
   } catch (error) {
-    console.error("ProfileController [getProfileByEmailInternal] Error:", error);
+    console.error(
+      "ProfileController [getProfileByEmailInternal] Error:",
+      error,
+    );
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch profile by email"
-      )
+        error.message || "Failed to fetch profile by email",
+      ),
     );
   }
 }
@@ -1296,24 +1307,28 @@ async function getProfilesByUserIds(req, res, next) {
     const isInternalRequest =
       req.headers["x-internal-request"] === "true" ||
       req.headers["x-internal-request"] === "1";
-    
+
     // Manually validate JWT token if present (since route is before authenticate middleware)
     let hasValidJWT = false;
     const authHeader = req.headers.authorization || req.headers.Authorization;
-    
+
     if (authHeader && authHeader.startsWith("Bearer ")) {
       try {
         const token = authHeader.substring(7);
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
+
         // Set user context if JWT is valid
         req.user = decoded;
         req.userId = decoded.sub || decoded.id;
-        req.tenantId = decoded.tenantId || decoded.tid || decoded.extension_tenantId;
+        req.tenantId =
+          decoded.tenantId || decoded.tid || decoded.extension_tenantId;
         hasValidJWT = true;
       } catch (error) {
         // JWT validation failed, but we'll still allow if internal header is present
-        console.warn("JWT validation failed for internal endpoint:", error.message);
+        console.warn(
+          "JWT validation failed for internal endpoint:",
+          error.message,
+        );
       }
     }
 
@@ -1363,18 +1378,18 @@ async function getProfilesByUserIds(req, res, next) {
       userId: { $in: objectIdUserIds },
     })
       .select(
-        "userId tenantId personalInfo contactInfo membershipNumber isActive normalizedEmail"
+        "userId tenantId personalInfo contactInfo membershipNumber isActive normalizedEmail",
       )
       .lean();
 
     // Create a map of userId -> profile for easy lookup
     // Map each profile to all possible userId formats (ObjectId string and original string)
     const profilesByUserId = {};
-    
+
     profiles.forEach((profile) => {
       if (profile.userId) {
         const profileUserIdStr = String(profile.userId);
-        
+
         // Find the original userId from the request that matches this profile's userId
         // This handles the case where FCMToken.userId is a string but Profile.userId is ObjectId
         const matchingOriginalId = userIds.find((id) => {
@@ -1382,7 +1397,7 @@ async function getProfilesByUserIds(req, res, next) {
           // Compare both as strings - MongoDB ObjectId comparison works with string comparison
           return originalIdStr === profileUserIdStr;
         });
-        
+
         // Map using the original userId string from the request (so notification-service can find it)
         if (matchingOriginalId) {
           profilesByUserId[String(matchingOriginalId)] = profile;
@@ -1391,7 +1406,7 @@ async function getProfilesByUserIds(req, res, next) {
         profilesByUserId[profileUserIdStr] = profile;
       }
     });
-    
+
     console.log("Profile lookup results:", {
       requestedUserIds: userIds,
       profilesFound: profiles.length,
@@ -1406,8 +1421,8 @@ async function getProfilesByUserIds(req, res, next) {
     console.error("ProfileController [getProfilesByUserIds] Error:", error);
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch profiles by user IDs"
-      )
+        error.message || "Failed to fetch profiles by user IDs",
+      ),
     );
   }
 }

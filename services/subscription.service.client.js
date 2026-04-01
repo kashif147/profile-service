@@ -59,7 +59,7 @@ async function fetchCurrentSubscriptionByProfileId(
   profileId,
   tenantId,
   req = null,
-  currentSubscriptionId = null
+  currentSubscriptionId = null,
 ) {
   if (!profileId) return null;
 
@@ -84,7 +84,7 @@ async function fetchCurrentSubscriptionByProfileId(
       raw = parseSubscriptionsFromResponse(fallback.data);
       if (raw.length > 0) {
         console.warn(
-          `[subscription.service.client] Fallback succeeded for profile ${profileId} (tenantId filter omitted)`
+          `[subscription.service.client] Fallback succeeded for profile ${profileId} (tenantId filter omitted)`,
         );
       }
     }
@@ -100,11 +100,13 @@ async function fetchCurrentSubscriptionByProfileId(
     if (subscriptions.length === 0) return null;
 
     const currentSubIdStr =
-      currentSubscriptionId != null ? String(currentSubscriptionId).trim() : null;
+      currentSubscriptionId != null
+        ? String(currentSubscriptionId).trim()
+        : null;
 
     if (currentSubIdStr) {
       const byId = subscriptions.find(
-        (s) => (s?._id?.toString?.() ?? "") === currentSubIdStr
+        (s) => (s?._id?.toString?.() ?? "") === currentSubIdStr,
       );
       if (byId) return byId;
     }
@@ -125,7 +127,7 @@ async function fetchCurrentSubscriptionByProfileId(
   } catch (err) {
     console.warn(
       `[subscription.service.client] Failed to fetch for profile ${profileId}:`,
-      err.message
+      err.message,
     );
     return null;
   }
@@ -140,7 +142,7 @@ async function fetchCurrentSubscriptionByProfileId(
  */
 function mergeSubscriptionServiceData(
   subscriptionDetails,
-  subServiceSubscription
+  subServiceSubscription,
 ) {
   if (!subServiceSubscription) {
     return subscriptionDetails;
@@ -160,8 +162,7 @@ function mergeSubscriptionServiceData(
       null,
     paymentType:
       subServiceSubscription.paymentType ?? subDetails.paymentType ?? null,
-    payrollNo:
-      subServiceSubscription.payrollNo ?? subDetails.payrollNo ?? null,
+    payrollNo: subServiceSubscription.payrollNo ?? subDetails.payrollNo ?? null,
     paymentFrequency:
       subServiceSubscription.paymentFrequency ??
       subDetails.paymentFrequency ??

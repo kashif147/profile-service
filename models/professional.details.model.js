@@ -33,6 +33,8 @@ const ProfessionalSchema = new mongoose.Schema(
       createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
       updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
       userType: { type: String },
+      isActive: { type: Boolean, default: true },
+      deleted: { type: Boolean, default: false },
     },
     deleted: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
