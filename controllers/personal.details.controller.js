@@ -93,7 +93,12 @@ exports.createPersonalDetails = async (req, res, next) => {
       ...validatedData,
       userId,
       tenantId,
-      meta: { createdBy: creatorId, userType },
+      meta: {
+        createdBy: creatorId,
+        userType,
+        deleted: false,
+        isActive: true,
+      },
     });
 
     console.log("=== createPersonalDetails SUCCESS ===");
