@@ -22,6 +22,10 @@ const { loadSubmission } = require("../services/submission.service.js");
 const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const {
   findOrCreateProfileByEmail,
+  findPortalUserIdByTenantEmail,
+  resolveLinkedPortalUserIdForProfile,
+  pickPrimaryEmail,
+  normalizeEmail,
 } = require("../services/profileLookup.service.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
@@ -173,10 +177,34 @@ async function approveSingleApplication({
     const userId = effective?.userId || null;
     const userType = effective?.userType || null;
 
+    const portalUserId = await findPortalUserIdByTenantEmail(
+      tenantId,
+      normalizedEmail,
+      session
+    );
+    const linkedUserId = resolveLinkedPortalUserIdForProfile(
+      userType,
+      userId,
+      portalUserId
+    );
+
     let profile;
     if (existingProfile) {
       // Update existing profile - keep existing membership number
       const updateFields = { ...flattenedProfileFields };
+
+      // Match findOrCreateProfileByEmail: keep Profile.normalizedEmail in sync with preferred primary email
+      const existingContactInfo = existingProfile.contactInfo?.toObject
+        ? existingProfile.contactInfo.toObject()
+        : existingProfile.contactInfo || {};
+      const updatedContactInfo = {
+        ...existingContactInfo,
+        ...(flattenedProfileFields.contactInfo || {}),
+      };
+      const primaryEmail = pickPrimaryEmail(updatedContactInfo);
+      if (primaryEmail) {
+        updateFields.normalizedEmail = normalizeEmail(primaryEmail);
+      }
 
       if (!existingProfile.membershipNumber) {
         const membershipNumber = await generateMembershipNumber();
@@ -186,9 +214,8 @@ async function approveSingleApplication({
         );
       }
 
-      // Set userId for portal users when updating existing profile (only if not already set)
-      if (userType === "PORTAL" && userId && !existingProfile.userId) {
-        updateFields.userId = userId;
+      if (linkedUserId && !existingProfile.userId) {
+        updateFields.userId = linkedUserId;
       }
 
       // Set crmUserId (the user who approved this profile)
@@ -204,19 +231,19 @@ async function approveSingleApplication({
       profile = existingProfile;
     } else {
       // Create new profile - will get new membership number
-      profile = await findOrCreateProfileByEmail({
+      const { profile: createdProfile } = await findOrCreateProfileByEmail({
         tenantId,
         effective,
         reviewerId,
         session,
       });
+      profile = createdProfile;
 
       // Update Profile with approved data
       const updateFields = { ...flattenedProfileFields };
 
-      // Ensure userId is set for portal users
-      if (userType === "PORTAL" && userId) {
-        updateFields.userId = userId;
+      if (linkedUserId) {
+        updateFields.userId = linkedUserId;
       }
 
       // Set crmUserId (the user who approved this profile)
@@ -233,39 +260,55 @@ async function approveSingleApplication({
 
     // Update main application models with approved data
     if (effective.personalInfo) {
+      const personalSet = {
+        personalInfo: effective.personalInfo,
+        contactInfo: effective.contactInfo,
+        applicationStatus: "approved",
+        profileId: profile._id,
+        "meta.isActive": true,
+        "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
+        "approvalDetails.approvedAt": new Date(),
+      };
+      if (linkedUserId) {
+        personalSet.userId = linkedUserId;
+      }
       await PersonalDetails.updateOne(
         { applicationId: applicationId },
-        {
-          $set: {
-            personalInfo: effective.personalInfo,
-            contactInfo: effective.contactInfo,
-            applicationStatus: "approved",
-            profileId: profile._id,
-            "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
-            "approvalDetails.approvedAt": new Date(),
-          },
-        },
+        { $set: personalSet },
         { upsert: true, session }
       );
     }
 
     if (effective.professionalDetails) {
+      const profSet = { professionalDetails: effective.professionalDetails };
+      if (linkedUserId) {
+        profSet.userId = linkedUserId;
+      }
       await ProfessionalDetails.updateOne(
         { applicationId: applicationId },
-        { $set: { professionalDetails: effective.professionalDetails } },
+        { $set: profSet },
         { upsert: true, session }
       );
     }
 
     if (effective.subscriptionDetails) {
+      const resolvedDateJoined = bulkDateJoined
+        ? bulkDateJoined instanceof Date
+          ? bulkDateJoined
+          : new Date(bulkDateJoined)
+        : effective.subscriptionDetails.dateJoined ?? new Date();
       const subscriptionDetailsToSave = {
         ...effective.subscriptionDetails,
-        dateJoined: effective.subscriptionDetails.dateJoined ?? new Date(),
+        dateJoined: resolvedDateJoined,
       };
 
+      const subSet = { subscriptionDetails: subscriptionDetailsToSave };
+      if (linkedUserId) {
+        subSet.userId = linkedUserId;
+      }
       await SubscriptionDetails.findOneAndUpdate(
         { applicationId: applicationId },
-        { $set: { subscriptionDetails: subscriptionDetailsToSave } },
+        { $set: subSet },
         { upsert: true, new: true, runValidators: true, session }
       );
     }
@@ -332,7 +375,7 @@ async function approveSingleApplication({
 
     // Publish subscription upsert request
     const sub = effective.subscriptionDetails || {};
-    // For bulk approval, use bulkDateJoined if provided, otherwise use subscription's dateJoined, fallback to current date
+    // Same dateJoined as persisted subscription details (see subscriptionDetailsToSave above)
     const dateJoined = bulkDateJoined
       ? bulkDateJoined instanceof Date
         ? bulkDateJoined

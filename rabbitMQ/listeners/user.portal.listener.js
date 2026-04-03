@@ -1,4 +1,5 @@
 const User = require("../../models/user.model.js");
+const { setOnInsertSyncedUserId } = require("../../helpers/syncedUserDocumentId.js");
 const Profile = require("../../models/profile.model.js");
 const PersonalDetails = require("../../models/personal.details.model.js");
 const ProfessionalDetails = require("../../models/professional.details.model.js");
@@ -31,6 +32,7 @@ async function handlePortalUserCreated(payload) {
   }
 
   try {
+    const setOnInsert = setOnInsertSyncedUserId(userId);
     // 1. Create/update user in profile-service
     await User.findOneAndUpdate(
       { tenantId, userId: userId },
@@ -47,6 +49,7 @@ async function handlePortalUserCreated(payload) {
           tenantId,
           userType: "PORTAL",
         },
+        ...(setOnInsert ? { $setOnInsert: setOnInsert } : {}),
       },
       {
         upsert: true,
@@ -213,6 +216,7 @@ async function handlePortalUserUpdated(payload) {
   }
 
   try {
+    const setOnInsert = setOnInsertSyncedUserId(userId);
     // 1. Update user in profile-service
     await User.findOneAndUpdate(
       { tenantId, userId: userId },
@@ -225,6 +229,7 @@ async function handlePortalUserUpdated(payload) {
           userMobilePhone: userMobilePhone || null,
           userMemberNumber: userMemberNumber || null,
         },
+        ...(setOnInsert ? { $setOnInsert: setOnInsert } : {}),
       },
       {
         upsert: true,

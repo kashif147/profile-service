@@ -1,4 +1,5 @@
 const Profile = require("../models/profile.model.js");
+const User = require("../models/user.model.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
   generateMembershipNumber,
@@ -21,6 +22,41 @@ function pickPrimaryEmail(contactInfo = {}) {
   if (pref === "WORK" && contactInfo.workEmail) return contactInfo.workEmail;
   return contactInfo.personalEmail || contactInfo.workEmail || null;
 }
+
+/**
+ * Synced portal User row in profile-service (from user.portal.* events).
+ * userEmail is stored lowercase — pass normalized email.
+ */
+async function findPortalUserIdByTenantEmail(tenantId, normalizedEmail, session) {
+  if (!tenantId || !normalizedEmail) return null;
+  let q = User.findOne({
+    tenantId,
+    userEmail: normalizedEmail,
+    userType: "PORTAL",
+    isActive: true,
+  });
+  if (session) q = q.session(session);
+  const existingUser = await q.lean();
+  const portalUserId = existingUser?.userId || null;
+  if (portalUserId) {
+    console.log(
+      `✅ [profileLookup] Found portal user for email ${normalizedEmail}: ${portalUserId}`
+    );
+  }
+  return portalUserId;
+}
+
+/** Prefer submission portal user id; else link from synced User collection by email. */
+function resolveLinkedPortalUserIdForProfile(
+  userType,
+  submissionUserId,
+  portalUserIdFromDb
+) {
+  if (userType === "PORTAL" && submissionUserId) return submissionUserId;
+  if (portalUserIdFromDb) return portalUserIdFromDb;
+  return null;
+}
+
 async function findOrCreateProfileByEmail({
   tenantId,
   effective,
@@ -38,6 +74,22 @@ async function findOrCreateProfileByEmail({
   // Get userId and userType from effective (from submission data)
   const userId = effective?.userId || null;
   const userType = effective?.userType || null;
+
+  const portalUserId = await findPortalUserIdByTenantEmail(
+    tenantId,
+    nEmail,
+    session
+  );
+  const linkedUserId = resolveLinkedPortalUserIdForProfile(
+    userType,
+    userId,
+    portalUserId
+  );
+  if (!portalUserId && !linkedUserId) {
+    console.log(
+      `ℹ️ [profileLookup] No portal user in User collection for ${nEmail}; Profile.userId may stay null until user.portal.* sync`
+    );
+  }
 
   let profile = await Profile.findOne({
     tenantId,
@@ -71,9 +123,8 @@ async function findOrCreateProfileByEmail({
       submissionDate: now,
     };
 
-    // Set userId for portal users when creating new profile
-    if (userType === "PORTAL" && userId) {
-      doc.userId = userId;
+    if (linkedUserId) {
+      doc.userId = linkedUserId;
     }
 
     // Set crmUserId when reviewerId is provided (CRM user approving the profile)
@@ -97,9 +148,8 @@ async function findOrCreateProfileByEmail({
       recruitmentDetails: flattened.recruitmentDetails || {},
     };
 
-    // Set userId for portal users when updating existing profile (only if not already set)
-    if (userType === "PORTAL" && userId && !profile.userId) {
-      $set.userId = userId;
+    if (!profile.userId && linkedUserId) {
+      $set.userId = linkedUserId;
     }
 
     // Set crmUserId when reviewerId is provided (CRM user approving the profile)
@@ -122,11 +172,13 @@ async function findOrCreateProfileByEmail({
 
     await Profile.updateOne({ _id: profile._id }, { $set }, { session });
   }
-  return profile;
+  return { profile, portalUserId, linkedUserId };
 }
 
 module.exports = {
   normalizeEmail,
   pickPrimaryEmail,
+  findPortalUserIdByTenantEmail,
+  resolveLinkedPortalUserIdForProfile,
   findOrCreateProfileByEmail,
 };

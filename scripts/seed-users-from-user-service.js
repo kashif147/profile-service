@@ -176,6 +176,14 @@ function loadModels(connections) {
   return { UserServiceUser, ProfileServiceUser };
 }
 
+function profileUserCreatePayload(data) {
+  const uid = data.userId;
+  if (uid && mongoose.Types.ObjectId.isValid(uid)) {
+    return { ...data, _id: new mongoose.Types.ObjectId(uid) };
+  }
+  return data;
+}
+
 // Map user from user-service to profile-service format
 function mapUserToProfileService(user) {
   return {
@@ -261,8 +269,10 @@ async function seedUsers() {
             `✅ Updated: ${profileServiceUserData.userEmail || profileServiceUserData.userId} (tenant: ${profileServiceUserData.tenantId})`
           );
         } else {
-          // Create new user
-          await ProfileServiceUser.create(profileServiceUserData);
+          // Create new user (_id = user-service user id)
+          await ProfileServiceUser.create(
+            profileUserCreatePayload(profileServiceUserData)
+          );
           created++;
           console.log(
             `➕ Created: ${profileServiceUserData.userEmail || profileServiceUserData.userId} (tenant: ${profileServiceUserData.tenantId})`

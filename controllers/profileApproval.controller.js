@@ -200,7 +200,7 @@ async function approveApplication(req, res, next) {
     }).session(session);
 
     // findOrCreateProfileByEmail handles both creation and update with all necessary fields
-    const profile = await findOrCreateProfileByEmail({
+    const { profile, linkedUserId } = await findOrCreateProfileByEmail({
       tenantId,
       effective,
       reviewerId,
@@ -209,26 +209,33 @@ async function approveApplication(req, res, next) {
 
     // Update main application models with approved data
     if (effective.personalInfo) {
+      const personalSet = {
+        personalInfo: effective.personalInfo,
+        contactInfo: effective.contactInfo,
+        applicationStatus: "approved",
+        profileId: profile._id,
+        "meta.isActive": true,
+        "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
+        "approvalDetails.approvedAt": new Date(),
+      };
+      if (linkedUserId) {
+        personalSet.userId = linkedUserId;
+      }
       await PersonalDetails.updateOne(
         { applicationId: applicationId },
-        {
-          $set: {
-            personalInfo: effective.personalInfo,
-            contactInfo: effective.contactInfo,
-            applicationStatus: "approved",
-            "meta.isActive": true,
-            "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
-            "approvalDetails.approvedAt": new Date(),
-          },
-        },
+        { $set: personalSet },
         { upsert: true, session }
       );
     }
 
     if (effective.professionalDetails) {
+      const profSet = { professionalDetails: effective.professionalDetails };
+      if (linkedUserId) {
+        profSet.userId = linkedUserId;
+      }
       await ProfessionalDetails.updateOne(
         { applicationId: applicationId },
-        { $set: { professionalDetails: effective.professionalDetails } },
+        { $set: profSet },
         { upsert: true, session }
       );
     }
@@ -240,9 +247,13 @@ async function approveApplication(req, res, next) {
         dateJoined: effective.subscriptionDetails.dateJoined ?? new Date(),
       };
 
+      const subSet = { subscriptionDetails: subscriptionDetailsToSave };
+      if (linkedUserId) {
+        subSet.userId = linkedUserId;
+      }
       await SubscriptionDetails.findOneAndUpdate(
         { applicationId: applicationId },
-        { $set: { subscriptionDetails: subscriptionDetailsToSave } },
+        { $set: subSet },
         { upsert: true, new: true, runValidators: true, session }
       );
       // Do not update Profile.currentSubscriptionId or hasHistory here.

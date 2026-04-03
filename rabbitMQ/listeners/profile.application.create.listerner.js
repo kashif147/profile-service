@@ -10,6 +10,19 @@ function isRejectedStatus(value) {
   return (value || "").toLowerCase() === APPLICATION_STATUS.REJECTED;
 }
 
+/** Prefer non-null incoming userId; never overwrite an existing link with null on sync. */
+function resolveUserIdForSync(incomingUserId, existingUserId) {
+  if (incomingUserId != null && incomingUserId !== "") {
+    return incomingUserId;
+  }
+  return existingUserId ?? null;
+}
+
+function isPortalOriginatedApplication(personalDetails) {
+  const t = personalDetails?.meta?.userType;
+  return t == null || String(t).toUpperCase() === "PORTAL";
+}
+
 class ProfileApplicationCreateListener {
   constructor() {
     // This listener handles profile.application.create events from portal service
@@ -78,11 +91,24 @@ class ProfileApplicationCreateListener {
       console.log(
         "📝 [PROFILE_CREATE_LISTENER] Creating/updating personal details..."
       );
+      const resolvedPersonalUserId = resolveUserIdForSync(
+        personalDetails.userId,
+        existingPersonal?.userId
+      );
+      if (
+        isPortalOriginatedApplication(personalDetails) &&
+        !resolvedPersonalUserId
+      ) {
+        console.error(
+          "❌ [PROFILE_CREATE_LISTENER] Portal-originated application sync has no userId (portal must send authenticated user id on create).",
+          { applicationId, tenantId }
+        );
+      }
       const newPersonalDetails = await PersonalDetails.findOneAndUpdate(
         { applicationId: applicationId },
         {
           applicationId: applicationId,
-          userId: personalDetails.userId,
+          userId: resolvedPersonalUserId,
           personalInfo: personalDetails.personalInfo,
           contactInfo: personalDetails.contactInfo,
           applicationStatus: personalDetails.applicationStatus || status,
@@ -105,12 +131,19 @@ class ProfileApplicationCreateListener {
         console.log(
           "📝 [PROFILE_CREATE_LISTENER] Creating/updating professional details..."
         );
+        const existingProfessional = await ProfessionalDetails.findOne({
+          applicationId,
+        }).lean();
+        const resolvedProfessionalUserId = resolveUserIdForSync(
+          professionalDetails.userId,
+          existingProfessional?.userId ?? resolvedPersonalUserId
+        );
         const newProfessionalDetails =
           await ProfessionalDetails.findOneAndUpdate(
             { applicationId: applicationId },
             {
               applicationId: applicationId,
-              userId: professionalDetails.userId,
+              userId: resolvedProfessionalUserId,
               professionalDetails: professionalDetails.professionalDetails,
               meta: professionalDetails.meta,
             },
@@ -207,9 +240,15 @@ class ProfileApplicationCreateListener {
       // Build updateData, handling meta structure differences
       // Portal-service has deleted/isActive in meta, profile-service has them at root
       const portalMeta = subscriptionDetails?.meta || {};
+      const existingSubUserId = existingSubscriptionDetails?.userId;
+      const resolvedSubscriptionUserId = resolveUserIdForSync(
+        subscriptionDetails?.userId,
+        existingSubUserId ?? newPersonalDetails.userId
+      );
+
       const updateData = {
         applicationId: applicationId,
-        userId: subscriptionDetails?.userId || newPersonalDetails.userId,
+        userId: resolvedSubscriptionUserId,
         subscriptionDetails: subscriptionDetailsData,
         meta: {
           createdBy: portalMeta.createdBy || newPersonalDetails.userId,

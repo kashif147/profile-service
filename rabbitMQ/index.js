@@ -186,11 +186,21 @@ async function setupConsumers() {
       async (payload, context) => {
         const { profileId, subscriptionId } = payload.data || {};
         if (!profileId || !subscriptionId) {
+          console.warn(
+            "[profile.membership.events] members.subscription.current.updated.v1 missing profileId or subscriptionId; skip",
+            { correlationId: payload?.correlationId }
+          );
           return;
         }
         const Profile = require("../models/profile.model.js");
         const profile = await Profile.findById(profileId);
-        if (!profile) return;
+        if (!profile) {
+          console.warn(
+            "[profile.membership.events] members.subscription.current.updated.v1 no profile document for profileId; skip",
+            { profileId, correlationId: payload?.correlationId }
+          );
+          return;
+        }
         const update = { currentSubscriptionId: subscriptionId };
         if (
           profile.currentSubscriptionId &&
