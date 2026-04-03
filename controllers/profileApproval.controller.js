@@ -329,13 +329,13 @@ async function approveApplication(req, res, next) {
     // Always use the dateJoined from the approval, not from profile.firstJoinedDate
     const dateJoined = sub.dateJoined ?? new Date();
 
-    // Get userId and userEmail from profile for subscription creation
-    const profileWithUser = await Profile.findById(profile._id).session(
-      session
-    );
-    const userIdForSubscription = profileWithUser?.userId
-      ? String(profileWithUser.userId)
-      : null;
+    // Portal user id for subscription-service: prefer persisted Profile.userId, else linkedUserId from this transaction
+    const userIdForSubscription =
+      updatedProfile?.userId != null
+        ? String(updatedProfile.userId)
+        : linkedUserId != null
+          ? String(linkedUserId)
+          : null;
     const userEmailForSubscription =
       effective.contactInfo?.personalEmail ||
       effective.contactInfo?.workEmail ||

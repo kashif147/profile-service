@@ -382,13 +382,12 @@ async function approveSingleApplication({
         : new Date(bulkDateJoined)
       : sub.dateJoined ?? new Date();
     try {
-      // Get userId and userEmail from profile for subscription creation
-      const profileWithUser = await Profile.findById(profile._id).session(
-        session
-      );
-      const userIdForSubscription = profileWithUser?.userId
-        ? String(profileWithUser.userId)
-        : null;
+      const userIdForSubscription =
+        updatedProfile?.userId != null
+          ? String(updatedProfile.userId)
+          : linkedUserId != null
+            ? String(linkedUserId)
+            : null;
       const userEmailForSubscription =
         effective.contactInfo?.personalEmail ||
         effective.contactInfo?.workEmail ||

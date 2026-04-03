@@ -368,10 +368,15 @@ async function approveApplication({
     // Always use the dateJoined from the approval, not from profile.firstJoinedDate
     const dateJoined = sub.dateJoined ?? new Date();
     
-    // Get userId and userEmail from profile for subscription creation
-    const userIdForSubscription = updatedProfile?.userId 
-      ? String(updatedProfile.userId) 
-      : null;
+    // Prefer Profile.userId after save; else portal User row; else PORTAL submission id
+    const userIdForSubscription =
+      updatedProfile?.userId != null
+        ? String(updatedProfile.userId)
+        : portalUserId != null
+          ? String(portalUserId)
+          : effective?.userType === "PORTAL" && effective?.userId != null
+            ? String(effective.userId)
+            : null;
     const userEmailForSubscription = effective.contactInfo?.personalEmail 
       || effective.contactInfo?.workEmail 
       || null;
