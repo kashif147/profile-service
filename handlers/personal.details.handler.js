@@ -1,5 +1,6 @@
 const PersonalDetails = require("../models/personal.details.model");
 const { APPLICATION_STATUS } = require("../constants/enums");
+const { stampPersonalInfoFullName } = require("../helpers/personal.info.fullName.js");
 
 const generateFullAddress = (contactInfo) => {
   if (!contactInfo) return "";
@@ -21,7 +22,11 @@ const generateFullAddress = (contactInfo) => {
   if (contactInfo.countyCityOrPostCode?.trim()) {
     parts.push(contactInfo.countyCityOrPostCode.trim());
   }
-  
+
+  if (contactInfo.eircode?.trim()) {
+    parts.push(contactInfo.eircode.trim());
+  }
+
   if (contactInfo.country?.trim()) {
     parts.push(contactInfo.country.trim());
   }
@@ -78,6 +83,10 @@ exports.create = (data) =>
       // Address formatting
       if (data.contactInfo) {
         data.contactInfo.fullAddress = generateFullAddress(data.contactInfo);
+      }
+
+      if (data.personalInfo) {
+        stampPersonalInfoFullName(data.personalInfo);
       }
 
       const record = await PersonalDetails.create(data);
@@ -200,7 +209,24 @@ exports.updateByApplicationId = (applicationId, updateData, tenantId) =>
       if (updateData.contactInfo) {
         updateData.contactInfo.fullAddress = generateFullAddress(updateData.contactInfo);
       }
-      
+
+      if (updateData.personalInfo) {
+        const findQ = { applicationId };
+        if (tenantId) findQ.tenantId = tenantId;
+        let existing = await PersonalDetails.findOne(findQ).lean();
+        if (!existing) {
+          const legacyQuery = { ApplicationId: applicationId };
+          if (tenantId) legacyQuery.tenantId = tenantId;
+          existing = await PersonalDetails.findOne(legacyQuery).lean();
+        }
+        const merged = {
+          ...(existing?.personalInfo || {}),
+          ...updateData.personalInfo,
+        };
+        stampPersonalInfoFullName(merged);
+        updateData.personalInfo = merged;
+      }
+
       const query = { applicationId: applicationId };
       if (tenantId) {
         query.tenantId = tenantId;
@@ -252,11 +278,27 @@ exports.updateByUserIdAndApplicationId = (
       if (updateData.contactInfo) {
         updateData.contactInfo.fullAddress = generateFullAddress(updateData.contactInfo);
       }
-      
+
       const query = { userId: userId, applicationId: applicationId };
       if (tenantId) {
         query.tenantId = tenantId;
       }
+
+      if (updateData.personalInfo) {
+        let existing = await PersonalDetails.findOne(query).lean();
+        if (!existing) {
+          const legacyQuery = { userId: userId, ApplicationId: applicationId };
+          if (tenantId) legacyQuery.tenantId = tenantId;
+          existing = await PersonalDetails.findOne(legacyQuery).lean();
+        }
+        const merged = {
+          ...(existing?.personalInfo || {}),
+          ...updateData.personalInfo,
+        };
+        stampPersonalInfoFullName(merged);
+        updateData.personalInfo = merged;
+      }
+
       // Try lowercase first, then uppercase for backward compatibility
       let record = await PersonalDetails.findOneAndUpdate(
         query,
@@ -266,7 +308,7 @@ exports.updateByUserIdAndApplicationId = (
           runValidators: true,
         }
       );
-      
+
       if (!record) {
         const legacyQuery = { userId: userId, ApplicationId: applicationId };
         if (tenantId) {

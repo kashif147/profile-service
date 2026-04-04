@@ -1,6 +1,9 @@
 const Profile = require("../models/profile.model.js");
 const { AppError } = require("../errors/AppError");
 const axios = require("axios");
+const {
+  computeFullNameFromPersonalInfo,
+} = require("../helpers/personal.info.fullName.js");
 
 
 async function getCornMarketProfiles(req, res, next) {
@@ -104,10 +107,10 @@ async function getCornMarketProfiles(req, res, next) {
       const personal = p.personalInfo || {};
       const cornMarket = p.cornMarket || {};
       
-      // Build full name from forename and surname
-      const fullName = [personal.forename, personal.surname]
-        .filter(Boolean)
-        .join(" ") || null;
+      const fullName =
+        personal.fullName ||
+        computeFullNameFromPersonalInfo(personal) ||
+        null;
 
       return {
         membershipNo: p.membershipNumber || null,
@@ -147,6 +150,10 @@ async function getCornMarketProfiles(req, res, next) {
         gender: personal.gender || null,
         surname: personal.surname || null,
         forenames: personal.forename || null,
+        fullName:
+          personal.fullName ||
+          computeFullNameFromPersonalInfo(personal) ||
+          null,
         telephoneMobile: contact.mobileNumber || null,
         emailAddress: contact.personalEmail || contact.workEmail || null,
         address: contact.buildingOrHouse || null,

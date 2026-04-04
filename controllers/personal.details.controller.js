@@ -5,6 +5,9 @@ const joischemas = require("../validation/index.js");
 const { AppError } = require("../errors/AppError");
 const Profile = require("../models/profile.model.js");
 const { normalizeEmail } = require("../helpers/profileLookup.service.js");
+const {
+  enrichPersonalInfoFullNameOnDocument,
+} = require("../helpers/personal.info.fullName.js");
 
 exports.createPersonalDetails = async (req, res, next) => {
   try {
@@ -102,6 +105,7 @@ exports.createPersonalDetails = async (req, res, next) => {
     });
 
     console.log("=== createPersonalDetails SUCCESS ===");
+    enrichPersonalInfoFullNameOnDocument(result);
     return res.success(result);
   } catch (error) {
     console.error(
@@ -158,6 +162,7 @@ exports.getPersonalDetails = async (req, res, next) => {
     }
 
     console.log("=== getPersonalDetails SUCCESS ===");
+    enrichPersonalInfoFullNameOnDocument(personalDetails);
     return res.success(personalDetails);
   } catch (error) {
     console.error(
@@ -220,6 +225,7 @@ exports.updatePersonalDetails = async (req, res, next) => {
       return next(err);
     }
 
+    enrichPersonalInfoFullNameOnDocument(result);
     return res.success(result);
   } catch (error) {
     console.error(
@@ -290,6 +296,7 @@ exports.getMyPersonalDetails = async (req, res, next) => {
       return res.notFoundRecord("Personal details not found");
     }
 
+      enrichPersonalInfoFullNameOnDocument(personalDetails);
       console.log("=== getMyPersonalDetails SUCCESS ===");
       return res.success(personalDetails);
     } else if (userType === "CRM") {
@@ -394,6 +401,7 @@ exports.checkEmailExists = async (req, res, next) => {
     // If profile exists, return profile information
     if (existingProfile) {
       console.log("=== checkEmailExists: Profile found ===");
+      enrichPersonalInfoFullNameOnDocument(existingProfile);
       return res.success({
         exists: true,
         status: false, // status false means profile already exists
@@ -413,6 +421,7 @@ exports.checkEmailExists = async (req, res, next) => {
     // If application exists but no profile yet
     if (existingApplication) {
       console.log("=== checkEmailExists: Application found ===");
+      enrichPersonalInfoFullNameOnDocument(existingApplication);
       return res.success({
         exists: true,
         status: false, // status false means application already exists

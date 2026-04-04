@@ -1,6 +1,9 @@
 const universalSearchService = require("../services/universal.search.service");
 const { AppError } = require("../errors/AppError");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info");
+const {
+  enrichPersonalInfoFullNameOnDocuments,
+} = require("../helpers/personal.info.fullName.js");
 
 /**
  * Universal Search Controller
@@ -124,6 +127,8 @@ class UniversalSearchController {
         pagination,
         sort
       );
+
+      enrichPersonalInfoFullNameOnDocuments(results);
 
       // Calculate pagination metadata
       const totalPages = Math.ceil(total / pagination.limit);

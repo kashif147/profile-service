@@ -1,3 +1,7 @@
+const {
+  stampPersonalInfoFullName,
+} = require("./personal.info.fullName.js");
+
 const personalInfoKeys = [
   "title",
   "surname",
@@ -97,7 +101,10 @@ function flattenProfilePayload(effective = {}) {
   const payload = {};
 
   const personalInfo = pickSection(effective.personalInfo, personalInfoKeys);
-  if (hasValues(personalInfo)) payload.personalInfo = personalInfo;
+  if (hasValues(personalInfo)) {
+    stampPersonalInfoFullName(personalInfo);
+    payload.personalInfo = personalInfo;
+  }
 
   const contactInfo = pickSection(effective.contactInfo, contactInfoKeys);
   if (hasValues(contactInfo)) payload.contactInfo = contactInfo;

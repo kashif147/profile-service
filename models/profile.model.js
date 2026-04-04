@@ -1,4 +1,9 @@
 const mongoose = require("mongoose");
+const {
+  stampPersonalInfoFullName,
+  applyFullNameToMongooseUpdate,
+} = require("../helpers/personal.info.fullName.js");
+
 const ProfileSchema = new mongoose.Schema(
   {
     tenantId: { type: String, index: true },
@@ -40,6 +45,7 @@ const ProfileSchema = new mongoose.Schema(
       title: { type: String, default: null },
       surname: { type: String, default: null },
       forename: { type: String, default: null },
+      fullName: { type: String, default: null }, // computed from forename + surname
       gender: { type: String, default: null },
       dateOfBirth: { type: Date, default: null },
       age: { type: Number, default: null },
@@ -127,6 +133,21 @@ const ProfileSchema = new mongoose.Schema(
   },
   { timestamps: true, versionKey: "profileVersion" }
 );
+
+ProfileSchema.pre("save", function (next) {
+  if (this.personalInfo != null) {
+    stampPersonalInfoFullName(this.personalInfo);
+  }
+  next();
+});
+
+for (const hook of ["findOneAndUpdate", "updateOne", "updateMany"]) {
+  ProfileSchema.pre(hook, function (next) {
+    applyFullNameToMongooseUpdate(this.getUpdate());
+    next();
+  });
+}
+
 ProfileSchema.index({ tenantId: 1, normalizedEmail: 1 }, { unique: true });
 ProfileSchema.index({ batchId: 1 });
 module.exports = mongoose.model("Profile", ProfileSchema);

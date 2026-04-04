@@ -10,6 +10,10 @@ const {
   TEMPLATE_FILTER_KEYS,
   FILTER_FIELD_MAP,
 } = require("../constants/enums");
+const {
+  stampPersonalInfoFullName,
+  enrichApplicationRowPersonalFullName,
+} = require("../helpers/personal.info.fullName.js");
 
 /** System default filters applied for template-based application listing (admin/system default). */
 const SYSTEM_DEFAULT_APPLICATION_FILTERS = {
@@ -55,6 +59,10 @@ exports.getApplicationById = (applicationId) =>
       if (!application) {
         reject(new Error("Application not found"));
         return;
+      }
+
+      if (application.personalInfo) {
+        stampPersonalInfoFullName(application.personalInfo);
       }
 
       resolve(application);
@@ -279,6 +287,8 @@ exports.getApplicationWithDetails = (applicationId) =>
         updatedAt: personalDetails.updatedAt,
       };
 
+      enrichApplicationRowPersonalFullName(applicationDetails);
+
       resolve(applicationDetails);
     } catch (error) {
       console.error(
@@ -355,7 +365,7 @@ exports.getAllApplicationsWithDetails = (
                 ? { membershipCategory }
                 : null;
 
-            return {
+            const row = {
               applicationId: application.applicationId,
               userId: application.userId,
               membershipNumber: subscriptionDetails
@@ -369,6 +379,8 @@ exports.getAllApplicationsWithDetails = (
               createdAt: application.createdAt,
               updatedAt: application.updatedAt,
             };
+            enrichApplicationRowPersonalFullName(row);
+            return row;
           } catch (error) {
             console.error("Error fetching details for application:", error);
             return null;
@@ -456,6 +468,9 @@ const filterByColumns = (obj, columns) => {
     if (result[key] !== undefined) {
       orderedResult[key] = result[key];
     }
+  }
+  if (orderedResult.personalDetails?.personalInfo) {
+    stampPersonalInfoFullName(orderedResult.personalDetails.personalInfo);
   }
   return orderedResult;
 };
@@ -657,14 +672,15 @@ exports.getApplicationsWithTemplateFilters = (
 
             // Apply column filtering based on template
             const filtered = filterByColumns(fullApplication, columns);
-            // Always include applicationId - required for navigation/actions on each application
-            if (fullApplication.applicationId !== undefined) {
-              return {
-                applicationId: fullApplication.applicationId,
-                ...filtered,
-              };
-            }
-            return filtered;
+            const row =
+              fullApplication.applicationId !== undefined
+                ? {
+                    applicationId: fullApplication.applicationId,
+                    ...filtered,
+                  }
+                : filtered;
+            enrichApplicationRowPersonalFullName(row);
+            return row;
           } catch (error) {
             console.error("Error fetching details for application:", error);
             return null;

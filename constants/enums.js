@@ -135,6 +135,7 @@ exports.APPLICATION_RESPONSE_COLUMNS = [
   "personalDetails.personalInfo.title",
   "personalDetails.personalInfo.forename",
   "personalDetails.personalInfo.surname",
+  "personalDetails.personalInfo.fullName",
   "personalDetails.personalInfo.gender",
   "personalDetails.personalInfo.dateOfBirth",
   "personalDetails.personalInfo.countryPrimaryQualification",

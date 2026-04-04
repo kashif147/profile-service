@@ -6,6 +6,10 @@ const {
   PREFERRED_EMAIL,
   USER_TYPE,
 } = require("../constants/enums");
+const {
+  stampPersonalInfoFullName,
+  applyFullNameToMongooseUpdate,
+} = require("../helpers/personal.info.fullName.js");
 
 const ProfileSchema = new mongoose.Schema(
   {
@@ -17,6 +21,7 @@ const ProfileSchema = new mongoose.Schema(
       },
       surname: { type: String, allowNull: true },
       forename: { type: String, allowNull: true },
+      fullName: { type: String, allowNull: true }, // computed from forename + surname
       gender: {
         type: String,
         required: true,
@@ -135,6 +140,20 @@ const ProfileSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+ProfileSchema.pre("save", function (next) {
+  if (this.personalInfo != null) {
+    stampPersonalInfoFullName(this.personalInfo);
+  }
+  next();
+});
+
+for (const hook of ["findOneAndUpdate", "updateOne", "updateMany"]) {
+  ProfileSchema.pre(hook, function (next) {
+    applyFullNameToMongooseUpdate(this.getUpdate());
+    next();
+  });
+}
 
 // Indexes for frequently queried fields
 ProfileSchema.index({ userId: 1 });

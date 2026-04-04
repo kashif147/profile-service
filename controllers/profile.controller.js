@@ -19,9 +19,14 @@ const {
 const {
   fetchCurrentSubscriptionByProfileId,
 } = require("../services/subscription.service.client.js");
+const {
+  stampPersonalInfoFullName,
+  enrichPersonalInfoFullNameOnDocument,
+  enrichPersonalInfoFullNameOnDocuments,
+} = require("../helpers/personal.info.fullName.js");
 
 /**
- * Apply derived fields (age, fullAddress, date conversions) to the payload.
+ * Apply derived fields (age, fullAddress, fullName, date conversions) to the payload.
  * This ensures the backend always owns these calculations.
  */
 function applyDerivedFields(data = {}) {
@@ -68,6 +73,10 @@ function applyDerivedFields(data = {}) {
     data.personalInfo.deceasedDate = deceasedDate;
   }
 
+  if (data.personalInfo) {
+    stampPersonalInfoFullName(data.personalInfo);
+  }
+
   // Address formatting
   if (data.contactInfo) {
     const parts = [];
@@ -86,6 +95,10 @@ function applyDerivedFields(data = {}) {
 
     if (data.contactInfo.countyCityOrPostCode?.trim()) {
       parts.push(data.contactInfo.countyCityOrPostCode.trim());
+    }
+
+    if (data.contactInfo.eircode?.trim()) {
+      parts.push(data.contactInfo.eircode.trim());
     }
 
     if (data.contactInfo.country?.trim()) {
@@ -173,7 +186,7 @@ async function getAllProfiles(req, res, next) {
 
     const enriched = profiles.map((p) => {
       const sub = subMap.get(p._id?.toString()) ?? null;
-      return {
+      const row = {
         ...p,
         membershipCategory: sub?.membershipCategory ?? null,
         ...(sub && {
@@ -185,6 +198,8 @@ async function getAllProfiles(req, res, next) {
           },
         }),
       };
+      enrichPersonalInfoFullNameOnDocument(row);
+      return row;
     });
 
     return res.success({
@@ -274,6 +289,8 @@ async function searchProfiles(req, res, next) {
       .limit(25)
       .lean();
 
+    enrichPersonalInfoFullNameOnDocuments(results);
+
     return res.success({
       count: results.length,
       results,
@@ -344,6 +361,7 @@ async function getProfileById(req, res, next) {
         },
       }),
     };
+    enrichPersonalInfoFullNameOnDocument(enriched);
     return res.success(enriched);
   } catch (error) {
     return next(
@@ -425,8 +443,20 @@ async function updateProfile(req, res, next) {
         }
       }
 
-      updates.preferences = preferences;
+        updates.preferences = preferences;
     }
+
+    if (updates.personalInfo) {
+      const existingPersonalInfo = profile.personalInfo?.toObject
+        ? profile.personalInfo.toObject()
+        : profile.personalInfo || {};
+      updates.personalInfo = {
+        ...existingPersonalInfo,
+        ...updates.personalInfo,
+      };
+    }
+
+    applyDerivedFields(updates);
 
     profile.set(updates);
 
@@ -436,6 +466,7 @@ async function updateProfile(req, res, next) {
       .populate("crmUserId", "userFullName")
       .lean();
 
+    enrichPersonalInfoFullNameOnDocument(populatedProfile);
     return res.success(populatedProfile);
   } catch (error) {
     if (error.name === "ValidationError") {
@@ -672,6 +703,7 @@ async function updateMyProfile(req, res, next) {
       .populate("crmUserId", "userFullName")
       .lean();
 
+    enrichPersonalInfoFullNameOnDocument(populatedProfile);
     return res.success(populatedProfile);
   } catch (error) {
     console.error("ProfileController [updateMyProfile] Error:", error);
@@ -752,6 +784,8 @@ async function getCornMarketNew(req, res, next) {
       Profile.countDocuments(query),
     ]);
 
+    enrichPersonalInfoFullNameOnDocuments(profiles);
+
     return res.success({
       count: profiles.length,
       total,
@@ -828,6 +862,8 @@ async function getCornMarketGraduate(req, res, next) {
       Profile.countDocuments(query),
     ]);
 
+    enrichPersonalInfoFullNameOnDocuments(profiles);
+
     return res.success({
       count: profiles.length,
       total,
@@ -877,6 +913,15 @@ async function checkEmailExists(req, res, next) {
     }).lean();
 
     if (existingProfile) {
+      const personalInfoSlice = {
+        title: existingProfile.personalInfo?.title,
+        forename: existingProfile.personalInfo?.forename,
+        surname: existingProfile.personalInfo?.surname,
+        dateOfBirth: existingProfile.personalInfo?.dateOfBirth,
+        age: existingProfile.personalInfo?.age,
+        gender: existingProfile.personalInfo?.gender,
+      };
+      stampPersonalInfoFullName(personalInfoSlice);
       // Return basic profile details
       return res.success({
         exists: true,
@@ -885,14 +930,7 @@ async function checkEmailExists(req, res, next) {
           profileId: existingProfile._id,
           membershipNumber: existingProfile.membershipNumber,
           isActive: existingProfile.isActive,
-          personalInfo: {
-            title: existingProfile.personalInfo?.title,
-            forename: existingProfile.personalInfo?.forename,
-            surname: existingProfile.personalInfo?.surname,
-            dateOfBirth: existingProfile.personalInfo?.dateOfBirth,
-            age: existingProfile.personalInfo?.age,
-            gender: existingProfile.personalInfo?.gender,
-          },
+          personalInfo: personalInfoSlice,
           contactInfo: {
             mobileNumber: existingProfile.contactInfo?.mobileNumber,
             telephoneNumber: existingProfile.contactInfo?.telephoneNumber,
@@ -960,6 +998,7 @@ async function getMyPersonalDetails(req, res, next) {
       });
     }
 
+    enrichPersonalInfoFullNameOnDocument(personalDetails);
     return res.success(personalDetails);
   } catch (error) {
     console.error("ProfileController [getMyPersonalDetails] Error:", error);
@@ -1134,6 +1173,7 @@ async function getMyAllDetails(req, res, next) {
       });
     }
 
+    enrichPersonalInfoFullNameOnDocument(result.personalDetails);
     return res.success(result);
   } catch (error) {
     console.error("ProfileController [getMyAllDetails] Error:", error);
@@ -1237,6 +1277,8 @@ async function getProfilesBatch(req, res, next) {
       query.tenantId = req.tenantId;
     }
     const profiles = await Profile.find(query).lean();
+
+    enrichPersonalInfoFullNameOnDocuments(profiles);
 
     return res.status(200).json({
       success: true,
@@ -1381,6 +1423,8 @@ async function getProfilesByUserIds(req, res, next) {
         "userId tenantId personalInfo contactInfo membershipNumber isActive normalizedEmail",
       )
       .lean();
+
+    enrichPersonalInfoFullNameOnDocuments(profiles);
 
     // Create a map of userId -> profile for easy lookup
     // Map each profile to all possible userId formats (ObjectId string and original string)

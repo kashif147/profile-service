@@ -17,6 +17,9 @@ const {
   mergeSubscriptionServiceData,
 } = require("./subscription.service.client.js");
 const Profile = require("../models/profile.model.js");
+const {
+  enrichPersonalInfoFullNameOnDocument,
+} = require("../helpers/personal.info.fullName.js");
 
 const SOURCE_PROFILE_SERVICE = "profile-service";
 const SOURCE_PORTAL_SERVICE = "portal-service";
@@ -419,6 +422,7 @@ async function getAggregatedUserDetails(req) {
   }
 
   await enrichWithSubscriptionService(finalResult, req);
+  enrichPersonalInfoFullNameOnDocument(finalResult.personalDetails);
   return finalResult;
 }
 
