@@ -20,7 +20,14 @@ const TemplateSchema = new mongoose.Schema(
       required: false,
       index: true,
     },
-    
+    /** When set, templates are scoped to this tenant (CRM gateway). Legacy docs may omit. */
+    tenantId: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
+
     filters: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
@@ -60,5 +67,7 @@ const TemplateSchema = new mongoose.Schema(
 TemplateSchema.index({ userId: 1, "meta.deleted": 1 });
 TemplateSchema.index({ userId: 1, isDefault: 1 });
 TemplateSchema.index({ systemDefault: 1, "meta.deleted": 1 });
+TemplateSchema.index({ tenantId: 1, userId: 1, "meta.deleted": 1 });
+TemplateSchema.index({ tenantId: 1, systemDefault: 1, templateType: 1 });
 
 module.exports = mongoose.model("Template", TemplateSchema);

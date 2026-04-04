@@ -15,8 +15,7 @@
     "docker:build": "docker build -t profile-service .",
     "docker:run": "docker run -p 4001:4001 profile-service",
     "test:ci": "npm test && npm run lint",
-    "migrate:batch-status": "node scripts/add-status-to-batches.js",
-    "upload-file": "node scripts/upload-file-to-azure.js"
+    "migrate:batch-status": "node scripts/add-status-to-batches.js"
   },
   "keywords": [
     "profile",
@@ -28,7 +27,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@azure/storage-blob": "^12.17.0",
     "@membership/policy-middleware": "github:kashif147/policy-middleware#gateway",
     "@projectShell/rabbitmq-middleware": "github:kashif147/rabbitmq-middleware#gateway",
     "amqplib": "^0.10.9",
@@ -42,9 +40,7 @@
     "joi": "^17.11.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.0.3",
-    "multer": "^1.4.5-lts.1",
     "uuid": "^13.0.0",
-    "xlsx": "^0.18.5",
     "zod": "^3.22.4"
   },
   "devDependencies": {

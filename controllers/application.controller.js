@@ -89,7 +89,7 @@ exports.getAllApplications = async (req, res, next) => {
 // NEW PUT API - Completely separate for template-based filtering
 exports.getApplicationsWithTemplate = async (req, res, next) => {
   try {
-    const { userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userType, creatorId, tenantId } = extractUserAndCreatorContext(req);
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
@@ -109,6 +109,7 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
       template = await applicationFilterTemplateService.getTemplateById(
         templateId,
         creatorId,
+        tenantId || null,
       );
 
       if (!template) {
@@ -132,11 +133,13 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
         await applicationFilterTemplateService.getDefaultTemplateForType(
           creatorId,
           "application",
+          tenantId || null,
         );
       if (!template) {
         template =
           await applicationFilterTemplateService.getSystemDefaultTemplate(
             "application",
+            tenantId || null,
           );
       }
     }

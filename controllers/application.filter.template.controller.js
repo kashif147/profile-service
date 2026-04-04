@@ -8,7 +8,7 @@ const { AppError } = require("../errors/AppError");
  */
 exports.createTemplate = async (req, res, next) => {
   try {
-    const { userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userType, creatorId, tenantId } = extractUserAndCreatorContext(req);
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
@@ -22,7 +22,8 @@ exports.createTemplate = async (req, res, next) => {
 
     const template = await applicationFilterTemplateService.createTemplate(
       creatorId,
-      validatedData
+      validatedData,
+      tenantId || null
     );
 
     return res.success(template, "Filter template created successfully");
@@ -44,7 +45,7 @@ exports.createTemplate = async (req, res, next) => {
  */
 exports.getUserTemplates = async (req, res, next) => {
   try {
-    const { userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userType, creatorId, tenantId } = extractUserAndCreatorContext(req);
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
@@ -55,7 +56,11 @@ exports.getUserTemplates = async (req, res, next) => {
 
     const type = req.query.type || "application";
     const list =
-      await applicationFilterTemplateService.getUserTemplatesWithSystemDefault(creatorId, type);
+      await applicationFilterTemplateService.getUserTemplatesWithSystemDefault(
+        creatorId,
+        type,
+        tenantId || null
+      );
 
     const systemDefault = list.find((t) => t.systemDefault) || null;
     const userTemplates = list.filter((t) => !t.systemDefault);
@@ -85,7 +90,7 @@ exports.getUserTemplates = async (req, res, next) => {
  */
 exports.getTemplateById = async (req, res, next) => {
   try {
-    const { userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userType, creatorId, tenantId } = extractUserAndCreatorContext(req);
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
@@ -99,7 +104,8 @@ exports.getTemplateById = async (req, res, next) => {
     const template =
       await applicationFilterTemplateService.getTemplateById(
         templateId,
-        creatorId
+        creatorId,
+        tenantId || null
       );
 
     return res.success(template);
@@ -120,7 +126,7 @@ exports.getTemplateById = async (req, res, next) => {
  */
 exports.updateTemplate = async (req, res, next) => {
   try {
-    const { userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userType, creatorId, tenantId } = extractUserAndCreatorContext(req);
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
@@ -136,7 +142,8 @@ exports.updateTemplate = async (req, res, next) => {
     const template = await applicationFilterTemplateService.updateTemplate(
       templateId,
       creatorId,
-      validatedData
+      validatedData,
+      tenantId || null
     );
 
     return res.success(template, "Filter template updated successfully");
@@ -160,7 +167,7 @@ exports.updateTemplate = async (req, res, next) => {
  */
 exports.deleteTemplate = async (req, res, next) => {
   try {
-    const { userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userType, creatorId, tenantId } = extractUserAndCreatorContext(req);
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
@@ -173,7 +180,8 @@ exports.deleteTemplate = async (req, res, next) => {
 
     await applicationFilterTemplateService.deleteTemplate(
       templateId,
-      creatorId
+      creatorId,
+      tenantId || null
     );
 
     return res.success(null, "Filter template deleted successfully");
@@ -194,7 +202,7 @@ exports.deleteTemplate = async (req, res, next) => {
  */
 exports.getDefaultTemplate = async (req, res, next) => {
   try {
-    const { userType, creatorId } = extractUserAndCreatorContext(req);
+    const { userType, creatorId, tenantId } = extractUserAndCreatorContext(req);
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
@@ -204,7 +212,10 @@ exports.getDefaultTemplate = async (req, res, next) => {
     }
 
     const template =
-      await applicationFilterTemplateService.getDefaultTemplate(creatorId);
+      await applicationFilterTemplateService.getDefaultTemplate(
+        creatorId,
+        tenantId || null
+      );
 
     return res.success(template);
   } catch (error) {

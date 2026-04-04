@@ -12,7 +12,6 @@ const {
   APPLICATION_REVIEW_EVENTS,
   APPLICATION_REVIEW_REJECTED_EVENTS,
   MEMBERSHIP_EVENTS,
-  BATCH_PROCESS_EVENTS,
 } = require("./events/index.js");
 
 // Import event handlers
@@ -39,8 +38,6 @@ const {
   handleSubscriptionResignationUndoneActive,
   handleSubscriptionCancellationUndoneActive,
 } = require("./listeners/subscription.personal.details.listener.js");
-const { runBatchProcessing } = require("../services/batch.process.job.service.js");
-
 // Initialize event system
 async function initEventSystem() {
   try {
@@ -50,9 +47,6 @@ async function initEventSystem() {
       prefetch: 10,
       connectionName: "profile-service",
       serviceName: "profile-service",
-      exchanges: [
-        { name: "batch.events", type: "topic", options: { durable: true } },
-      ],
     });
     console.log("✅ Event system initialized with middleware");
   } catch (error) {
@@ -294,64 +288,6 @@ async function setupConsumers() {
     await consumer.consume(USER_QUEUE, { prefetch: 10 });
     console.log("✅ User events consumer ready:", USER_QUEUE);
 
-    // 5. Batch process queue (batch.events exchange) - background processing of batch details
-    const BATCH_PROCESS_QUEUE = QUEUES.BATCH_PROCESS;
-    console.log("🔧 [SETUP] Creating batch process queue...");
-    console.log("   Queue:", BATCH_PROCESS_QUEUE);
-    console.log("   Exchange: batch.events");
-    console.log("   Routing Key:", BATCH_PROCESS_EVENTS.BATCH_PROCESS_REQUESTED);
-
-    await consumer.createQueue(BATCH_PROCESS_QUEUE, {
-      durable: true,
-      messageTtl: 86400000, // 24 hours
-    });
-
-    await consumer.bindQueue(BATCH_PROCESS_QUEUE, "batch.events", [
-      BATCH_PROCESS_EVENTS.BATCH_PROCESS_REQUESTED,
-    ]);
-
-    consumer.registerHandler(
-      BATCH_PROCESS_EVENTS.BATCH_PROCESS_REQUESTED,
-      async (payload, context) => {
-        const data = payload.data || payload;
-        const { batchDetailId, tenantId, userId, authorization } = data;
-        if (!batchDetailId) {
-          console.error("[BatchProcess] Missing batchDetailId in payload");
-          return;
-        }
-        const result = await runBatchProcessing(batchDetailId, tenantId || null, {
-          authorization: authorization || undefined,
-        });
-        // Publish completion event for future WebSocket/notification service
-        await publisher.publish(
-          BATCH_PROCESS_EVENTS.BATCH_PROCESS_COMPLETED,
-          {
-            batchDetailId,
-            userId: userId || null,
-            tenantId: tenantId || null,
-            success: result.success,
-            processed: result.processed,
-            failed: result.failed,
-            message: result.message,
-          },
-          {
-            tenantId: tenantId || undefined,
-            exchange: "batch.events",
-            routingKey: BATCH_PROCESS_EVENTS.BATCH_PROCESS_COMPLETED,
-            metadata: { service: "profile-service", version: "1.0" },
-          }
-        );
-        if (result.success) {
-          console.log("✅ [BatchProcess] Completed batch:", batchDetailId, "processed:", result.processed, "failed:", result.failed);
-        } else {
-          console.warn("⚠️ [BatchProcess] Batch failed:", batchDetailId, result.message);
-        }
-      }
-    );
-
-    await consumer.consume(BATCH_PROCESS_QUEUE, { prefetch: 1 });
-    console.log("✅ Batch process consumer ready:", BATCH_PROCESS_QUEUE);
-
     console.log("✅ All consumers set up successfully");
   } catch (error) {
     console.error("❌ Failed to set up consumers:", error.message);
@@ -381,14 +317,12 @@ const EVENT_TYPES = {
   ...APPLICATION_REVIEW_EVENTS,
   ...APPLICATION_REVIEW_REJECTED_EVENTS,
   ...MEMBERSHIP_EVENTS,
-  ...BATCH_PROCESS_EVENTS,
 };
 
 const QUEUES = {
   PORTAL_EVENTS: "profile.portal.events",
   APPLICATION_EVENTS: "profile.application.events",
   MEMBERSHIP_EVENTS: "profile.membership.events",
-  BATCH_PROCESS: "profile.batch.process",
 };
 
 module.exports = {
@@ -404,7 +338,6 @@ module.exports = {
   APPLICATION_REVIEW_EVENTS,
   APPLICATION_REVIEW_REJECTED_EVENTS,
   MEMBERSHIP_EVENTS,
-  BATCH_PROCESS_EVENTS,
   initEventSystem,
   publishDomainEvent,
   setupConsumers,

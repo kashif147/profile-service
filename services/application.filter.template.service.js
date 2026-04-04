@@ -4,43 +4,60 @@ const { APPLICATION_STATUS } = require("../constants/enums");
 
 /** Return template for API response (no meta, no __v) */
 function toTemplateResponse(doc) {
-  const obj = doc && typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+  const obj =
+    doc && typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
   delete obj.meta;
   delete obj.__v;
   return obj;
 }
 
+function tenantOrLegacyMatch(tenantId) {
+  if (!tenantId) return {};
+  return {
+    $or: [
+      { tenantId },
+      { tenantId: null },
+      { tenantId: { $exists: false } },
+    ],
+  };
+}
+
+async function findSystemDefaultTemplateDoc(type, tenantId) {
+  const base = {
+    systemDefault: true,
+    "meta.deleted": false,
+    templateType: type,
+  };
+  if (tenantId) {
+    const scoped = await Template.findOne({ ...base, tenantId });
+    if (scoped) return scoped;
+  }
+  return Template.findOne({
+    ...base,
+    $or: [{ tenantId: null }, { tenantId: { $exists: false } }],
+  });
+}
+
 /**
  * Application Filter Template Service Layer
- * Contains business logic for filter template operations
  */
 class TemplateService {
-  /**
-   * Create a new filter template
-   * @param {string} userId - User ID who created the template
-   * @param {Object} templateData - Template data (filters, isDefault)
-   * @returns {Promise<Object>} Created template
-   */
-  async createTemplate(userId, templateData) {
+  async createTemplate(userId, templateData, tenantId = null) {
     try {
-      const { name, templateType, filters, columns, isDefault, pinned } = templateData;
+      const { name, templateType, filters, columns, isDefault, pinned } =
+        templateData;
       const type = templateType || "application";
 
-      // When creating with isDefault: true, unset all other templates for this user+type so only one is default.
+      const scope = { userId, templateType: type, isDefault: true, "meta.deleted": false };
+      Object.assign(scope, tenantOrLegacyMatch(tenantId));
+
       if (isDefault) {
-        await Template.updateMany(
-          {
-            userId,
-            templateType: type,
-            isDefault: true,
-            "meta.deleted": false,
-          },
-          { $set: { isDefault: false } }
-        );
+        await Template.updateMany(scope, { $set: { isDefault: false } });
       }
 
       const template = new Template({
         userId,
+        tenantId: tenantId || undefined,
         name: name != null && name !== "" ? name : undefined,
         templateType: type,
         filters: filters || {},
@@ -52,65 +69,46 @@ class TemplateService {
       const saved = await template.save();
       return toTemplateResponse(saved);
     } catch (error) {
-      console.error(
-        "TemplateService [createTemplate] Error:",
-        error
-      );
+      console.error("TemplateService [createTemplate] Error:", error);
       throw error;
     }
   }
 
-  /**
-   * Get all filter templates for a user
-   * @param {string} userId - User ID
-   * @returns {Promise<Array>} Array of templates
-   */
-  async getUserTemplates(userId) {
+  async getUserTemplates(userId, tenantId = null) {
     try {
-      return await Template.find({
-        userId,
-        "meta.deleted": false,
-      }).sort({ isDefault: -1, createdAt: -1 });
+      const q = { userId, "meta.deleted": false };
+      Object.assign(q, tenantOrLegacyMatch(tenantId));
+      return await Template.find(q).sort({ isDefault: -1, createdAt: -1 });
     } catch (error) {
-      console.error(
-        "TemplateService [getUserTemplates] Error:",
-        error
-      );
+      console.error("TemplateService [getUserTemplates] Error:", error);
       throw error;
     }
   }
 
-  /**
-   * Get user templates + system default template, filtered by type (e.g. application).
-   * @param {string} userId - User ID
-   * @param {string} type - Template type (e.g. "application"). Default "application".
-   * @returns {Promise<Array>} Array of templates (system default first, then user templates)
-   */
-  async getUserTemplatesWithSystemDefault(userId, type = "application") {
+  async getUserTemplatesWithSystemDefault(userId, type = "application", tenantId = null) {
     try {
       const typeFilter = { templateType: type };
 
-      const systemDefault = await Template.findOne({
-        systemDefault: true,
-        "meta.deleted": false,
-        ...typeFilter,
-      });
+      const systemDefault = await findSystemDefaultTemplateDoc(type, tenantId);
 
-      const userTemplates = await Template.find({
+      const uq = {
         userId,
         "meta.deleted": false,
         ...typeFilter,
-      }).sort({ pinned: -1, isDefault: -1, createdAt: -1 });
+      };
+      Object.assign(uq, tenantOrLegacyMatch(tenantId));
 
-      // Combine: system default first, then user templates
+      const userTemplates = await Template.find(uq).sort({
+        pinned: -1,
+        isDefault: -1,
+        createdAt: -1,
+      });
+
       const allTemplates = [];
-      
       if (systemDefault) {
         allTemplates.push(systemDefault);
       }
-      
       allTemplates.push(...userTemplates);
-
       return allTemplates;
     } catch (error) {
       console.error(
@@ -121,39 +119,35 @@ class TemplateService {
     }
   }
 
-  /**
-   * Get a specific template by ID
-   * Returns template if: (1) it's the system default, or (2) it belongs to the user
-   * @param {string} templateId - Template ID
-   * @param {string} userId - User ID (for authorization)
-   * @returns {Promise<Object>} Template
-   */
-  async getTemplateById(templateId, userId) {
+  async getTemplateById(templateId, userId, tenantId = null) {
     try {
-      // Allow system default by ID so frontend can pass it like any other template
       const systemDefault = await Template.findOne({
         _id: templateId,
         systemDefault: true,
         "meta.deleted": false,
       });
       if (systemDefault) {
+        if (tenantId && systemDefault.tenantId && String(systemDefault.tenantId) !== String(tenantId)) {
+          throw AppError.notFound("Filter template not found");
+        }
         const type = systemDefault.templateType || "application";
-        const userHasDefault = await Template.exists({
+        const dq = {
           userId,
           templateType: type,
           isDefault: true,
           "meta.deleted": false,
-        });
+        };
+        Object.assign(dq, tenantOrLegacyMatch(tenantId));
+        const userHasDefault = await Template.exists(dq);
         const out = toTemplateResponse(systemDefault);
         if (!userHasDefault) out.isDefault = true;
         return out;
       }
 
-      const template = await Template.findOne({
-        _id: templateId,
-        userId,
-        "meta.deleted": false,
-      });
+      const tq = { _id: templateId, userId, "meta.deleted": false };
+      Object.assign(tq, tenantOrLegacyMatch(tenantId));
+
+      const template = await Template.findOne(tq);
 
       if (!template) {
         throw AppError.notFound("Filter template not found");
@@ -161,82 +155,67 @@ class TemplateService {
 
       return template;
     } catch (error) {
-      console.error(
-        "TemplateService [getTemplateById] Error:",
-        error
-      );
+      console.error("TemplateService [getTemplateById] Error:", error);
       throw error;
     }
   }
 
-  /**
-   * Update a filter template
-   * @param {string} templateId - Template ID
-   * @param {string} userId - User ID (for authorization)
-   * @param {Object} updateData - Update data
-   * @returns {Promise<Object>} Updated template
-   */
-  async updateTemplate(templateId, userId, updateData) {
+  async updateTemplate(templateId, userId, updateData, tenantId = null) {
     try {
-      const { name, templateType, filters, columns, isDefault, pinned } = updateData;
+      const { name, templateType, filters, columns, isDefault, pinned } =
+        updateData;
 
-      // Allow system default by ID (same as getTemplateById)
       let template = await Template.findOne({
         _id: templateId,
         systemDefault: true,
         "meta.deleted": false,
       });
 
+      if (template && tenantId && template.tenantId && String(template.tenantId) !== String(tenantId)) {
+        template = null;
+      }
+
       if (!template) {
-        template = await Template.findOne({
-          _id: templateId,
-          userId,
-          "meta.deleted": false,
-        });
+        const tq = { _id: templateId, userId, "meta.deleted": false };
+        Object.assign(tq, tenantOrLegacyMatch(tenantId));
+        template = await Template.findOne(tq);
       }
 
       if (!template) {
         throw AppError.notFound("Filter template not found");
       }
 
-      const type = templateType !== undefined ? templateType : template.templateType;
+      const type =
+        templateType !== undefined ? templateType : template.templateType;
 
       if (template.systemDefault) {
-        // System default: only allow isDefault and pinned (name/filters/columns affect everyone)
         if (isDefault === true) {
-          // Clear isDefault on all user templates so getDefaultTemplateForType returns null → fallback to system default
-          await Template.updateMany(
-            {
-              userId,
-              templateType: type,
-              "meta.deleted": false,
-            },
-            { $set: { isDefault: false } }
-          );
+          const mq = {
+            userId,
+            templateType: type,
+            "meta.deleted": false,
+          };
+          Object.assign(mq, tenantOrLegacyMatch(tenantId));
+          await Template.updateMany(mq, { $set: { isDefault: false } });
         }
         if (pinned !== undefined) template.pinned = pinned;
-        // Don't persist isDefault on system default (shared doc) – effective default is "no user default"
         const saved = await template.save();
         const response = toTemplateResponse(saved);
         if (isDefault === true) response.isDefault = true;
         return response;
       }
 
-      // User-owned template
-      // When setting isDefault: true, unset all other templates for this user+type so only one is default.
       if (isDefault === true) {
-        await Template.updateMany(
-          {
-            userId,
-            templateType: type,
-            _id: { $ne: templateId },
-            "meta.deleted": false,
-          },
-          { $set: { isDefault: false } }
-        );
+        const mq = {
+          userId,
+          templateType: type,
+          _id: { $ne: templateId },
+          "meta.deleted": false,
+        };
+        Object.assign(mq, tenantOrLegacyMatch(tenantId));
+        await Template.updateMany(mq, { $set: { isDefault: false } });
       }
 
-      // Update fields
       if (name !== undefined) {
         template.name = name !== "" ? name : null;
       }
@@ -259,27 +238,17 @@ class TemplateService {
       const saved = await template.save();
       return toTemplateResponse(saved);
     } catch (error) {
-      console.error(
-        "TemplateService [updateTemplate] Error:",
-        error
-      );
+      console.error("TemplateService [updateTemplate] Error:", error);
       throw error;
     }
   }
 
-  /**
-   * Delete a filter template (soft delete)
-   * @param {string} templateId - Template ID
-   * @param {string} userId - User ID (for authorization)
-   * @returns {Promise<Object>} Deleted template
-   */
-  async deleteTemplate(templateId, userId) {
+  async deleteTemplate(templateId, userId, tenantId = null) {
     try {
-      const template = await Template.findOne({
-        _id: templateId,
-        userId,
-        "meta.deleted": false,
-      });
+      const tq = { _id: templateId, userId, "meta.deleted": false };
+      Object.assign(tq, tenantOrLegacyMatch(tenantId));
+
+      const template = await Template.findOne(tq);
 
       if (!template) {
         throw AppError.notFound("Filter template not found");
@@ -290,32 +259,22 @@ class TemplateService {
 
       return await template.save();
     } catch (error) {
-      console.error(
-        "TemplateService [deleteTemplate] Error:",
-        error
-      );
+      console.error("TemplateService [deleteTemplate] Error:", error);
       throw error;
     }
   }
 
-  /**
-   * Get default template for a user (any type). Used by GET /templates/default.
-   * If no default exists, creates one for submitted applications (application type).
-   * @param {string} userId - User ID
-   * @returns {Promise<Object>} Default template (always returns a template)
-   */
-  async getDefaultTemplate(userId) {
+  async getDefaultTemplate(userId, tenantId = null) {
     try {
-      let template = await Template.findOne({
-        userId,
-        isDefault: true,
-        "meta.deleted": false,
-      });
+      const dq = { userId, isDefault: true, "meta.deleted": false };
+      Object.assign(dq, tenantOrLegacyMatch(tenantId));
 
-      // If no default template exists, create one for submitted applications
+      let template = await Template.findOne(dq);
+
       if (!template) {
         template = new Template({
           userId,
+          tenantId: tenantId || undefined,
           templateType: "application",
           filters: {
             applicationStatus: {
@@ -333,28 +292,21 @@ class TemplateService {
 
       return template;
     } catch (error) {
-      console.error(
-        "TemplateService [getDefaultTemplate] Error:",
-        error
-      );
+      console.error("TemplateService [getDefaultTemplate] Error:", error);
       throw error;
     }
   }
 
-  /**
-   * Get user's default template for a given type (e.g. application). Returns null if none.
-   * @param {string} userId - User ID
-   * @param {string} type - Template type (e.g. "application")
-   * @returns {Promise<Object|null>} User default template or null
-   */
-  async getDefaultTemplateForType(userId, type = "application") {
+  async getDefaultTemplateForType(userId, type = "application", tenantId = null) {
     try {
-      return await Template.findOne({
+      const q = {
         userId,
         templateType: type,
         isDefault: true,
         "meta.deleted": false,
-      });
+      };
+      Object.assign(q, tenantOrLegacyMatch(tenantId));
+      return await Template.findOne(q);
     } catch (error) {
       console.error(
         "TemplateService [getDefaultTemplateForType] Error:",
@@ -364,21 +316,9 @@ class TemplateService {
     }
   }
 
-  /**
-   * Get system-wide default template. Optional type filter (e.g. "application").
-   * @param {string} [type] - Template type (e.g. "application")
-   * @returns {Promise<Object>} System default template
-   */
-  async getSystemDefaultTemplate(type = "application") {
+  async getSystemDefaultTemplate(type = "application", tenantId = null) {
     try {
-      const query = {
-        systemDefault: true,
-        "meta.deleted": false,
-      };
-      if (type) {
-        query.templateType = type;
-      }
-      const template = await Template.findOne(query);
+      const template = await findSystemDefaultTemplateDoc(type, tenantId);
 
       if (!template) {
         throw AppError.notFound(
@@ -398,4 +338,3 @@ class TemplateService {
 }
 
 module.exports = new TemplateService();
-

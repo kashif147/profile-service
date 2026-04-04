@@ -1,5 +1,7 @@
 # Batch Details API - Quick Reference
 
+**Implemented in account-service.** Use `/account-service/api/batch-details` (or legacy `/profile-service/api/batch-details` if the gateway proxies it). See [account-service/docs/BATCH_DETAILS.md](../account-service/docs/BATCH_DETAILS.md).
+
 ## Create a Batch Detail
 
 **Endpoint:** `POST /api/batch-details`  

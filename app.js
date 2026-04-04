@@ -180,22 +180,6 @@ app.get("/api", (req, res) => {
   });
 });
 
-// ===== BATCH CREATE — mounted directly so gateway redirect doesn't break it =====
-const multer = require("multer");
-const batchUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }).single("file");
-const { createBatchDetail } = require("./controllers/batch.detail.controller");
-
-app.use("/api/create-batch", authenticate, (req, res, next) => {
-  if (req.user?.userType !== "CRM") {
-    return res.status(403).json({ success: false, message: "Only CRM users can create batch details" });
-  }
-  batchUpload(req, res, (err) => {
-    if (err) return res.status(400).json({ success: false, message: err.message });
-    createBatchDetail(req, res, next);
-  });
-});
-// =================================================================================
-
 // Initialize authentication middleware for protected routes
 app.use("/api/profile", require("./routes/profile.routes"));
 app.use(authenticate);
