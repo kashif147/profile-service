@@ -17,7 +17,9 @@ This document describes the business rule that enforces payment frequency based 
 Located in: `helpers/payment.frequency.helper.js`
 
 ```javascript
-const { enforcePaymentFrequencyRule } = require("../helpers/payment.frequency.helper.js");
+const {
+  enforcePaymentFrequencyRule,
+} = require("../helpers/payment.frequency.helper.js");
 
 // Automatically enforces the rule
 const correctedDetails = enforcePaymentFrequencyRule(subscriptionDetails);
@@ -42,7 +44,7 @@ const correctedDetails = enforcePaymentFrequencyRule(subscriptionDetails);
 - `PAYMENT_TYPE.CARD_PAYMENT` = "Credit Card" → **Frequency: "Annually"**
 - `PAYMENT_TYPE.PAYROLL_DEDUCTION` = "Salary Deduction" → **Frequency: "Monthly"**
 - `PAYMENT_TYPE.DIRECT_DEBIT` = "Direct Debit" → **Frequency: "Monthly"**
-- `PAYMENT_TYPE.SBO_PAYMENT` = "Standing Bankers Order" → **Frequency: "Monthly"**
+- `PAYMENT_TYPE.SBO_PAYMENT` = "Standing Order" → **Frequency: "Monthly"**
 
 ## Behavior
 
@@ -55,6 +57,7 @@ const correctedDetails = enforcePaymentFrequencyRule(subscriptionDetails);
 ## Examples
 
 ### Example 1: Credit Card Payment
+
 ```javascript
 {
   paymentType: "Credit Card",
@@ -68,6 +71,7 @@ const correctedDetails = enforcePaymentFrequencyRule(subscriptionDetails);
 ```
 
 ### Example 2: Direct Debit Payment
+
 ```javascript
 {
   paymentType: "Direct Debit",
@@ -86,4 +90,3 @@ const correctedDetails = enforcePaymentFrequencyRule(subscriptionDetails);
 - The rule applies to both create and update operations
 - Rule is also enforced when receiving events from portal-service
 - Frontend should display this rule to users for better UX, but backend enforces it regardless
-
