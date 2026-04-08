@@ -8,7 +8,12 @@ const {
   FILTER_OPERATOR,
   APPLICATION_RESPONSE_COLUMNS,
   ALLOWED_FILTER_KEYS,
+  PROFILE_TEMPLATE_FILTER_KEYS,
 } = require("../constants/enums");
+
+const ALL_TEMPLATE_FILTER_KEYS = [
+  ...new Set([...ALLOWED_FILTER_KEYS, ...PROFILE_TEMPLATE_FILTER_KEYS]),
+];
 
 module.exports.personal_details_create = Joi.object({
   personalInfo: Joi.object({
@@ -108,8 +113,12 @@ module.exports.professional_details_create = Joi.object({
     grade: Joi.string().optional().default(null),
     otherGrade: Joi.string().optional().default(null),
     nmbiNumber: Joi.string().optional().default(null),
-    nurseType: Joi.string().optional().default(null),
     nursingAdaptationProgramme: Joi.boolean().optional().default(false),
+    nurseType: Joi.when("nursingAdaptationProgramme", {
+      is: true,
+      then: Joi.string().trim().required(),
+      otherwise: Joi.string().allow(null).optional().default(null),
+    }),
     region: Joi.string().optional().default(null),
     branch: Joi.string().optional().default(null),
     pensionNo: Joi.string().optional().default(null),
@@ -132,8 +141,12 @@ module.exports.professional_details_update = Joi.object({
     grade: Joi.string().optional().default(null),
     otherGrade: Joi.string().optional().default(null),
     nmbiNumber: Joi.string().optional().default(null),
-    nurseType: Joi.string().optional().default(null),
     nursingAdaptationProgramme: Joi.boolean().optional().default(false),
+    nurseType: Joi.when("nursingAdaptationProgramme", {
+      is: true,
+      then: Joi.string().trim().required(),
+      otherwise: Joi.string().allow(null).optional().default(null),
+    }),
     region: Joi.string().optional().default(null),
     branch: Joi.string().optional().default(null),
     pensionNo: Joi.string().optional().default(null),
@@ -332,18 +345,32 @@ const filterEntrySchema = Joi.object({
 module.exports.filter_template_create = Joi.object({
   /** User-provided template name (e.g. "Submitted only") */
   name: Joi.string().trim().allow("", null).optional().default(null),
-  /** Type of template, e.g. "application". */
+  /** Type of template, e.g. "application" or "profile". */
   templateType: Joi.string().trim().optional().default("application"),
-  /** Filters: camelCase keys (e.g. workLocation, applicationStatus). Each: { operator, values }. */
-  filters: Joi.object()
-    .pattern(Joi.string().valid(...ALLOWED_FILTER_KEYS), filterEntrySchema)
-    .optional()
-    .default({}),
-  /** Columns in camelCase; must be from APPLICATION_RESPONSE_COLUMNS. Operator is in filters only, not here. */
-  columns: Joi.array()
-    .items(Joi.string().valid(...APPLICATION_RESPONSE_COLUMNS))
-    .optional()
-    .default([]),
+  /** Filters: camelCase keys. Each: { operator, values }. Keys depend on templateType. */
+  filters: Joi.when("templateType", {
+    is: "profile",
+    then: Joi.object()
+      .pattern(
+        Joi.string().valid(...PROFILE_TEMPLATE_FILTER_KEYS),
+        filterEntrySchema,
+      )
+      .optional()
+      .default({}),
+    otherwise: Joi.object()
+      .pattern(Joi.string().valid(...ALLOWED_FILTER_KEYS), filterEntrySchema)
+      .optional()
+      .default({}),
+  }),
+  /** Columns: application templates use APPLICATION_RESPONSE_COLUMNS; profile templates allow any string (optional projection). */
+  columns: Joi.when("templateType", {
+    is: "profile",
+    then: Joi.array().items(Joi.string().trim()).optional().default([]),
+    otherwise: Joi.array()
+      .items(Joi.string().valid(...APPLICATION_RESPONSE_COLUMNS))
+      .optional()
+      .default([]),
+  }),
   isDefault: Joi.boolean().optional().default(false),
   pinned: Joi.boolean().optional().default(false),
 });
@@ -353,11 +380,9 @@ module.exports.filter_template_update = Joi.object({
   name: Joi.string().trim().allow("", null).optional(),
   templateType: Joi.string().trim().optional(),
   filters: Joi.object()
-    .pattern(Joi.string().valid(...ALLOWED_FILTER_KEYS), filterEntrySchema)
+    .pattern(Joi.string().valid(...ALL_TEMPLATE_FILTER_KEYS), filterEntrySchema)
     .optional(),
-  columns: Joi.array()
-    .items(Joi.string().valid(...APPLICATION_RESPONSE_COLUMNS))
-    .optional(),
+  columns: Joi.array().items(Joi.string().trim()).optional(),
   isDefault: Joi.boolean().optional(),
   pinned: Joi.boolean().optional(),
 }).min(0);

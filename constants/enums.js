@@ -124,6 +124,31 @@ exports.FILTER_FIELD_MAP = {
 /** All camelCase filter keys the frontend may send (for validation). */
 exports.ALLOWED_FILTER_KEYS = Object.keys(exports.FILTER_FIELD_MAP);
 
+/**
+ * Profile document paths for CRM profile list filter templates (templateType "profile").
+ * Keys are camelCase filter names; values are Mongo paths on Profile.
+ */
+exports.PROFILE_FILTER_FIELD_MAP = {
+  workLocation: "professionalDetails.workLocation",
+  grade: "professionalDetails.grade",
+  branch: "professionalDetails.branch",
+  region: "professionalDetails.region",
+  primarySection: "professionalDetails.primarySection",
+  secondarySection: "professionalDetails.secondarySection",
+  payrollNo: "professionalDetails.payrollNo",
+  mobileNumber: "contactInfo.mobileNumber",
+  preferredEmail: "contactInfo.preferredEmail",
+  personalEmail: "contactInfo.personalEmail",
+  workEmail: "contactInfo.workEmail",
+  isActive: "isActive",
+  membershipStatus: "additionalInformation.membershipStatus",
+  submissionDate: "submissionDate",
+};
+
+exports.PROFILE_TEMPLATE_FILTER_KEYS = Object.keys(
+  exports.PROFILE_FILTER_FIELD_MAP,
+);
+
 // All columns that can be returned in application list response (template columns). User sends camelCase. Empty array = all columns.
 exports.APPLICATION_RESPONSE_COLUMNS = [
   "applicationId",

@@ -19,6 +19,8 @@ const {
 const {
   fetchCurrentSubscriptionByProfileId,
 } = require("../services/subscription.service.client.js");
+const applicationFilterTemplateService = require("../services/application.filter.template.service.js");
+const profileFilterHandler = require("../handlers/profile.filter.handler.js");
 const {
   stampPersonalInfoFullName,
   enrichPersonalInfoFullNameOnDocument,
@@ -129,6 +131,44 @@ function escapeRegex(value = "") {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+async function enrichProfilesListWithSubscriptions(profiles, tenantId, req) {
+  const profilesToEnrich = profiles.filter((p) => p.currentSubscriptionId);
+  const subMap = new Map();
+  if (profilesToEnrich.length > 0) {
+    const subs = await Promise.all(
+      profilesToEnrich.map((p) =>
+        fetchCurrentSubscriptionByProfileId(
+          p._id?.toString(),
+          p.tenantId ?? tenantId,
+          req,
+          p.currentSubscriptionId?.toString?.() ?? p.currentSubscriptionId,
+        ).then((sub) => ({ profileId: p._id.toString(), sub })),
+      ),
+    );
+    subs.forEach(({ profileId, sub }) => {
+      if (sub) subMap.set(profileId, sub);
+    });
+  }
+
+  return profiles.map((p) => {
+    const sub = subMap.get(p._id?.toString()) ?? null;
+    const row = {
+      ...p,
+      membershipCategory: sub?.membershipCategory ?? null,
+      ...(sub && {
+        _subscriptionService: {
+          paymentType: sub.paymentType ?? null,
+          paymentFrequency: sub.paymentFrequency ?? null,
+          startDate: sub.startDate ?? null,
+          endDate: sub.endDate ?? null,
+        },
+      }),
+    };
+    enrichPersonalInfoFullNameOnDocument(row);
+    return row;
+  });
+}
+
 function pickAllowedUpdates(payload = {}) {
   const result = {};
 
@@ -166,41 +206,11 @@ async function getAllProfiles(req, res, next) {
       Profile.countDocuments(query),
     ]);
 
-    const profilesToEnrich = profiles.filter((p) => p.currentSubscriptionId);
-    const subMap = new Map();
-    if (profilesToEnrich.length > 0) {
-      const subs = await Promise.all(
-        profilesToEnrich.map((p) =>
-          fetchCurrentSubscriptionByProfileId(
-            p._id?.toString(),
-            p.tenantId ?? tenantId,
-            req,
-            p.currentSubscriptionId?.toString?.() ?? p.currentSubscriptionId,
-          ).then((sub) => ({ profileId: p._id.toString(), sub })),
-        ),
-      );
-      subs.forEach(({ profileId, sub }) => {
-        if (sub) subMap.set(profileId, sub);
-      });
-    }
-
-    const enriched = profiles.map((p) => {
-      const sub = subMap.get(p._id?.toString()) ?? null;
-      const row = {
-        ...p,
-        membershipCategory: sub?.membershipCategory ?? null,
-        ...(sub && {
-          _subscriptionService: {
-            paymentType: sub.paymentType ?? null,
-            paymentFrequency: sub.paymentFrequency ?? null,
-            startDate: sub.startDate ?? null,
-            endDate: sub.endDate ?? null,
-          },
-        }),
-      };
-      enrichPersonalInfoFullNameOnDocument(row);
-      return row;
-    });
+    const enriched = await enrichProfilesListWithSubscriptions(
+      profiles,
+      tenantId,
+      req,
+    );
 
     return res.success({
       count: enriched.length,
@@ -213,6 +223,110 @@ async function getAllProfiles(req, res, next) {
   } catch (error) {
     return next(
       AppError.internalServerError(error.message || "Failed to fetch profiles"),
+    );
+  }
+}
+
+async function getProfilesWithTemplate(req, res, next) {
+  try {
+    const { userType, creatorId, tenantId: ctxTenantId } =
+      extractUserAndCreatorContext(req);
+    if (userType !== "CRM") {
+      return next(
+        AppError.forbidden(
+          "Access denied. Only CRM users can filter profiles with templates.",
+        ),
+      );
+    }
+
+    const tenantId = req.tenantId;
+    if (!tenantId) {
+      return next(AppError.badRequest("Tenant context required"));
+    }
+
+    const page = req.body.page ? parseInt(req.body.page, 10) : 1;
+    const limit = req.body.limit ? parseInt(req.body.limit, 10) : 100;
+    const templateId = req.body.templateId;
+
+    let template;
+
+    if (templateId) {
+      template = await applicationFilterTemplateService.getTemplateById(
+        templateId,
+        creatorId,
+        ctxTenantId || null,
+      );
+
+      const resolvedType = template.templateType || "application";
+      if (resolvedType !== "profile") {
+        return next(
+          AppError.badRequest(
+            "This template is not a profile template. Use a template with templateType 'profile'.",
+          ),
+        );
+      }
+    } else {
+      template =
+        await applicationFilterTemplateService.getDefaultTemplateForType(
+          creatorId,
+          "profile",
+          ctxTenantId || null,
+        );
+      if (!template) {
+        try {
+          template =
+            await applicationFilterTemplateService.getSystemDefaultTemplate(
+              "profile",
+              ctxTenantId || null,
+            );
+        } catch {
+          template = {
+            filters: {},
+            _id: null,
+            isDefault: false,
+            systemDefault: false,
+          };
+        }
+      }
+    }
+
+    const filters = template.filters || {};
+    const result = await profileFilterHandler.getProfilesWithTemplateFilters(
+      tenantId,
+      filters,
+      page,
+      limit,
+    );
+
+    const enriched = await enrichProfilesListWithSubscriptions(
+      result.profiles,
+      tenantId,
+      req,
+    );
+
+    return res.success({
+      count: enriched.length,
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      totalPages: Math.ceil(result.total / result.limit),
+      results: enriched,
+    });
+  } catch (error) {
+    console.error(
+      "ProfileController [getProfilesWithTemplate] Error:",
+      error,
+    );
+    if (error.isJoi) {
+      return next(AppError.badRequest("Validation error: " + error.message));
+    }
+    if (error.message && error.message.includes("not found")) {
+      return next(AppError.notFound(error.message));
+    }
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch profiles with template",
+      ),
     );
   }
 }
@@ -1473,6 +1587,7 @@ async function getProfilesByUserIds(req, res, next) {
 
 module.exports = {
   getAllProfiles,
+  getProfilesWithTemplate,
   searchProfiles,
   getProfileById,
   updateProfile,
