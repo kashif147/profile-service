@@ -2,6 +2,7 @@
 const Profile = require("../models/profile.model.js");
 const { flattenProfilePayload } = require("./profile.transform.js");
 const { generateMembershipNumber } = require("./membership.number.generator.js");
+const { publishProfileAfterUpdateOne } = require("../services/profile.audit.publisher.js");
 
 // Helper function to handle bypass user ObjectId conversion
 function getReviewerIdForDb(reviewerId) {
@@ -96,8 +97,17 @@ async function findOrCreateProfileByEmail({
     if (primaryEmail) {
       $set.normalizedEmail = normalizeEmail(primaryEmail);
     }
-    
+
+    const beforeLean = profile.toObject({ depopulate: true });
     await Profile.updateOne({ _id: profile._id }, { $set }, { session });
+    await publishProfileAfterUpdateOne({
+      tenantId,
+      profileId: profile._id,
+      beforeLean,
+      session,
+      actorId: reviewerId,
+      source: "helpers.profileLookup.findOrCreate",
+    });
   }
 
   return profile;

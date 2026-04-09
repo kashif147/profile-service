@@ -4,6 +4,9 @@ const Profile = require("../../models/profile.model.js");
 const PersonalDetails = require("../../models/personal.details.model.js");
 const ProfessionalDetails = require("../../models/professional.details.model.js");
 const SubscriptionDetails = require("../../models/subscription.model.js");
+const {
+  publishProfileAfterUpdateOne,
+} = require("../../services/profile.audit.publisher.js");
 
 /**
  * Handle Portal user created event
@@ -80,10 +83,18 @@ async function handlePortalUserCreated(payload) {
 
         // 3. Update profile with userId if not already set
         if (!profile.userId || String(profile.userId) !== String(userId)) {
+          const beforeLean = profile.toObject({ depopulate: true });
           await Profile.updateOne(
             { _id: profile._id },
             { $set: { userId: userId } }
           );
+          await publishProfileAfterUpdateOne({
+            tenantId,
+            profileId: profile._id,
+            beforeLean,
+            actorId: null,
+            source: "user.portal.created",
+          });
           console.log(
             `✅ Linked Portal user ${userId} to profile: ${profile._id}`
           );
@@ -260,10 +271,18 @@ async function handlePortalUserUpdated(payload) {
         }
 
         if (Object.keys(updateFields).length > 0) {
+          const beforeLean = profile.toObject({ depopulate: true });
           await Profile.updateOne(
             { _id: profile._id },
             { $set: updateFields }
           );
+          await publishProfileAfterUpdateOne({
+            tenantId,
+            profileId: profile._id,
+            beforeLean,
+            actorId: null,
+            source: "user.portal.updated",
+          });
           console.log(
             `✅ Updated profile fields for Portal user ${userId}:`,
             Object.keys(updateFields)
@@ -280,10 +299,20 @@ async function handlePortalUserUpdated(payload) {
         });
 
         if (profileByEmailOrMember) {
+          const beforeLean = profileByEmailOrMember.toObject({
+            depopulate: true,
+          });
           await Profile.updateOne(
             { _id: profileByEmailOrMember._id },
             { $set: { userId: userId } }
           );
+          await publishProfileAfterUpdateOne({
+            tenantId,
+            profileId: profileByEmailOrMember._id,
+            beforeLean,
+            actorId: null,
+            source: "user.portal.updated",
+          });
           console.log(
             `✅ Linked Portal user ${userId} to existing profile: ${profileByEmailOrMember._id}`
           );

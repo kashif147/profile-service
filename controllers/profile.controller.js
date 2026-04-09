@@ -26,6 +26,9 @@ const {
   enrichPersonalInfoFullNameOnDocument,
   enrichPersonalInfoFullNameOnDocuments,
 } = require("../helpers/personal.info.fullName.js");
+const {
+  publishProfileAfterUpdateOne,
+} = require("../services/profile.audit.publisher.js");
 
 /**
  * Apply derived fields (age, fullAddress, fullName, date conversions) to the payload.
@@ -572,6 +575,8 @@ async function updateProfile(req, res, next) {
 
     applyDerivedFields(updates);
 
+    const { creatorId } = extractUserAndCreatorContext(req);
+    profile.$locals.__auditActorId = creatorId;
     profile.set(updates);
 
     await profile.save();
@@ -619,6 +624,10 @@ async function softDeleteProfile(req, res, next) {
 
     profile.isActive = false;
     profile.deactivatedAt = new Date();
+
+    const { creatorId } = extractUserAndCreatorContext(req);
+    profile.$locals.__auditActorId = creatorId;
+    profile.$locals.__auditEventType = "profile.deleted";
 
     await profile.save();
 
@@ -706,11 +715,20 @@ async function getMyProfile(req, res, next) {
         console.log("Profile found by email:", profileByEmail);
 
         if (profileByEmail) {
+          const beforeLean = await Profile.findById(profileByEmail._id).lean();
           // Link userId to profile for future requests
           await Profile.updateOne(
             { _id: profileByEmail._id },
             { $set: { userId: userIdObjectId } },
           );
+
+          await publishProfileAfterUpdateOne({
+            tenantId,
+            profileId: profileByEmail._id,
+            beforeLean,
+            actorId: userId,
+            source: "portal.getMyProfile.userIdLink",
+          });
 
           console.log(
             `✅ Auto-linked userId ${userId} to profile ${profileByEmail._id}`,
@@ -798,6 +816,9 @@ async function updateMyProfile(req, res, next) {
 
     // Age and fullAddress are automatically calculated
     applyDerivedFields(updates);
+
+    const { creatorId } = extractUserAndCreatorContext(req);
+    profile.$locals.__auditActorId = creatorId;
 
     // Sync consent - if user sends consent (true/false)
     if (validatedData.preferences?.consent !== undefined) {

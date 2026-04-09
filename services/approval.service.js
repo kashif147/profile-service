@@ -23,6 +23,10 @@ const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
   generateMembershipNumber,
 } = require("../helpers/membership.number.generator.js");
+const {
+  publishProfileAudit,
+  publishProfileAfterUpdateOne,
+} = require("./profile.audit.publisher.js");
 
 function deepClone(o) {
   return JSON.parse(JSON.stringify(o));
@@ -159,11 +163,20 @@ async function approveApplication({
         );
       }
 
+      const beforeLean = existingProfile.toObject({ depopulate: true });
       await Profile.updateOne(
         { _id: existingProfile._id },
         { $set: profileUpdate },
         { session }
       );
+      await publishProfileAfterUpdateOne({
+        tenantId,
+        profileId: existingProfile._id,
+        beforeLean,
+        session,
+        actorId: reviewerId,
+        source: "approval.service",
+      });
       profile = existingProfile;
     } else {
       // Create new profile (first-ever membership): set initial fields via upsert
@@ -195,7 +208,7 @@ async function approveApplication({
         );
       }
 
-      await Profile.updateOne(
+      const upsertRes = await Profile.updateOne(
         { tenantId, normalizedEmail },
         {
           $set: profileSetFields,
@@ -214,6 +227,28 @@ async function approveApplication({
       profile = await Profile.findOne({ tenantId, normalizedEmail }).session(
         session
       );
+      if (profile) {
+        const afterLean = profile.toObject({ depopulate: true });
+        if (upsertRes.upsertedCount > 0) {
+          await publishProfileAudit("profile.created", {
+            tenantId,
+            profileId: profile._id,
+            before: null,
+            after: afterLean,
+            actorId: reviewerId,
+            source: "approval.service",
+          });
+        } else {
+          await publishProfileAudit("profile.updated", {
+            tenantId,
+            profileId: profile._id,
+            before: null,
+            after: afterLean,
+            actorId: reviewerId,
+            source: "approval.service",
+          });
+        }
+      }
       console.log(
         `✅ Generated membership number ${membershipNumber} for new profile ${profile._id}`
       );

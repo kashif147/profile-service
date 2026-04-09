@@ -428,6 +428,9 @@ exports.reviewTransferRequest = async (req, res, next) => {
           profile.professionalDetails.workLocation = workLocationName;
           profile.professionalDetails.branch = branchName;
           profile.professionalDetails.region = regionName;
+          profile.$locals.__auditActorId =
+            req.user?.id || req.user?._id || req.user?.userId;
+          profile.$locals.__auditSource = "transfer.request.approve";
           await profile.save();
 
           // Also update ProfessionalDetails collection for this user (if exists)
@@ -496,6 +499,9 @@ exports.reviewTransferRequest = async (req, res, next) => {
           }
           profile.professionalDetails.workLocation =
             transferRequest.requestedWorkLocationId;
+          profile.$locals.__auditActorId =
+            req.user?.id || req.user?._id || req.user?.userId;
+          profile.$locals.__auditSource = "transfer.request.approve";
           await profile.save();
           // Log warning but don't fail the request
           console.warn(

@@ -3,6 +3,10 @@ const Profile = require("../models/profile.model.js");
 const User = require("../models/user.model.js");
 const { AppError } = require("../errors/AppError");
 const axios = require("axios");
+const {
+  publishProfileAudit,
+  cloneForAudit,
+} = require("../services/profile.audit.publisher.js");
 
 /**
  * Helper function to fetch subscription startDate for profiles
@@ -238,6 +242,17 @@ async function createBatch(req, res, next) {
         { _id: { $in: profileIds } },
         { $set: { batchId: savedBatch._id } }
       );
+      for (const b of matchingProfiles) {
+        const after = { ...(cloneForAudit(b) || {}), batchId: savedBatch._id };
+        await publishProfileAudit("profile.updated", {
+          tenantId: b.tenantId,
+          profileId: b._id,
+          before: b,
+          after,
+          actorId: userId,
+          source: "batch.create",
+        });
+      }
     }
 
     return res.status(201).json({
@@ -504,8 +519,21 @@ async function deleteBatch(req, res, next) {
       return next(AppError.notFound("Batch not found"));
     }
 
+    const clearedProfiles = await Profile.find({ batchId: batchId }).lean();
     // Remove batchId from all profiles
     await Profile.updateMany({ batchId: batchId }, { $set: { batchId: null } });
+    const actorId = req.user?.id || req.user?.sub || req.userId;
+    for (const b of clearedProfiles) {
+      const after = { ...(cloneForAudit(b) || {}), batchId: null };
+      await publishProfileAudit("profile.updated", {
+        tenantId: b.tenantId,
+        profileId: b._id,
+        before: b,
+        after,
+        actorId,
+        source: "batch.delete",
+      });
+    }
 
     // Soft delete
     batch.isDeleted = true;
@@ -570,8 +598,21 @@ async function refreshBatch(req, res, next) {
 
     const profileIds = matchingProfiles.map((profile) => profile._id);
 
+    const refreshActorId = req.user?.id || req.user?.sub || req.userId;
+    const oldBatchMembers = await Profile.find({ batchId: batchId }).lean();
     // Remove batchId from old profiles
     await Profile.updateMany({ batchId: batchId }, { $set: { batchId: null } });
+    for (const b of oldBatchMembers) {
+      const after = { ...(cloneForAudit(b) || {}), batchId: null };
+      await publishProfileAudit("profile.updated", {
+        tenantId: b.tenantId,
+        profileId: b._id,
+        before: b,
+        after,
+        actorId: refreshActorId,
+        source: "batch.refresh",
+      });
+    }
 
     let profileSnapshots = [];
 
@@ -612,6 +653,17 @@ async function refreshBatch(req, res, next) {
         { _id: { $in: profileIds } },
         { $set: { batchId: batchId } }
       );
+      for (const b of matchingProfiles) {
+        const after = { ...(cloneForAudit(b) || {}), batchId: batchId };
+        await publishProfileAudit("profile.updated", {
+          tenantId: b.tenantId,
+          profileId: b._id,
+          before: b,
+          after,
+          actorId: refreshActorId,
+          source: "batch.refresh",
+        });
+      }
     }
 
     return res.success({

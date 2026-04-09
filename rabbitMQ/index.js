@@ -187,6 +187,7 @@ async function setupConsumers() {
           return;
         }
         const Profile = require("../models/profile.model.js");
+        const { publishProfileAfterUpdateOne } = require("../services/profile.audit.publisher.js");
         const profile = await Profile.findById(profileId);
         if (!profile) {
           console.warn(
@@ -195,6 +196,7 @@ async function setupConsumers() {
           );
           return;
         }
+        const beforeLean = profile.toObject({ depopulate: true });
         const update = { currentSubscriptionId: subscriptionId };
         if (
           profile.currentSubscriptionId &&
@@ -203,6 +205,13 @@ async function setupConsumers() {
           update.hasHistory = true;
         }
         await Profile.updateOne({ _id: profileId }, { $set: update });
+        await publishProfileAfterUpdateOne({
+          tenantId: profile.tenantId,
+          profileId,
+          beforeLean,
+          actorId: null,
+          source: "membership.subscription.current.updated",
+        });
       }
     );
 

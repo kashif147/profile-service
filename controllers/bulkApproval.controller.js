@@ -31,6 +31,9 @@ const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
   generateMembershipNumber,
 } = require("../helpers/membership.number.generator.js");
+const {
+  publishProfileAfterUpdateOne,
+} = require("../services/profile.audit.publisher.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -221,6 +224,7 @@ async function approveSingleApplication({
       // Set crmUserId (the user who approved this profile)
       updateFields.crmUserId = getReviewerIdForDb(reviewerId);
 
+      const beforeLean = existingProfile.toObject({ depopulate: true });
       await Profile.updateOne(
         { _id: existingProfile._id },
         {
@@ -228,6 +232,14 @@ async function approveSingleApplication({
         },
         { session }
       );
+      await publishProfileAfterUpdateOne({
+        tenantId,
+        profileId: existingProfile._id,
+        beforeLean,
+        session,
+        actorId: reviewerId,
+        source: "bulkApproval",
+      });
       profile = existingProfile;
     } else {
       // Create new profile - will get new membership number
@@ -249,6 +261,7 @@ async function approveSingleApplication({
       // Set crmUserId (the user who approved this profile)
       updateFields.crmUserId = getReviewerIdForDb(reviewerId);
 
+      const beforeSecond = await Profile.findById(profile._id).session(session).lean();
       await Profile.updateOne(
         { _id: profile._id },
         {
@@ -256,6 +269,14 @@ async function approveSingleApplication({
         },
         { session }
       );
+      await publishProfileAfterUpdateOne({
+        tenantId,
+        profileId: profile._id,
+        beforeLean: beforeSecond,
+        session,
+        actorId: reviewerId,
+        source: "bulkApproval",
+      });
     }
 
     // Update main application models with approved data

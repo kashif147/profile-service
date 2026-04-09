@@ -141,6 +141,30 @@ ProfileSchema.pre("save", function (next) {
   next();
 });
 
+ProfileSchema.pre("save", async function () {
+  if (this.isNew) {
+    this.$locals.__auditWasNew = true;
+    this.$locals.__auditBefore = null;
+  } else {
+    this.$locals.__auditWasNew = false;
+    this.$locals.__auditBefore = await this.constructor
+      .findById(this._id)
+      .lean();
+  }
+  this.$locals.__auditModifiedPaths = this.modifiedPaths().filter(
+    (p) => p !== "updatedAt",
+  );
+});
+
+ProfileSchema.post("save", async function (doc) {
+  try {
+    const { publishProfileSaveAudit } = require("../services/profile.audit.publisher.js");
+    await publishProfileSaveAudit(doc);
+  } catch (err) {
+    console.error("[profile-audit] post-save hook:", err.message);
+  }
+});
+
 for (const hook of ["findOneAndUpdate", "updateOne", "updateMany"]) {
   ProfileSchema.pre(hook, function (next) {
     applyFullNameToMongooseUpdate(this.getUpdate());
