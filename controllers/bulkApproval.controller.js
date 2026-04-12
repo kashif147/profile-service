@@ -313,11 +313,16 @@ async function approveSingleApplication({
     }
 
     if (effective.subscriptionDetails) {
-      const resolvedDateJoined = bulkDateJoined
-        ? bulkDateJoined instanceof Date
-          ? bulkDateJoined
-          : new Date(bulkDateJoined)
-        : effective.subscriptionDetails.dateJoined ?? new Date();
+      // Membership start stays the application's dateJoined; bulk processingDate is only for billing (passed separately).
+      let resolvedDateJoined =
+        effective.subscriptionDetails.dateJoined != null
+          ? effective.subscriptionDetails.dateJoined instanceof Date
+            ? effective.subscriptionDetails.dateJoined
+            : new Date(effective.subscriptionDetails.dateJoined)
+          : new Date();
+      if (Number.isNaN(resolvedDateJoined.getTime())) {
+        resolvedDateJoined = new Date();
+      }
       const subscriptionDetailsToSave = {
         ...effective.subscriptionDetails,
         dateJoined: resolvedDateJoined,
@@ -332,6 +337,11 @@ async function approveSingleApplication({
         { $set: subSet },
         { upsert: true, new: true, runValidators: true, session }
       );
+
+      effective = {
+        ...effective,
+        subscriptionDetails: subscriptionDetailsToSave,
+      };
     }
 
     // Close overlay if used
@@ -361,7 +371,7 @@ async function approveSingleApplication({
           personalInfo: effective.personalInfo,
           contactInfo: effective.contactInfo,
           professionalDetails: effective.professionalDetails,
-          subscriptionDetails: effective.subscriptionDetails, // Send full subscriptionDetails to preserve all fields (inmoRewards, valueAddedServices, etc.)
+          subscriptionDetails: effective.subscriptionDetails,
         },
         subscriptionAttributes: subAttrs(effective.subscriptionDetails),
         tenantId,
@@ -396,12 +406,13 @@ async function approveSingleApplication({
 
     // Publish subscription upsert request
     const sub = effective.subscriptionDetails || {};
-    // Same dateJoined as persisted subscription details (see subscriptionDetailsToSave above)
-    const dateJoined = bulkDateJoined
-      ? bulkDateJoined instanceof Date
-        ? bulkDateJoined
-        : new Date(bulkDateJoined)
-      : sub.dateJoined ?? new Date();
+    const dateJoinedForSub = sub.dateJoined ?? new Date();
+    const processingDateSerialized =
+      bulkDateJoined != null
+        ? bulkDateJoined instanceof Date
+          ? bulkDateJoined.toISOString().split("T")[0]
+          : String(bulkDateJoined).split("T")[0]
+        : undefined;
     try {
       const userIdForSubscription =
         updatedProfile?.userId != null
@@ -424,7 +435,8 @@ async function approveSingleApplication({
             sub.membershipCategory ??
             effective.professionalDetails?.membershipCategory ??
             null,
-          dateJoined: dateJoined,
+          dateJoined: dateJoinedForSub,
+          processingDate: processingDateSerialized,
           paymentType: sub.paymentType ?? null,
           payrollNo: sub.payrollNo ?? null,
           paymentFrequency: sub.paymentFrequency ?? null,

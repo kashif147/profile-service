@@ -222,6 +222,7 @@ class ApplicationApprovalEventPublisher {
     memberId, // membership number - for account-service invoice/credit flow
     membershipCategory,
     dateJoined,
+    processingDate, // bulk approval only — YYYY-MM-DD; account-service uses max(dateJoined, this) for invoice date
     paymentType,
     payrollNo,
     paymentFrequency,
@@ -240,21 +241,33 @@ class ApplicationApprovalEventPublisher {
       const dateJoinedSerialized =
         dateJoined instanceof Date ? dateJoined.toISOString() : dateJoined;
 
+      const processingDateSerialized =
+        processingDate != null && processingDate !== ""
+          ? processingDate instanceof Date
+            ? processingDate.toISOString().split("T")[0]
+            : String(processingDate).split("T")[0]
+          : undefined;
+
+      const messageBody = {
+        profileId,
+        applicationId,
+        memberId: memberId || null,
+        membershipCategory,
+        dateJoined: dateJoinedSerialized,
+        paymentType,
+        payrollNo,
+        paymentFrequency,
+        userId: userId || null,
+        userEmail: userEmail || null,
+        reviewerId: reviewerId || null, // Pass reviewerId to subscription service
+      };
+      if (processingDateSerialized) {
+        messageBody.processingDate = processingDateSerialized;
+      }
+
       const result = await publisher.publish(
         MEMBERSHIP_EVENTS.SUBSCRIPTION_UPSERT_REQUESTED,
-        {
-          profileId,
-          applicationId,
-          memberId: memberId || null,
-          membershipCategory,
-          dateJoined: dateJoinedSerialized,
-          paymentType,
-          payrollNo,
-          paymentFrequency,
-          userId: userId || null,
-          userEmail: userEmail || null,
-          reviewerId: reviewerId || null, // Pass reviewerId to subscription service
-        },
+        messageBody,
         {
           tenantId,
           correlationId,
