@@ -115,6 +115,7 @@ exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
             applicationId: app.applicationId,
           }).lean();
 
+          const dateJoined = subscription?.subscriptionDetails?.dateJoined;
           const approvedBy = app.approvalDetails?.approvedBy;
           const approvedByPayload = !approvedBy
             ? null
@@ -148,6 +149,10 @@ exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
               app.approvalDetails?.approvedAt != null
                 ? (app.approvalDetails.approvedAt.toISOString?.() ??
                   app.approvalDetails.approvedAt)
+                : null,
+            joinDate:
+              dateJoined != null
+                ? (dateJoined.toISOString?.() ?? dateJoined)
                 : null,
             approvedBy: approvedByPayload,
             applicationStatus: app.applicationStatus,
