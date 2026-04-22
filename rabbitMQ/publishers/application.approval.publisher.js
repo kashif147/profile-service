@@ -242,6 +242,11 @@ class ApplicationApprovalEventPublisher {
         if (typeof value === "string") {
           const trimmed = value.trim();
           if (!trimmed) return null;
+          const dmyMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+          if (dmyMatch) {
+            const [, day, month, year] = dmyMatch;
+            return `${year}-${month}-${day}`;
+          }
           if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
           const datePart = trimmed.split("T")[0];
           if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;

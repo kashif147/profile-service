@@ -15,6 +15,16 @@ const {
   enrichApplicationRowPersonalFullName,
 } = require("../helpers/personal.info.fullName.js");
 
+function formatDateOnly(value) {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 /** System default filters applied for template-based application listing (admin/system default). */
 const SYSTEM_DEFAULT_APPLICATION_FILTERS = {
   /** Only non-deleted applications (max relevant results). */
@@ -152,7 +162,7 @@ exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
                 : null,
             joinDate:
               dateJoined != null
-                ? (dateJoined.toISOString?.() ?? dateJoined)
+                ? formatDateOnly(dateJoined)
                 : null,
             approvedBy: approvedByPayload,
             applicationStatus: app.applicationStatus,

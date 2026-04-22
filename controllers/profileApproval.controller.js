@@ -27,6 +27,58 @@ const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
+function parseDateOnlyToUtcNoon(value, fallbackNow = false) {
+  if (value == null || value === "") {
+    if (!fallbackNow) return null;
+    const now = new Date();
+    return new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        12,
+        0,
+        0,
+        0
+      )
+    );
+  }
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return fallbackNow ? new Date() : null;
+    return new Date(
+      Date.UTC(
+        value.getUTCFullYear(),
+        value.getUTCMonth(),
+        value.getUTCDate(),
+        12,
+        0,
+        0,
+        0
+      )
+    );
+  }
+  const raw = String(value).trim();
+  if (!raw) return fallbackNow ? new Date() : null;
+  const datePart = raw.split("T")[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    const [year, month, day] = datePart.split("-").map(Number);
+    return new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return fallbackNow ? new Date() : null;
+  return new Date(
+    Date.UTC(
+      parsed.getUTCFullYear(),
+      parsed.getUTCMonth(),
+      parsed.getUTCDate(),
+      12,
+      0,
+      0,
+      0
+    )
+  );
+}
+
 const subAttrs = (s = {}) => ({
   payrollNo: s?.payrollNo ?? null,
   otherIrishTradeUnion: !!s?.otherIrishTradeUnion,
@@ -71,7 +123,15 @@ const normalizeSubscription = (subscriptionDetails = {}, professional = {}) => {
   }
   // Ensure dateJoined is set - use current date if not provided
   if (!normalized.dateJoined) {
-    normalized.dateJoined = new Date();
+    normalized.dateJoined = parseDateOnlyToUtcNoon(null, true);
+  } else {
+    normalized.dateJoined = parseDateOnlyToUtcNoon(normalized.dateJoined, true);
+  }
+  if (normalized.submissionDate) {
+    normalized.submissionDate = parseDateOnlyToUtcNoon(
+      normalized.submissionDate,
+      false
+    );
   }
   return normalized;
 };
@@ -327,7 +387,7 @@ async function approveApplication(req, res, next) {
     const sub = effective.subscriptionDetails || {};
     // Use dateJoined from the current approval (subscription details), fallback to current date
     // Always use the dateJoined from the approval, not from profile.firstJoinedDate
-    const dateJoined = sub.dateJoined ?? new Date();
+    const dateJoined = parseDateOnlyToUtcNoon(sub.dateJoined, true);
 
     // Portal user id for subscription-service: prefer persisted Profile.userId, else linkedUserId from this transaction
     const userIdForSubscription =
