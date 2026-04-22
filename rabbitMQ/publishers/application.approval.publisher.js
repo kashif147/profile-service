@@ -237,9 +237,35 @@ class ApplicationApprovalEventPublisher {
         { tenantId, profileId, applicationId }
       );
 
-      // Ensure dateJoined is properly serialized (convert Date object to ISO string if needed)
-      const dateJoinedSerialized =
-        dateJoined instanceof Date ? dateJoined.toISOString() : dateJoined;
+      const serializeDateOnly = (value) => {
+        if (value == null || value === "") return value;
+        if (typeof value === "string") {
+          const trimmed = value.trim();
+          if (!trimmed) return null;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+          const datePart = trimmed.split("T")[0];
+          if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+          const parsed = new Date(trimmed);
+          if (!Number.isNaN(parsed.getTime())) {
+            const y = parsed.getFullYear();
+            const m = String(parsed.getMonth() + 1).padStart(2, "0");
+            const d = String(parsed.getDate()).padStart(2, "0");
+            return `${y}-${m}-${d}`;
+          }
+          return trimmed;
+        }
+        if (value instanceof Date) {
+          if (Number.isNaN(value.getTime())) return null;
+          const y = value.getFullYear();
+          const m = String(value.getMonth() + 1).padStart(2, "0");
+          const d = String(value.getDate()).padStart(2, "0");
+          return `${y}-${m}-${d}`;
+        }
+        return String(value);
+      };
+
+      // Keep join date as calendar date (YYYY-MM-DD), never ISO datetime.
+      const dateJoinedSerialized = serializeDateOnly(dateJoined);
 
       const processingDateSerialized =
         processingDate != null && processingDate !== ""
