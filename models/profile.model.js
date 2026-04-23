@@ -130,6 +130,12 @@ const ProfileSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    renewalBatchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "YearEndBatch",
+      default: null,
+      index: true,
+    },
   },
   { timestamps: true, versionKey: "profileVersion" }
 );

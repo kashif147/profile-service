@@ -6,6 +6,7 @@ const {
   EVENT_TYPES: MIDDLEWARE_EVENT_TYPES,
   shutdown,
 } = require("@projectShell/rabbitmq-middleware");
+const mongoose = require("mongoose");
 
 // Import local event definitions
 const {
@@ -197,12 +198,19 @@ async function setupConsumers() {
           return;
         }
         const beforeLean = profile.toObject({ depopulate: true });
+        const data = payload.data || {};
         const update = { currentSubscriptionId: subscriptionId };
         if (
           profile.currentSubscriptionId &&
           String(profile.currentSubscriptionId) !== String(subscriptionId)
         ) {
           update.hasHistory = true;
+        }
+        if (data.renewalBatchId != null && String(data.renewalBatchId).trim() !== "") {
+          const rid = String(data.renewalBatchId).trim();
+          update.renewalBatchId = mongoose.Types.ObjectId.isValid(rid)
+            ? new mongoose.Types.ObjectId(rid)
+            : data.renewalBatchId;
         }
         await Profile.updateOne({ _id: profileId }, { $set: update });
         await publishProfileAfterUpdateOne({
