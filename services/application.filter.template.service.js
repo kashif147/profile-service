@@ -44,7 +44,15 @@ async function findSystemDefaultTemplateDoc(type, tenantId) {
 class TemplateService {
   async createTemplate(userId, templateData, tenantId = null) {
     try {
-      const { name, templateType, filters, columns, isDefault, pinned } =
+      const {
+        name,
+        templateType,
+        filters,
+        columns,
+        columnLabels,
+        isDefault,
+        pinned,
+      } =
         templateData;
       const type = templateType || "application";
 
@@ -62,6 +70,7 @@ class TemplateService {
         templateType: type,
         filters: filters || {},
         columns: columns || [],
+        columnLabels: columnLabels || {},
         isDefault: isDefault || false,
         pinned: pinned || false,
       });
@@ -162,7 +171,15 @@ class TemplateService {
 
   async updateTemplate(templateId, userId, updateData, tenantId = null) {
     try {
-      const { name, templateType, filters, columns, isDefault, pinned } =
+      const {
+        name,
+        templateType,
+        filters,
+        columns,
+        columnLabels,
+        isDefault,
+        pinned,
+      } =
         updateData;
 
       let template = await Template.findOne({
@@ -227,6 +244,9 @@ class TemplateService {
       }
       if (columns !== undefined) {
         template.columns = columns;
+      }
+      if (columnLabels !== undefined) {
+        template.columnLabels = columnLabels;
       }
       if (isDefault !== undefined) {
         template.isDefault = isDefault;

@@ -144,8 +144,14 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
       }
     }
 
-    // Normalize filters: support new shape (applicationStatus: { operator, values }) and legacy (type: value or [values])
-    let filters = template.filters || {};
+    // Normalize filters: support ad-hoc request filters first, then template filters.
+    let filters =
+      req.body &&
+      req.body.filters &&
+      typeof req.body.filters === "object" &&
+      !Array.isArray(req.body.filters)
+        ? req.body.filters
+        : template.filters || {};
     if (filters.type !== undefined && !filters.applicationStatus) {
       const legacyValues = Array.isArray(filters.type)
         ? filters.type
@@ -156,8 +162,11 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
       };
     }
 
-    // Extract columns from template
-    const columns = template.columns || [];
+    // Use ad-hoc request columns when provided, else template columns.
+    const columns =
+      Array.isArray(req.body?.columns) && req.body.columns.length > 0
+        ? req.body.columns
+        : template.columns || [];
 
     // Get applications with filters using the NEW service method
     const result = await applicationService.getApplicationsWithTemplateFilters(

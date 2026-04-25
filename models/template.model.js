@@ -36,6 +36,11 @@ const TemplateSchema = new mongoose.Schema(
       type: [String], 
       default: [],
     },
+    columnLabels: {
+      type: Map,
+      of: String,
+      default: {},
+    },
     isDefault: {
       type: Boolean,
       default: false,
