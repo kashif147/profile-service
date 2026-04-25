@@ -391,6 +391,8 @@ exports.getAllApplicationsWithDetails = (
               subscriptionDetails: subscriptionPayload,
               applicationStatus: application.applicationStatus,
               approvalDetails: application.approvalDetails,
+              isPotentialDuplicate:
+                !!application?.duplicateDetection?.isPotentialDuplicate,
               createdAt: application.createdAt,
               updatedAt: application.updatedAt,
             };
@@ -688,6 +690,8 @@ exports.getApplicationsWithTemplateFilters = (
               subscriptionDetails: subscriptionPayload,
               applicationStatus: application.applicationStatus,
               approvalDetails: application.approvalDetails,
+              isPotentialDuplicate:
+                !!application?.duplicateDetection?.isPotentialDuplicate,
               createdAt: application.createdAt,
               updatedAt: application.updatedAt,
             };
@@ -701,6 +705,10 @@ exports.getApplicationsWithTemplateFilters = (
                     ...filtered,
                   }
                 : filtered;
+            row.isPotentialDuplicate =
+              !!fullApplication?.isPotentialDuplicate ||
+              !!fullApplication?.personalDetails?.duplicateDetection
+                ?.isPotentialDuplicate;
             enrichApplicationRowPersonalFullName(row);
             return row;
           } catch (error) {
