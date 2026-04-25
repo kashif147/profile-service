@@ -3,6 +3,36 @@ const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 const joischemas = require("../validation/index.js");
 const { AppError } = require("../errors/AppError");
 
+function normalizeRoleValue(role) {
+  if (!role) return "";
+  const raw =
+    typeof role === "string"
+      ? role
+      : role.code || role.name || role.roleCode || role.roleName || "";
+  return String(raw)
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function canEditSystemDefaultTemplate(req) {
+  const roles = Array.isArray(req.roles)
+    ? req.roles
+    : Array.isArray(req.user?.roles)
+      ? req.user.roles
+      : [];
+  const normalizedRoles = roles.map(normalizeRoleValue).filter(Boolean);
+
+  const isSystemAdministrator = normalizedRoles.includes("system admin") ||
+    normalizedRoles.includes("system administrator");
+  const isSuperUser =
+    normalizedRoles.includes("super user") ||
+    normalizedRoles.includes("assistant super user");
+
+  return isSystemAdministrator && isSuperUser;
+}
+
 /**
  * Create a new filter template
  */
@@ -138,6 +168,19 @@ exports.updateTemplate = async (req, res, next) => {
     const { templateId } = req.params;
     const validatedData =
       await joischemas.filter_template_update.validateAsync(req.body);
+
+    const existingTemplate = await applicationFilterTemplateService.getTemplateById(
+      templateId,
+      creatorId,
+      tenantId || null
+    );
+    if (existingTemplate?.systemDefault && !canEditSystemDefaultTemplate(req)) {
+      return next(
+        AppError.forbidden(
+          "Access denied. Only System Administrator with Assistant Super User or Super User role can update system default templates."
+        )
+      );
+    }
 
     const template = await applicationFilterTemplateService.updateTemplate(
       templateId,
