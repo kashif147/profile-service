@@ -293,7 +293,13 @@ async function getProfilesWithTemplate(req, res, next) {
       }
     }
 
-    const filters = template.filters || {};
+    const filters =
+      req.body &&
+      req.body.filters &&
+      typeof req.body.filters === "object" &&
+      !Array.isArray(req.body.filters)
+        ? req.body.filters
+        : template.filters || {};
     const result = await profileFilterHandler.getProfilesWithTemplateFilters(
       tenantId,
       filters,
