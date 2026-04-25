@@ -528,10 +528,17 @@ exports.getApplicationsWithTemplateFilters = (
 
         const op =
           filterEntry.operator === FILTER_OPERATOR.EQUAL_TO ? "$in" : "$nin";
-        // Normalize string values to lowercase for case-insensitive filter matching (e.g. "SubmiTTed" -> "submitted")
-        const values = filterEntry.values.map((v) =>
-          typeof v === "string" ? v.trim().toLowerCase() : v,
+        // Normalize string values carefully:
+        // - applicationStatus is stored/layered in lowercase -> lower it
+        // - other fields (e.g. membershipCategory) must preserve case for exact matches
+        let values = filterEntry.values.map((v) =>
+          typeof v === "string" ? v.trim() : v,
         );
+        if (resolvedKey === "applicationStatus") {
+          values = values.map((v) =>
+            typeof v === "string" ? v.toLowerCase() : v,
+          );
+        }
 
         if (config.source === "personalDetails") {
           query[config.path] = { [op]: values };
