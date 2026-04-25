@@ -33,6 +33,14 @@ function canEditSystemDefaultTemplate(req) {
   return isSystemAdministrator && isSuperUser;
 }
 
+function isSystemDefaultPreferenceOnlyUpdate(payload = {}) {
+  const keys = Object.keys(payload || {}).filter(
+    (key) => payload[key] !== undefined,
+  );
+  if (keys.length === 0) return false;
+  return keys.every((key) => key === "isDefault" || key === "pinned");
+}
+
 /**
  * Create a new filter template
  */
@@ -174,7 +182,14 @@ exports.updateTemplate = async (req, res, next) => {
       creatorId,
       tenantId || null
     );
-    if (existingTemplate?.systemDefault && !canEditSystemDefaultTemplate(req)) {
+    const isPreferenceOnly =
+      existingTemplate?.systemDefault &&
+      isSystemDefaultPreferenceOnlyUpdate(validatedData);
+    if (
+      existingTemplate?.systemDefault &&
+      !isPreferenceOnly &&
+      !canEditSystemDefaultTemplate(req)
+    ) {
       return next(
         AppError.forbidden(
           "Access denied. Only System Administrator with Assistant Super User or Super User role can update system default templates."
