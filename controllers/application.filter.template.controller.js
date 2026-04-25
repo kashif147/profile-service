@@ -206,7 +206,8 @@ exports.updateTemplate = async (req, res, next) => {
       templateId,
       creatorId,
       validatedData,
-      tenantId || null
+      tenantId || null,
+      canEditSystemDefaultTemplate(req)
     );
 
     return res.success(template, "Filter template updated successfully");

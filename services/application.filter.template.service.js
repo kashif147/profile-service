@@ -169,7 +169,13 @@ class TemplateService {
     }
   }
 
-  async updateTemplate(templateId, userId, updateData, tenantId = null) {
+  async updateTemplate(
+    templateId,
+    userId,
+    updateData,
+    tenantId = null,
+    allowSystemDefaultEdits = false,
+  ) {
     try {
       const {
         name,
@@ -205,7 +211,7 @@ class TemplateService {
       const type =
         templateType !== undefined ? templateType : template.templateType;
 
-      if (template.systemDefault) {
+      if (template.systemDefault && !allowSystemDefaultEdits) {
         if (isDefault === true) {
           const mq = {
             userId,
