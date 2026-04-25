@@ -300,25 +300,53 @@ async function getProfilesWithTemplate(req, res, next) {
       !Array.isArray(req.body.filters)
         ? req.body.filters
         : template.filters || {};
+
+    const membershipCategoryFilter = filters.membershipCategory;
+    const baseFilters = { ...filters };
+    delete baseFilters.membershipCategory;
+
     const result = await profileFilterHandler.getProfilesWithTemplateFilters(
       tenantId,
-      filters,
+      baseFilters,
       page,
       limit,
     );
 
-    const enriched = await enrichProfilesListWithSubscriptions(
+    let enriched = await enrichProfilesListWithSubscriptions(
       result.profiles,
       tenantId,
       req,
     );
 
+    // Apply membershipCategory filtering strictly from subscription-service-enriched field.
+    if (
+      membershipCategoryFilter &&
+      Array.isArray(membershipCategoryFilter.values) &&
+      membershipCategoryFilter.values.length > 0
+    ) {
+      const selected = membershipCategoryFilter.values
+        .map((v) => String(v || "").trim().toLowerCase())
+        .filter(Boolean);
+      if (selected.length > 0) {
+        const isEqual =
+          membershipCategoryFilter.operator === "equal_to" ||
+          membershipCategoryFilter.operator === "==";
+        enriched = enriched.filter((row) => {
+          const category = String(row?.membershipCategory || "")
+            .trim()
+            .toLowerCase();
+          const matched = selected.includes(category);
+          return isEqual ? matched : !matched;
+        });
+      }
+    }
+
     return res.success({
       count: enriched.length,
-      total: result.total,
+      total: enriched.length,
       page: result.page,
       limit: result.limit,
-      totalPages: Math.ceil(result.total / result.limit),
+      totalPages: Math.ceil(enriched.length / result.limit),
       results: enriched,
     });
   } catch (error) {
