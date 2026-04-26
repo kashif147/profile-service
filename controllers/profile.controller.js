@@ -30,6 +30,19 @@ const {
   publishProfileAfterUpdateOne,
 } = require("../services/profile.audit.publisher.js");
 
+function requestHasUsableFilters(bodyFilters) {
+  if (
+    !bodyFilters ||
+    typeof bodyFilters !== "object" ||
+    Array.isArray(bodyFilters)
+  ) {
+    return false;
+  }
+  return Object.values(bodyFilters).some(
+    (fe) => fe && Array.isArray(fe.values) && fe.values.length > 0,
+  );
+}
+
 /**
  * Apply derived fields (age, fullAddress, fullName, date conversions) to the payload.
  * This ensures the backend always owns these calculations.
@@ -293,13 +306,16 @@ async function getProfilesWithTemplate(req, res, next) {
       }
     }
 
-    const filters =
+    const bodyFilters =
       req.body &&
       req.body.filters &&
       typeof req.body.filters === "object" &&
       !Array.isArray(req.body.filters)
         ? req.body.filters
-        : template.filters || {};
+        : null;
+    const filters = requestHasUsableFilters(bodyFilters)
+      ? bodyFilters
+      : (template.filters || {});
 
     const membershipCategoryFilter = filters.membershipCategory;
     const baseFilters = { ...filters };

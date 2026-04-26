@@ -13,6 +13,21 @@ const SubscriptionDetails = require("../models/subscription.model.js");
 const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
 
+/** True if the client sent at least one non-empty filter entry (not `{}`). */
+function requestHasUsableFilters(bodyFilters) {
+  if (
+    !bodyFilters ||
+    typeof bodyFilters !== "object" ||
+    Array.isArray(bodyFilters)
+  ) {
+    return false;
+  }
+  return Object.values(bodyFilters).some(
+    (fe) =>
+      fe && Array.isArray(fe.values) && fe.values.length > 0,
+  );
+}
+
 function parseStatusFilters(rawType) {
   const statusFilters = [];
   if (!rawType) return statusFilters;
@@ -144,14 +159,21 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
       }
     }
 
-    // Normalize filters: support ad-hoc request filters first, then template filters.
-    let filters =
+    // Use request filters when the client sent real constraints. An empty object `{}`
+    // is truthy in JS and was incorrectly overriding saved template filters (Search /
+    // Toolbar often sends `filters: {}` with templateId, which made the list ignore
+    // applicationStatus etc. from the template).
+    const bodyFilters =
       req.body &&
       req.body.filters &&
       typeof req.body.filters === "object" &&
       !Array.isArray(req.body.filters)
         ? req.body.filters
-        : template.filters || {};
+        : null;
+    let filters = requestHasUsableFilters(bodyFilters)
+      ? bodyFilters
+      : (template.filters || {});
+
     if (filters.type !== undefined && !filters.applicationStatus) {
       const legacyValues = Array.isArray(filters.type)
         ? filters.type
@@ -177,7 +199,7 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
     );
 
     return res.success({
-      filter: template.filters != null ? template.filters : {},
+      filter: filters,
       columns: columns,
       templateId: template._id,
       isDefault: template.isDefault,
