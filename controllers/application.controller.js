@@ -177,7 +177,7 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
     );
 
     return res.success({
-      filter: template.filters || "default",
+      filter: template.filters != null ? template.filters : {},
       columns: columns,
       templateId: template._id,
       isDefault: template.isDefault,

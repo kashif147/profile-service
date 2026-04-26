@@ -593,8 +593,16 @@ exports.getApplicationsWithTemplateFilters = (
         }
       }
 
-      // applicationStatus: if not provided, default to submitted
-      if (!query.applicationStatus) {
+      const hasUsableFilterEntry = Object.values(filters || {}).some(
+        (fe) => fe && Array.isArray(fe.values) && fe.values.length > 0,
+      );
+
+      // If applicationStatus is not set on the main query, historically we defaulted
+      // the list to "submitted" only (when other field filters like grade/location are used).
+      // When the template has no filter constraints ({} or only empty values), do not
+      // apply that default — otherwise users who cleared a view see an empty grid if
+      // nothing is in the submitted state. Broad list = non-deleted only (query base).
+      if (!query.applicationStatus && hasUsableFilterEntry) {
         query.applicationStatus = { $in: [APPLICATION_STATUS.SUBMITTED] };
       }
 
