@@ -40,14 +40,25 @@ const TemplateSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    /**
+     * User’s chosen default (landing) view for this templateType — at most one per user+type+tenant
+     * after saves. This is the only field that should drive “default view” in the product.
+     */
     isDefault: {
       type: Boolean,
       default: false,
     },
+    /**
+     * Legacy: optional sort hint; not used in UI. Prefer isDefault for ordering. Kept for old documents.
+     */
     pinned: {
       type: Boolean,
       default: false,
     },
+    /**
+     * True only for the seeded org “system” template row (baseline filters/columns), not a second
+     * “default” — do not conflate with isDefault (per-user).
+     */
     systemDefault: {
       type: Boolean,
       default: false,

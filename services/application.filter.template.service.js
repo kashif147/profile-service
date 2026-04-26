@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Template = require("../models/template.model");
 const { AppError } = require("../errors/AppError");
 const { APPLICATION_STATUS } = require("../constants/enums");
@@ -20,6 +21,47 @@ function tenantOrLegacyMatch(tenantId) {
       { tenantId: { $exists: false } },
     ],
   };
+}
+
+function toObjectIdOrSelf(id) {
+  if (id == null) return id;
+  const s = String(id);
+  if (mongoose.isValidObjectId(s)) {
+    return new mongoose.Types.ObjectId(s);
+  }
+  return id;
+}
+
+/** Widen templateType so mixed casing in the DB still matches. */
+function templateTypeMatchForList(type) {
+  const t = (type == null || type === "" ? "application" : String(type)).trim();
+  const lower = t.toLowerCase();
+  if (lower === "application") {
+    return { $in: ["application", "Application", "APPLICATION"] };
+  }
+  if (lower === "profile") {
+    return { $in: ["profile", "Profile"] };
+  }
+  return t;
+}
+
+/**
+ * Set isDefault: false on all other user templates of the same type/tenant.
+ * @param {string|null|undefined} excludeId - exclude this _id (e.g. the template now becoming default)
+ */
+function clearSisterIsDefaultFlags(userId, templateType, excludeId, tenantId) {
+  const uid = toObjectIdOrSelf(userId);
+  const mq = {
+    userId: uid,
+    templateType: templateTypeMatchForList(templateType),
+    "meta.deleted": false,
+    systemDefault: { $ne: true },
+  };
+  if (excludeId != null) {
+    mq._id = { $ne: toObjectIdOrSelf(excludeId) };
+  }
+  Object.assign(mq, tenantOrLegacyMatch(tenantId));
+  return Template.updateMany(mq, { $set: { isDefault: false } });
 }
 
 async function findSystemDefaultTemplateDoc(type, tenantId) {
@@ -56,11 +98,8 @@ class TemplateService {
         templateData;
       const type = templateType || "application";
 
-      const scope = { userId, templateType: type, isDefault: true, "meta.deleted": false };
-      Object.assign(scope, tenantOrLegacyMatch(tenantId));
-
       if (isDefault) {
-        await Template.updateMany(scope, { $set: { isDefault: false } });
+        await clearSisterIsDefaultFlags(userId, type, null, tenantId);
       }
 
       const template = new Template({
@@ -108,7 +147,6 @@ class TemplateService {
       Object.assign(uq, tenantOrLegacyMatch(tenantId));
 
       const userTemplates = await Template.find(uq).sort({
-        pinned: -1,
         isDefault: -1,
         createdAt: -1,
       });
@@ -209,17 +247,13 @@ class TemplateService {
       }
 
       const type =
-        templateType !== undefined ? templateType : template.templateType;
+        templateType !== undefined && templateType !== null
+          ? templateType
+          : template.templateType || "application";
 
       if (template.systemDefault && !allowSystemDefaultEdits) {
         if (isDefault === true) {
-          const mq = {
-            userId,
-            templateType: type,
-            "meta.deleted": false,
-          };
-          Object.assign(mq, tenantOrLegacyMatch(tenantId));
-          await Template.updateMany(mq, { $set: { isDefault: false } });
+          await clearSisterIsDefaultFlags(userId, type, null, tenantId);
         }
         if (pinned !== undefined) template.pinned = pinned;
         const saved = await template.save();
@@ -229,14 +263,12 @@ class TemplateService {
       }
 
       if (isDefault === true) {
-        const mq = {
+        await clearSisterIsDefaultFlags(
           userId,
-          templateType: type,
-          _id: { $ne: templateId },
-          "meta.deleted": false,
-        };
-        Object.assign(mq, tenantOrLegacyMatch(tenantId));
-        await Template.updateMany(mq, { $set: { isDefault: false } });
+          type,
+          template._id,
+          tenantId
+        );
       }
 
       if (name !== undefined) {
