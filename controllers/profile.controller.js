@@ -1605,7 +1605,7 @@ async function getProfilesByUserIds(req, res, next) {
       userId: { $in: objectIdUserIds },
     })
       .select(
-        "userId tenantId personalInfo contactInfo membershipNumber isActive normalizedEmail",
+        "userId tenantId personalInfo contactInfo membershipNumber currentSubscriptionId isActive normalizedEmail",
       )
       .lean();
 

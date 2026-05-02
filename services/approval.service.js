@@ -185,6 +185,10 @@ async function approveApplication({
       const firstJoinedDate = effective.subscriptionDetails?.dateJoined
         ? new Date(effective.subscriptionDetails.dateJoined)
         : now;
+      const submissionDate =
+        effective.subscriptionDetails?.submissionDate != null
+          ? new Date(effective.subscriptionDetails.submissionDate)
+          : now;
 
       // Generate membership number for new profile
       const membershipNumber = await generateMembershipNumber();
@@ -217,7 +221,7 @@ async function approveApplication({
             normalizedEmail,
             membershipNumber: membershipNumber, // Auto-generated membership number for new profile
             firstJoinedDate: firstJoinedDate,
-            submissionDate: now,
+            submissionDate,
             currentSubscriptionId: null,
             hasHistory: false,
           },
@@ -426,6 +430,8 @@ async function approveApplication({
         effective.professionalDetails?.membershipCategory ??
         null,
       dateJoined: dateJoined,
+      submissionDate: sub.submissionDate ?? null,
+      applicationDate: sub.applicationDate ?? effective.applicationDate ?? null,
       paymentType: sub.paymentType ?? null,
       payrollNo: sub.payrollNo ?? null,
       paymentFrequency: sub.paymentFrequency ?? null,

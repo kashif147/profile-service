@@ -103,6 +103,10 @@ async function findOrCreateProfileByEmail({
     const firstJoinedDate = effective.subscriptionDetails?.dateJoined
       ? new Date(effective.subscriptionDetails.dateJoined)
       : now;
+    const submissionDate =
+      effective.subscriptionDetails?.submissionDate != null
+        ? new Date(effective.subscriptionDetails.submissionDate)
+        : now;
 
     // Generate membership number for new profile
     const membershipNumber = await generateMembershipNumber();
@@ -121,7 +125,7 @@ async function findOrCreateProfileByEmail({
       firstJoinedDate: firstJoinedDate, // Use dateJoined from approval
       currentSubscriptionId: null,
       hasHistory: false,
-      submissionDate: now,
+      submissionDate,
     };
 
     if (linkedUserId) {

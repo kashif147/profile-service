@@ -185,6 +185,7 @@ module.exports.subscription_details_create = Joi.object({
     termsAndConditions: Joi.boolean().optional().default(true),
     membershipCategory: Joi.string().optional().default(null),
     dateJoined: Joi.date().iso().optional().default(null),
+    submissionDate: Joi.date().iso().optional().allow(null),
     paymentFrequency: Joi.string()
       .valid(...Object.values(PAYMENT_FREQUENCY))
       .optional(),
@@ -215,6 +216,7 @@ module.exports.subscription_details_update = Joi.object({
     termsAndConditions: Joi.boolean().optional().default(true),
     membershipCategory: Joi.string().optional().default(null),
     dateJoined: Joi.date().iso().optional().default(null),
+    submissionDate: Joi.date().iso().optional().allow(null),
     paymentFrequency: Joi.string()
       .valid(...Object.values(PAYMENT_FREQUENCY))
       .optional(),

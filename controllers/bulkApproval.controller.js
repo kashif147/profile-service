@@ -492,6 +492,8 @@ async function approveSingleApplication({
             null,
           dateJoined: dateJoinedForSub,
           processingDate: processingDateSerialized,
+          submissionDate: sub.submissionDate ?? null,
+          applicationDate: sub.applicationDate ?? effective.applicationDate ?? null,
           paymentType: sub.paymentType ?? null,
           payrollNo: sub.payrollNo ?? null,
           paymentFrequency: sub.paymentFrequency ?? null,

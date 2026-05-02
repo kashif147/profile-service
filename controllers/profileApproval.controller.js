@@ -413,6 +413,8 @@ async function approveApplication(req, res, next) {
             effective.professionalDetails?.membershipCategory ??
             null,
           dateJoined: dateJoined,
+          submissionDate: sub.submissionDate ?? null,
+          applicationDate: sub.applicationDate ?? effective.applicationDate ?? null,
           paymentType: sub.paymentType ?? null,
           payrollNo: sub.payrollNo ?? null,
           paymentFrequency: sub.paymentFrequency ?? null,

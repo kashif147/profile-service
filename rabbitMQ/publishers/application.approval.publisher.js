@@ -223,6 +223,8 @@ class ApplicationApprovalEventPublisher {
     membershipCategory,
     dateJoined,
     processingDate, // bulk approval only — YYYY-MM-DD; account-service uses max(dateJoined, this) for invoice date
+    submissionDate,
+    applicationDate,
     paymentType,
     payrollNo,
     paymentFrequency,
@@ -279,6 +281,9 @@ class ApplicationApprovalEventPublisher {
             : String(processingDate).split("T")[0]
           : undefined;
 
+      const submissionDateSerialized = serializeDateOnly(submissionDate);
+      const applicationDateSerialized = serializeDateOnly(applicationDate);
+
       const messageBody = {
         profileId,
         applicationId,
@@ -294,6 +299,15 @@ class ApplicationApprovalEventPublisher {
       };
       if (processingDateSerialized) {
         messageBody.processingDate = processingDateSerialized;
+      }
+      if (submissionDateSerialized != null && submissionDateSerialized !== "") {
+        messageBody.submissionDate = submissionDateSerialized;
+      }
+      if (
+        applicationDateSerialized != null &&
+        applicationDateSerialized !== ""
+      ) {
+        messageBody.applicationDate = applicationDateSerialized;
       }
 
       const result = await publisher.publish(
