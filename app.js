@@ -76,6 +76,14 @@ var app = express();
 // Disable Express automatic ETag generation (304 responses)
 app.set("etag", false);
 
+const bizLogger = require("./config/bizLogger.js");
+const {
+  correlationIdMiddleware,
+  logErrorMiddleware,
+  createSystemLogsRouter,
+} = require("@projectShell/logging-lib");
+
+app.use(correlationIdMiddleware);
 app.use(responseMiddleware);
 
 mongooseConnection()
@@ -125,6 +133,8 @@ if (process.env.RABBIT_URL) {
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: "200mb" }));
+
+app.use("/api", createSystemLogsRouter(bizLogger));
 
 app.use(loggerMiddleware);
 
@@ -195,6 +205,7 @@ app.use(function (req, res, next) {
 });
 
 // app.use(corsErrorHandler);
+app.use(logErrorMiddleware(bizLogger));
 app.use(responseMiddleware.errorHandler);
 
 process.on("SIGINT", async () => {

@@ -4,6 +4,7 @@ const professionalDetailsHandler = require("../handlers/professional.details.han
 const { APPLICATION_STATUS } = require("../constants/enums");
 const { AppError } = require("../errors/AppError");
 const mongoose = require("mongoose");
+const bizLogger = require("../config/bizLogger.js");
 
 /**
  * Subscription Details Service Layer
@@ -199,6 +200,15 @@ class SubscriptionDetailsService {
           APPLICATION_STATUS.SUBMITTED,
           tenantId
         );
+        bizLogger.business("Application submitted after subscription details (CRM)", {
+          eventType: "ApplicationSubmitted",
+          applicationId,
+          tenantId: tenantId != null ? String(tenantId) : null,
+          profileId: personalDetails.profileId
+            ? String(personalDetails.profileId)
+            : null,
+          userId: userId != null ? String(userId) : null,
+        });
       } else if (userType === "PORTAL" && isUndergraduateStudent) {
         console.log(
           "📝 [PROFILE_SUBSCRIPTION_SERVICE] PORTAL user + Undergraduate Student - updating status to submitted (no payment required)"
@@ -207,6 +217,18 @@ class SubscriptionDetailsService {
           applicationId,
           APPLICATION_STATUS.SUBMITTED,
           tenantId
+        );
+        bizLogger.business(
+          "Application submitted after subscription details (portal undergraduate)",
+          {
+            eventType: "ApplicationSubmitted",
+            applicationId,
+            tenantId: tenantId != null ? String(tenantId) : null,
+            profileId: personalDetails.profileId
+              ? String(personalDetails.profileId)
+              : null,
+            userId: userId != null ? String(userId) : null,
+          }
         );
       } else if (userType === "PORTAL" && !isUndergraduateStudent) {
         console.log(

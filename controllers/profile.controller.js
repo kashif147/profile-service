@@ -29,6 +29,7 @@ const {
 const {
   publishProfileAfterUpdateOne,
 } = require("../services/profile.audit.publisher.js");
+const bizLogger = require("../config/bizLogger.js");
 
 function requestHasUsableFilters(bodyFilters) {
   if (
@@ -888,6 +889,14 @@ async function updateMyProfile(req, res, next) {
 
     profile.set(updates);
     await profile.save();
+
+    bizLogger.business("Portal profile updated", {
+      eventType: "ProfileUpdated",
+      profileId: String(profile._id),
+      membershipId: profile.membershipNumber
+        ? String(profile.membershipNumber)
+        : null,
+    }, req);
 
     const populatedProfile = await Profile.findById(profile._id)
       .populate("crmUserId", "userFullName")

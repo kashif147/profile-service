@@ -6,6 +6,8 @@ const {
   EVENT_TYPES: MIDDLEWARE_EVENT_TYPES,
   shutdown,
 } = require("@projectShell/rabbitmq-middleware");
+const { createRabbitStructuredLogHandlers } = require("@projectShell/logging-lib");
+const bizLogger = require("../config/bizLogger.js");
 const mongoose = require("mongoose");
 
 // Import local event definitions
@@ -45,6 +47,7 @@ async function initEventSystem() {
     await init({
       url: process.env.RABBIT_URL,
       logger: console,
+      structuredLog: createRabbitStructuredLogHandlers(bizLogger),
       prefetch: 10,
       connectionName: "profile-service",
       serviceName: "profile-service",

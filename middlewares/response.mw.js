@@ -66,7 +66,11 @@ module.exports = (req, res, next) => {
 
 // Error handling middleware for AppError
 module.exports.errorHandler = (error, req, res, next) => {
-  const correlationId = req.headers["x-correlation-id"] || req.id || "unknown";
+  const correlationId =
+    req.correlationId ||
+    req.headers["x-correlation-id"] ||
+    req.id ||
+    "unknown";
 
   if (error.name === "AppError") {
     return res.status(error.status).json({
