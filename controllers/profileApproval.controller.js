@@ -17,7 +17,10 @@ const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
-const { APPLICATION_STATUS } = require("../constants/enums.js");
+const {
+  APPLICATION_STATUS,
+  PAYMENT_FREQUENCY,
+} = require("../constants/enums.js");
 const { loadSubmission } = require("../services/submission.service.js");
 const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const {
@@ -110,7 +113,7 @@ const pickSubForContract = (s = {}) => ({
   dateLeft: s?.dateLeft ?? null,
   reasonLeft: s?.reasonLeft ?? null,
   paymentType: s?.paymentType ?? "PAYROLL_DEDUCTION",
-  paymentFrequency: s?.paymentFrequency ?? "MONTHLY",
+  paymentFrequency: s?.paymentFrequency ?? PAYMENT_FREQUENCY.MONTHLY,
 });
 
 const normalizeSubscription = (subscriptionDetails = {}, professional = {}) => {

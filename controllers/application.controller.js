@@ -363,6 +363,7 @@ exports.approveApplication = async (req, res, next) => {
           },
           subscriptionAttributes: {
             payrollNo: sub?.payrollNo ?? null,
+            paymentFrequency: sub?.paymentFrequency ?? null,
             otherIrishTradeUnion: !!sub?.otherIrishTradeUnion,
             otherIrishTradeUnionName: sub?.otherIrishTradeUnionName ?? null,
             otherScheme: !!sub?.otherScheme,

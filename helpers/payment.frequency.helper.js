@@ -1,9 +1,20 @@
 const { PAYMENT_TYPE, PAYMENT_FREQUENCY } = require("../constants/enums");
 
+const ALLOWED_FREQUENCIES = new Set(Object.values(PAYMENT_FREQUENCY));
+
+function isAllowedFrequency(freq) {
+  return (
+    freq != null &&
+    String(freq).trim() !== "" &&
+    ALLOWED_FREQUENCIES.has(freq)
+  );
+}
+
 /**
- * Enforces payment frequency rule based on payment type:
- * - If paymentType is "Credit Card" (CARD_PAYMENT), paymentFrequency must be "Annually"
- * - Otherwise, paymentFrequency should be "Monthly"
+ * Defaults and guards for payment frequency:
+ * - Credit Card → always Annually (product rule).
+ * - Other payment types → keep Weekly/Fortnightly/Monthly/Quarterly/Annually when valid;
+ *   if missing or invalid, default to Monthly.
  *
  * @param {Object} subscriptionDetails - Subscription details object
  * @returns {Object} Subscription details with corrected paymentFrequency
@@ -16,8 +27,6 @@ function enforcePaymentFrequencyRule(subscriptionDetails) {
   const paymentType = subscriptionDetails.paymentType;
   const currentFrequency = subscriptionDetails.paymentFrequency;
 
-  // If payment type is Credit Card (CARD_PAYMENT), frequency must be Annually
-  // Check for both "Card Payment" and "Credit Card" values
   const isCreditCard =
     paymentType === PAYMENT_TYPE.CARD_PAYMENT ||
     paymentType === "Credit Card" ||
@@ -26,7 +35,7 @@ function enforcePaymentFrequencyRule(subscriptionDetails) {
   if (isCreditCard) {
     if (currentFrequency !== PAYMENT_FREQUENCY.ANNUALLY) {
       console.log(
-        "📝 [PAYMENT_FREQUENCY_HELPER] Credit Card payment type detected - setting frequency to Annually:",
+        "📝 [PAYMENT_FREQUENCY_HELPER] Credit Card — frequency set to Annually:",
         {
           paymentType,
           previousFrequency: currentFrequency,
@@ -35,11 +44,13 @@ function enforcePaymentFrequencyRule(subscriptionDetails) {
       );
       subscriptionDetails.paymentFrequency = PAYMENT_FREQUENCY.ANNUALLY;
     }
-  } else if (paymentType && !isCreditCard) {
-    // For all other payment types, frequency should be Monthly
-    if (currentFrequency !== PAYMENT_FREQUENCY.MONTHLY) {
+    return subscriptionDetails;
+  }
+
+  if (paymentType && !isCreditCard) {
+    if (!isAllowedFrequency(currentFrequency)) {
       console.log(
-        "📝 [PAYMENT_FREQUENCY_HELPER] Non-Credit Card payment type - setting frequency to Monthly:",
+        "📝 [PAYMENT_FREQUENCY_HELPER] Non-card — invalid/missing frequency, defaulting to Monthly:",
         {
           paymentType,
           previousFrequency: currentFrequency,

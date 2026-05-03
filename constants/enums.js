@@ -35,6 +35,8 @@ exports.PAYMENT_TYPE = {
 
 // Payment Frequency Enums
 exports.PAYMENT_FREQUENCY = {
+  WEEKLY: "Weekly",
+  FORTNIGHTLY: "Fortnightly",
   MONTHLY: "Monthly",
   QUARTERLY: "Quarterly",
   ANNUALLY: "Annually",

@@ -131,6 +131,14 @@ function flattenProfilePayload(effective = {}) {
     ...preferencesFromSource,
     ...preferencesFromSubscription,
   };
+  // Application personal-details checkbox: union correspondence → mirror to profile channel consents
+  if (effective.contactInfo?.consent === true) {
+    preferences.consent = true;
+    preferences.smsConsent = true;
+    preferences.emailConsent = true;
+    preferences.postalConsent = true;
+    preferences.appConsent = true;
+  }
   if (hasValues(preferences)) {
     payload.preferences = preferences;
   }
