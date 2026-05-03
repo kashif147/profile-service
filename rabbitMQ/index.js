@@ -215,6 +215,39 @@ async function setupConsumers() {
             ? new mongoose.Types.ObjectId(rid)
             : data.renewalBatchId;
         }
+        const applicationId =
+          data.applicationId != null && String(data.applicationId).trim() !== ""
+            ? String(data.applicationId).trim()
+            : null;
+        const eff = data.effective;
+        if (
+          applicationId &&
+          eff &&
+          typeof eff === "object" &&
+          eff.subscriptionDetails &&
+          typeof eff.subscriptionDetails === "object"
+        ) {
+          const SubscriptionDetails = require("../models/subscription.model.js");
+          const sd = eff.subscriptionDetails;
+          const subSet = {};
+          if (sd.membershipCategory != null && String(sd.membershipCategory).trim() !== "") {
+            subSet["subscriptionDetails.membershipCategory"] = String(
+              sd.membershipCategory
+            ).trim();
+          }
+          if (sd.dateJoined != null && sd.dateJoined !== "") {
+            const dj = new Date(sd.dateJoined);
+            if (!Number.isNaN(dj.getTime())) {
+              subSet["subscriptionDetails.dateJoined"] = dj;
+            }
+          }
+          if (Object.keys(subSet).length > 0) {
+            await SubscriptionDetails.updateOne(
+              { applicationId },
+              { $set: subSet }
+            );
+          }
+        }
         await Profile.updateOne({ _id: profileId }, { $set: update });
         await publishProfileAfterUpdateOne({
           tenantId: profile.tenantId,
