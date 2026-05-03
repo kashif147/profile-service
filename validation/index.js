@@ -96,7 +96,7 @@ module.exports.application_status_query = Joi.object({
     )
     .optional(),
   page: Joi.number().integer().min(1).optional().default(1),
-  limit: Joi.number().integer().min(1).max(100).optional().default(10),
+  limit: Joi.number().integer().min(1).max(1000).optional().default(500),
 });
 
 module.exports.application_approve = Joi.object({
@@ -294,7 +294,7 @@ module.exports.universal_search_query = Joi.object({
   // Pagination
   pageNum: Joi.number().integer().min(1).optional().default(1),
   pageNumber: Joi.number().integer().min(1).optional().default(1),
-  limit: Joi.number().integer().min(1).max(1000).optional().default(100),
+  limit: Joi.number().integer().min(1).max(1000).optional().default(500),
   // Sorting
   sortBy: Joi.string().optional().default("updatedAt"),
   sortOrder: Joi.string().valid("asc", "desc").optional().default("desc"),

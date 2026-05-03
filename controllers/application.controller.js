@@ -72,7 +72,7 @@ exports.getAllApplications = async (req, res, next) => {
     }
 
     const page = validatedQuery.page || 1;
-    const limit = validatedQuery.limit || 10;
+    const limit = validatedQuery.limit || 500;
 
     const result = await applicationService.getAllApplicationsWithDetails(
       statusFilters,
@@ -114,7 +114,7 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
     }
 
     const page = req.body.page ? parseInt(req.body.page) : 1;
-    const limit = req.body.limit ? parseInt(req.body.limit) : 10;
+    const limit = req.body.limit ? parseInt(req.body.limit) : 500;
     const templateId = req.body.templateId;
 
     let template;

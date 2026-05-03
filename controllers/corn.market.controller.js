@@ -15,7 +15,7 @@ async function getCornMarketProfiles(req, res, next) {
 
     const membershipStatus = req.query.membershipStatus;
     const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 50;
+    const limit = parseInt(req.query.limit, 10) || 500;
     const skip = (page - 1) * limit;
 
     // Validate membershipStatus parameter

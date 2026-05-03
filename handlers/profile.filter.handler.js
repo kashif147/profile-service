@@ -95,7 +95,7 @@ exports.getProfilesWithTemplateFilters = async (
   tenantId,
   filters = {},
   page = 1,
-  limit = 100,
+  limit = 500,
 ) => {
   const conds = buildProfileFilterConditions(filters);
   const query =

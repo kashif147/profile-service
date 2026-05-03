@@ -207,7 +207,7 @@ async function getAllProfiles(req, res, next) {
   try {
     const tenantId = req.tenantId;
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 100;
+    const limit = parseInt(req.query.limit) || 500;
     const skip = (page - 1) * limit;
 
     const query = { tenantId };
@@ -261,7 +261,7 @@ async function getProfilesWithTemplate(req, res, next) {
     }
 
     const page = req.body.page ? parseInt(req.body.page, 10) : 1;
-    const limit = req.body.limit ? parseInt(req.body.limit, 10) : 100;
+    const limit = req.body.limit ? parseInt(req.body.limit, 10) : 500;
     const templateId = req.body.templateId;
 
     let template;
@@ -450,10 +450,15 @@ async function searchProfiles(req, res, next) {
       $or: conditions,
     };
 
+    const limit = Math.min(
+      1000,
+      Math.max(1, parseInt(req.query.limit, 10) || 500),
+    );
+
     const results = await Profile.find(query)
       .populate("crmUserId", "userFullName")
       .sort({ updatedAt: -1 })
-      .limit(25)
+      .limit(limit)
       .lean();
 
     enrichPersonalInfoFullNameOnDocuments(results);
@@ -922,7 +927,7 @@ async function getCornMarketNew(req, res, next) {
     }
 
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 100;
+    const limit = parseInt(req.query.limit) || 500;
     const skip = (page - 1) * limit;
 
     // Find subscriptions with membershipStatus = "new"
@@ -1000,7 +1005,7 @@ async function getCornMarketGraduate(req, res, next) {
     }
 
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 100;
+    const limit = parseInt(req.query.limit) || 500;
     const skip = (page - 1) * limit;
 
     // Find subscriptions with membershipStatus = "graduate"

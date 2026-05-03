@@ -46,6 +46,7 @@ exports.MEMBERSHIP_STATUS = {
   CANCELLED: "Cancelled",
   SUSPENDED: "Suspended",
   ARCHIVED: "Archived",
+  LAPSED: "Lapsed",
 };
 
 // Overlay Status Enums

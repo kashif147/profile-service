@@ -102,7 +102,7 @@ class UniversalSearchController {
       // Extract pagination
       const pagination = {
         page: parseInt(req.body.pageNum || req.body.pageNumber || 1),
-        limit: parseInt(req.body.limit) || 100,
+        limit: parseInt(req.body.limit) || 500,
       };
 
       // Extract sorting
@@ -116,7 +116,7 @@ class UniversalSearchController {
         pagination.page = 1;
       }
       if (pagination.limit < 1 || pagination.limit > 1000) {
-        pagination.limit = 100;
+        pagination.limit = 500;
       }
 
       // Perform search

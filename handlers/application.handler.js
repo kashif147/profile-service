@@ -318,7 +318,7 @@ exports.getApplicationWithDetails = (applicationId) =>
 exports.getAllApplicationsWithDetails = (
   statusFilters = [],
   page = 1,
-  limit = 10,
+  limit = 500,
 ) =>
   new Promise(async (resolve, reject) => {
     try {
@@ -501,7 +501,7 @@ const filterByColumns = (obj, columns) => {
 exports.getApplicationsWithTemplateFilters = (
   filters = {},
   page = 1,
-  limit = 10,
+  limit = 500,
   columns = [],
 ) =>
   new Promise(async (resolve, reject) => {

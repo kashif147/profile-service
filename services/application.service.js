@@ -95,13 +95,13 @@ class ApplicationService {
    * Get applications with complete details (personal, professional, subscription)
    * @param {Array} statusFilters - Array of status values to filter by
    * @param {number} page - Page number (default: 1)
-   * @param {number} limit - Number of items per page (default: 10)
+   * @param {number} limit - Number of items per page (default: 500)
    * @returns {Promise<Object>} Object containing applications array and pagination metadata
    */
   async getAllApplicationsWithDetails(
     statusFilters = [],
     page = 1,
-    limit = 10,
+    limit = 500,
   ) {
     try {
       return await applicationHandler.getAllApplicationsWithDetails(
@@ -123,14 +123,14 @@ class ApplicationService {
    * Used by the PUT API for template-based filtering
    * @param {Object} filters - Filters keyed by model field names (applicationStatus, membershipCategory). Each: { operator: "equal_to"|"not_equal_to", values: string[] }
    * @param {number} page - Page number (default: 1)
-   * @param {number} limit - Number of items per page (default: 10)
+   * @param {number} limit - Number of items per page (default: 500)
    * @param {Array} columns - Array of field names to include in response (empty = all fields)
    * @returns {Promise<Object>} Object containing applications array and pagination metadata
    */
   async getApplicationsWithTemplateFilters(
     filters = {},
     page = 1,
-    limit = 10,
+    limit = 500,
     columns = [],
   ) {
     try {

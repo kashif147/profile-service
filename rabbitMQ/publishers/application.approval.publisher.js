@@ -222,7 +222,7 @@ class ApplicationApprovalEventPublisher {
     memberId, // membership number - for account-service invoice/credit flow
     membershipCategory,
     dateJoined,
-    processingDate, // bulk approval only — YYYY-MM-DD; account-service uses max(dateJoined, this) for invoice date
+    processingDate, // bulk approval only — YYYY-MM-DD; forwarded for observability; invoice posts at generation
     submissionDate,
     applicationDate,
     paymentType,
@@ -232,6 +232,7 @@ class ApplicationApprovalEventPublisher {
     userEmail,
     reviewerId, // CRM user ID for meta.createdBy and meta.updatedBy
     correlationId,
+    isCurrent, // optional override for subscription-service upsert (historical / non-current row)
   }) {
     try {
       console.log(
@@ -308,6 +309,9 @@ class ApplicationApprovalEventPublisher {
         applicationDateSerialized !== ""
       ) {
         messageBody.applicationDate = applicationDateSerialized;
+      }
+      if (isCurrent !== undefined) {
+        messageBody.isCurrent = isCurrent;
       }
 
       const result = await publisher.publish(
