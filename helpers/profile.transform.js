@@ -97,6 +97,29 @@ function hasValues(obj = {}) {
   return Object.keys(obj).length > 0;
 }
 
+/** Stored on application subscriptionDetails in CRM; must land on Profile.professionalDetails on approval. */
+const SECTION_FIELDS_FROM_SUBSCRIPTION = [
+  "primarySection",
+  "otherPrimarySection",
+  "secondarySection",
+  "otherSecondarySection",
+];
+
+function mergeProfessionalSectionsFromSubscription(
+  professionalDetails,
+  subscriptionDetails,
+) {
+  const merged = { ...professionalDetails };
+  const sub = subscriptionDetails || {};
+  for (const key of SECTION_FIELDS_FROM_SUBSCRIPTION) {
+    const v = sub[key];
+    if (v != null && v !== "") {
+      merged[key] = v;
+    }
+  }
+  return merged;
+}
+
 function flattenProfilePayload(effective = {}) {
   const payload = {};
 
@@ -109,9 +132,13 @@ function flattenProfilePayload(effective = {}) {
   const contactInfo = pickSection(effective.contactInfo, contactInfoKeys);
   if (hasValues(contactInfo)) payload.contactInfo = contactInfo;
 
-  const professionalDetails = pickSection(
+  let professionalDetails = pickSection(
     effective.professionalDetails,
-    professionalDetailsKeys
+    professionalDetailsKeys,
+  );
+  professionalDetails = mergeProfessionalSectionsFromSubscription(
+    professionalDetails,
+    effective.subscriptionDetails,
   );
   if (hasValues(professionalDetails))
     payload.professionalDetails = professionalDetails;

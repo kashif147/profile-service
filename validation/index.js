@@ -91,8 +91,8 @@ module.exports.application_status_query = Joi.object({
     .try(
       Joi.string().valid(...Object.values(APPLICATION_STATUS)),
       Joi.array().items(
-        Joi.string().valid(...Object.values(APPLICATION_STATUS))
-      )
+        Joi.string().valid(...Object.values(APPLICATION_STATUS)),
+      ),
     )
     .optional(),
   page: Joi.number().integer().min(1).optional().default(1),
@@ -239,16 +239,16 @@ module.exports.universal_search_query = Joi.object({
     .try(
       Joi.string().valid(...Object.values(APPLICATION_STATUS)),
       Joi.array().items(
-        Joi.string().valid(...Object.values(APPLICATION_STATUS))
-      )
+        Joi.string().valid(...Object.values(APPLICATION_STATUS)),
+      ),
     )
     .optional(),
   status: Joi.alternatives()
     .try(
       Joi.string().valid(...Object.values(APPLICATION_STATUS)),
       Joi.array().items(
-        Joi.string().valid(...Object.values(APPLICATION_STATUS))
-      )
+        Joi.string().valid(...Object.values(APPLICATION_STATUS)),
+      ),
     )
     .optional(),
   // Membership Category

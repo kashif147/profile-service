@@ -39,7 +39,7 @@ const ProfessionalSchema = new mongoose.Schema(
     deleted: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Index for frequently queried field
