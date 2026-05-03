@@ -10,7 +10,7 @@ services:
         max-size: "10m"
         max-file: "3"
     env_file:
-      - /home/deploy/config/.env.common
+      - ${ENV_COMMON_PATH:-../../config/.env.common}
       - .env.staging
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4002/health"]
@@ -21,7 +21,7 @@ services:
     ports:
       - "4002:4002"
     volumes:
-      - ./logs:/app/logs
+      - ../../logs:/var/log/projectshell
     restart: always
     networks:
       - gateway_app-net
