@@ -20,8 +20,10 @@ services:
       start_period: 30s
     ports:
       - "4002:4002"
+    environment:
+      LOG_ROOT: /var/log/projectshell
     volumes:
-      - ../../logs:/var/log/projectshell
+      - /home/deploy/logs:/var/log/projectshell
     restart: always
     networks:
       - gateway_app-net
