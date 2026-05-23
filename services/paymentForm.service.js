@@ -36,6 +36,39 @@ const PAYMENT_TYPE_BY_FORM = {
   DD_MANDATE: "Direct Debit",
 };
 
+const FORM_TYPE_BY_PAYMENT_LABEL = {
+  "Standing Order": "STANDING_ORDER",
+  "Salary Deduction": "SALARY_DEDUCTION",
+  "Direct Debit": "DD_MANDATE",
+};
+
+function normalizePaymentTypeLabel(paymentType) {
+  if (!paymentType) return null;
+  const t = String(paymentType).trim();
+  const lower = t.toLowerCase();
+  for (const label of Object.values(PAYMENT_TYPE_BY_FORM)) {
+    if (lower === label.toLowerCase()) return label;
+  }
+  if (/standing|sbo/.test(lower)) return "Standing Order";
+  if (/salary|payroll|deduction/.test(lower)) return "Salary Deduction";
+  if (/direct.?debit|dd/.test(lower)) return "Direct Debit";
+  if (/credit.?card|card/.test(lower)) return "Credit Card";
+  return t;
+}
+
+function formTypeForPaymentType(paymentType) {
+  const label = normalizePaymentTypeLabel(paymentType);
+  return FORM_TYPE_BY_PAYMENT_LABEL[label] || null;
+}
+
+function paymentTypeMatchesForm(formType, memberPaymentType) {
+  if (!memberPaymentType) return true;
+  const expected = PAYMENT_TYPE_BY_FORM[formType];
+  if (!expected) return true;
+  const normalized = normalizePaymentTypeLabel(memberPaymentType);
+  return expected.toLowerCase() === String(normalized).toLowerCase();
+}
+
 function resolveMemberFullName(profile) {
   const pi = profile?.personalInfo || {};
   if (pi.fullName) return String(pi.fullName).trim();
@@ -249,6 +282,10 @@ async function prefillForm({ tenantId, profileId, formType, req }) {
     tenantCtx,
     formType
   );
+  const subscriptionPayload = buildSubscriptionPayload(subscription);
+  const memberPaymentType = subscriptionPayload.paymentType || null;
+  const expectedPaymentType = PAYMENT_TYPE_BY_FORM[formType] || null;
+  const suggestedFormType = formTypeForPaymentType(memberPaymentType);
   return {
     formType,
     profileId: String(profile._id),
@@ -256,6 +293,11 @@ async function prefillForm({ tenantId, profileId, formType, req }) {
     source: "crm",
     unsaved: true,
     formTypeLabel: FORM_TYPE_LABELS[formType] || formType,
+    memberPaymentType,
+    expectedPaymentType,
+    suggestedFormType,
+    paymentTypeMismatch: !paymentTypeMatchesForm(formType, memberPaymentType),
+    subscription: subscriptionPayload,
     ...hydrated,
   };
 }
