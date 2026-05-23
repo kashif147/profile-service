@@ -25,6 +25,7 @@ const {
   validateBic,
   maskIban,
   normalizeIban,
+  normalizeBic,
   debtorMatchesOrganisationBank,
 } = require("../helpers/iban.js");
 const { encryptField, decryptField } = require("../helpers/paymentFormCrypto.js");
@@ -129,12 +130,26 @@ function buildSubscriptionPayload(subscription) {
 }
 
 async function loadProfileForTenant(profileId, tenantId) {
+  const idStr = String(profileId || "").trim();
+  if (!mongoose.Types.ObjectId.isValid(idStr)) {
+    throw AppError.badRequest("Invalid profileId");
+  }
   const profile = await Profile.findOne({
-    _id: profileId,
-    tenantId,
+    _id: new mongoose.Types.ObjectId(idStr),
+    tenantId: String(tenantId || ""),
   }).lean();
   if (!profile) throw AppError.notFound("Profile not found");
   return profile;
+}
+
+function safeDecryptField(stored) {
+  if (stored == null || stored === "") return null;
+  try {
+    return decryptField(stored);
+  } catch (err) {
+    console.warn("[paymentForm] decrypt failed:", err.message);
+    return null;
+  }
 }
 
 function applyTenantBeneficiary(org, installment) {
@@ -239,7 +254,8 @@ async function hydrateFormFields(profile, subscription, tenantCtx, formType) {
 function decryptFormForResponse(doc, { includeSensitive = false } = {}) {
   const o = doc.toObject ? doc.toObject() : { ...doc };
   const maskField = (enc) => {
-    const plain = decryptField(enc);
+    const plain = safeDecryptField(enc);
+    if (plain == null) return null;
     return includeSensitive ? plain : maskIban(plain);
   };
   if (o.standingOrder?.debtorIban) {
@@ -260,18 +276,18 @@ function decryptFormForResponse(doc, { includeSensitive = false } = {}) {
   }
   if (includeSensitive) {
     if (o.standingOrder?.debtorIban?.value) {
-      o.standingOrder.debtorIbanPlain = decryptField(o.standingOrder.debtorIban);
+      o.standingOrder.debtorIbanPlain = safeDecryptField(o.standingOrder.debtorIban);
     }
     if (o.standingOrder?.debtorBic?.value) {
-      o.standingOrder.debtorBicPlain = decryptField(o.standingOrder.debtorBic);
+      o.standingOrder.debtorBicPlain = safeDecryptField(o.standingOrder.debtorBic);
     }
     if (o.directDebitMandate?.debtorIban?.value) {
-      o.directDebitMandate.debtorIbanPlain = decryptField(
+      o.directDebitMandate.debtorIbanPlain = safeDecryptField(
         o.directDebitMandate.debtorIban
       );
     }
     if (o.directDebitMandate?.debtorBic?.value) {
-      o.directDebitMandate.debtorBicPlain = decryptField(
+      o.directDebitMandate.debtorBicPlain = safeDecryptField(
         o.directDebitMandate.debtorBic
       );
     }
@@ -829,12 +845,12 @@ function assertFormReadyToSubmit(form) {
   }
   if (form.formType === "STANDING_ORDER" && form.standingOrder?.debtorIban?.value) {
     assertDebtorNotOrganisationBank(form, {
-      debtorIban: decryptField(form.standingOrder.debtorIban),
+      debtorIban: safeDecryptField(form.standingOrder.debtorIban),
     });
   }
   if (form.formType === "DD_MANDATE" && form.directDebitMandate?.debtorIban?.value) {
     assertDebtorNotOrganisationBank(form, {
-      debtorIban: decryptField(form.directDebitMandate.debtorIban),
+      debtorIban: safeDecryptField(form.directDebitMandate.debtorIban),
     });
   }
 }
