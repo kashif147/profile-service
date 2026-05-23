@@ -7,7 +7,7 @@ const {
   PAYMENT_FORM_STATUSES,
 } = require("../models/memberPaymentForm.model.js");
 const { AppError } = require("../errors/AppError.js");
-const { fetchTenantContext, formatOrgAddress } = require("./tenant.service.client.js");
+const { fetchTenantContext, formatOrgAddress, formatBankAddress } = require("./tenant.service.client.js");
 const {
   fetchCurrentSubscriptionByProfileId,
   SUBSCRIPTION_SERVICE_URL,
@@ -86,14 +86,16 @@ async function loadProfileForTenant(profileId, tenantId) {
 
 function applyTenantBeneficiary(org, installment) {
   const bankAddr = org.bankAddress || {};
+  const bankAddressFormatted = formatBankAddress(bankAddr);
   return {
     beneficiaryAccountName: org.legalName || org.tradingName || "",
-    beneficiaryAddress: formatOrgAddress(org),
+    beneficiaryBankName: org.bankName || "",
+    beneficiaryAddress: bankAddressFormatted,
     beneficiaryBic: org.bic || "",
     beneficiaryIban: org.iban || "",
     creditorName: org.legalName || org.tradingName || "",
     creditorIdentifier: org.sepaOriginatorIdentificationNumber || "",
-    creditorAddress: formatOrgAddress(org),
+    creditorAddress: bankAddressFormatted || formatOrgAddress(org),
     creditorCity: bankAddr.areaOrTown || "",
     creditorPostcode: bankAddr.eircode || bankAddr.countyCityOrPostCode || "",
     creditorCountry: bankAddr.country || "Ireland",

@@ -16,12 +16,23 @@ async function fetchTenantContext(tenantId, req = null) {
   if (req?.headers?.authorization) {
     headers.authorization = req.headers.authorization;
   }
+  if (req?.headers?.["x-user-id"]) {
+    headers["x-user-id"] = req.headers["x-user-id"];
+  }
   try {
-    const response = await axios.get(`${base}/tenants/${tenantId}`, {
+    const response = await axios.get(`${base}/api/tenants/${tenantId}`, {
       headers,
       timeout: 8000,
       validateStatus: (s) => s < 500,
     });
+    if (response.status < 200 || response.status >= 300) {
+      console.warn(
+        "[tenant.service.client] tenant fetch non-success:",
+        response.status,
+        response.data?.error?.message || response.statusText
+      );
+      return { branding: {}, organisationProfile: {}, tenantName: "" };
+    }
     const tenant = response.data?.data || response.data || {};
     return {
       branding: tenant.branding || {},
@@ -34,16 +45,30 @@ async function fetchTenantContext(tenantId, req = null) {
   }
 }
 
-function formatOrgAddress(org = {}) {
-  const a = org.bankAddress || org.address || {};
+function formatBankAddress(bankAddress = {}) {
   const lines = [
-    org.legalName || org.tradingName,
-    [a.buildingOrHouse, a.streetOrRoad].filter(Boolean).join(", "),
-    [a.areaOrTown, a.countyCityOrPostCode].filter(Boolean).join(", "),
-    a.eircode,
-    a.country || "Ireland",
+    [bankAddress.buildingOrHouse, bankAddress.streetOrRoad]
+      .filter(Boolean)
+      .join(", "),
+    [bankAddress.areaOrTown, bankAddress.countyCityOrPostCode]
+      .filter(Boolean)
+      .join(", "),
+    bankAddress.eircode,
+    bankAddress.country || "Ireland",
   ].filter(Boolean);
   return lines.join("\n");
 }
 
-module.exports = { fetchTenantContext, formatOrgAddress };
+function formatOrgAddress(org = {}) {
+  const bankLines = formatBankAddress(org.bankAddress || {});
+  if (bankLines) return bankLines;
+  const a = org.address || {};
+  const lines = [
+    [a.street, a.city].filter(Boolean).join(", "),
+    [a.state, a.zipCode].filter(Boolean).join(", "),
+    a.country,
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
+module.exports = { fetchTenantContext, formatOrgAddress, formatBankAddress };

@@ -66,6 +66,7 @@ const MemberPaymentFormSchema = new mongoose.Schema(
     organisationSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },
     standingOrder: {
       beneficiaryAccountName: String,
+      beneficiaryBankName: String,
       beneficiaryAddress: String,
       beneficiaryBic: String,
       beneficiaryIban: { type: String, default: null },
