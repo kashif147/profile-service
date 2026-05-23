@@ -264,10 +264,29 @@ function pushAudit(form, action, req, extra = {}) {
   });
 }
 
-async function prefillForm({ tenantId, profileId, formType, req }) {
-  if (!PAYMENT_FORM_TYPES.includes(formType)) {
-    throw AppError.badRequest(`formType must be one of: ${PAYMENT_FORM_TYPES.join(", ")}`);
+function assertFormTypeMatchesSubscription(subscription, formType = null) {
+  const memberPaymentType = buildSubscriptionPayload(subscription).paymentType || null;
+  const allowedFormType = formTypeForPaymentType(memberPaymentType);
+
+  if (!memberPaymentType) {
+    throw AppError.badRequest("Member subscription has no payment method set");
   }
+  if (!allowedFormType) {
+    const label = normalizePaymentTypeLabel(memberPaymentType) || memberPaymentType;
+    throw AppError.badRequest(
+      `No payment form is available for payment method "${label}"`
+    );
+  }
+  if (formType && formType !== allowedFormType) {
+    throw AppError.badRequest(
+      `Form type must match member payment method (${PAYMENT_TYPE_BY_FORM[allowedFormType]})`
+    );
+  }
+
+  return { allowedFormType, memberPaymentType };
+}
+
+async function prefillForm({ tenantId, profileId, formType, req }) {
   const profile = await loadProfileForTenant(profileId, tenantId);
   const subscription = await fetchCurrentSubscriptionByProfileId(
     profileId,
@@ -275,28 +294,32 @@ async function prefillForm({ tenantId, profileId, formType, req }) {
     req,
     profile.currentSubscriptionId
   );
+  const { allowedFormType, memberPaymentType } = assertFormTypeMatchesSubscription(
+    subscription,
+    formType || null
+  );
+  const resolvedFormType = allowedFormType;
+
   const tenantCtx = await fetchTenantContext(tenantId, req);
   const hydrated = await hydrateFormFields(
     profile,
     subscription,
     tenantCtx,
-    formType
+    resolvedFormType
   );
   const subscriptionPayload = buildSubscriptionPayload(subscription);
-  const memberPaymentType = subscriptionPayload.paymentType || null;
-  const expectedPaymentType = PAYMENT_TYPE_BY_FORM[formType] || null;
-  const suggestedFormType = formTypeForPaymentType(memberPaymentType);
   return {
-    formType,
+    formType: resolvedFormType,
+    allowedFormType: resolvedFormType,
     profileId: String(profile._id),
     membershipNumber: profile.membershipNumber,
     source: "crm",
     unsaved: true,
-    formTypeLabel: FORM_TYPE_LABELS[formType] || formType,
+    formTypeLabel: FORM_TYPE_LABELS[resolvedFormType] || resolvedFormType,
     memberPaymentType,
-    expectedPaymentType,
-    suggestedFormType,
-    paymentTypeMismatch: !paymentTypeMatchesForm(formType, memberPaymentType),
+    expectedPaymentType: PAYMENT_TYPE_BY_FORM[resolvedFormType] || null,
+    suggestedFormType: resolvedFormType,
+    paymentTypeMismatch: false,
     subscription: subscriptionPayload,
     ...hydrated,
   };
@@ -399,6 +422,8 @@ async function createForm({
     req,
     profile.currentSubscriptionId
   );
+  assertFormTypeMatchesSubscription(subscription, formType);
+
   const tenantCtx = await fetchTenantContext(tenantId, req);
   const hydrated = await hydrateFormFields(
     profile,

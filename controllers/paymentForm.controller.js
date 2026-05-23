@@ -5,8 +5,11 @@ const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 exports.prefillPaymentForm = async (req, res, next) => {
   try {
     const { profileId, formType } = req.query;
-    if (!profileId || !formType) {
-      return next(AppError.badRequest("profileId and formType are required"));
+    if (!profileId) {
+      return next(AppError.badRequest("profileId is required"));
+    }
+    if (formType && !paymentFormService.PAYMENT_FORM_TYPES.includes(formType)) {
+      return next(AppError.badRequest("Invalid formType"));
     }
     const { tenantId } = extractUserAndCreatorContext(req);
     if (!tenantId) return next(AppError.badRequest("tenantId is required"));
