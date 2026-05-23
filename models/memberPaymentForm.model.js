@@ -75,6 +75,7 @@ const MemberPaymentFormSchema = new mongoose.Schema(
       frequencyLayoutKey: String,
       installmentAmountEur: Number,
       installmentAmountDisplay: String,
+      annualMembershipFeeEur: Number,
       debtorBankName: String,
       debtorBankAddress: String,
       debtorAccountName: String,

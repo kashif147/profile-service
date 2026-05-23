@@ -13,6 +13,12 @@ const MEMBERSHIP_FEE_KEY_ALIASES = {
   PARTTIME: "PART_TIME",
   FT: "FULL_TIME",
   PT: "PART_TIME",
+  FULL_MEMBER: "FULL_TIME",
+  FULL_MEMBERS: "FULL_TIME",
+  MEMBER: "FULL_TIME",
+  ORDINARY_MEMBER: "FULL_TIME",
+  PART_MEMBER: "PART_TIME",
+  PART_TIME_MEMBER: "PART_TIME",
 };
 
 function normalizeMembershipCategoryKey(category) {
@@ -88,26 +94,37 @@ function resolveAnnualFeeEuros(subscriptionDetails = {}) {
     const x = Number(v);
     return Number.isFinite(x) && x > 0 ? x : 0;
   };
-  const explicit = [
-    sd.membershipFeeAnnualEur,
-    sd.annualMembershipFee,
-    sd.membershipFee,
-    sd.financialDetails?.membershipFee,
-  ];
-  for (const c of explicit) {
+
+  const fromCategory = tryNum(getMembershipFeeByCategory(sd.membershipCategory));
+  if (fromCategory > 0) return fromCategory;
+
+  for (const c of [sd.membershipFeeAnnualEur, sd.annualMembershipFee]) {
     const v = tryNum(c);
     if (v > 0) return v;
   }
-  const fromCategory = tryNum(getMembershipFeeByCategory(sd.membershipCategory));
-  return fromCategory > 0 ? fromCategory : 0;
+
+  const fee = tryNum(sd.membershipFee) || tryNum(sd.financialDetails?.membershipFee);
+  if (fee <= 0) return 0;
+
+  // Subscription list enrichment often sets membershipFee to the last invoice
+  // (per-period), not the annual total — annualize when it matches installment scale.
+  const periods = periodsPerYearFromFrequency(sd.paymentFrequency || "Monthly");
+  if (periods > 1) {
+    const annualized = Math.round(fee * periods * 100) / 100;
+    if (annualized >= 60 && annualized <= 5000) {
+      return annualized;
+    }
+  }
+
+  return fee;
 }
 
-function computeInstallmentDisplay(subscriptionDetails = {}) {
+function computeInstallmentDisplay(subscriptionDetails = {}, options = {}) {
+  const paymentFrequency =
+    options.paymentFrequency ?? subscriptionDetails.paymentFrequency;
   const annual = resolveAnnualFeeEuros(subscriptionDetails);
-  const periods = periodsPerYearFromFrequency(
-    subscriptionDetails.paymentFrequency
-  );
-  const layoutFreqKey = frequencyLayoutKey(subscriptionDetails.paymentFrequency);
+  const periods = periodsPerYearFromFrequency(paymentFrequency);
+  const layoutFreqKey = frequencyLayoutKey(paymentFrequency);
   if (!annual || !periods) {
     return {
       amountStr: "",
@@ -127,8 +144,22 @@ function computeInstallmentDisplay(subscriptionDetails = {}) {
   };
 }
 
+/** Standing order installments default to monthly unless a frequency is supplied. */
+function computeStandingOrderInstallment(subscriptionDetails = {}) {
+  const freq =
+    subscriptionDetails.paymentFrequency &&
+    String(subscriptionDetails.paymentFrequency).trim()
+      ? subscriptionDetails.paymentFrequency
+      : "Monthly";
+  return computeInstallmentDisplay(subscriptionDetails, {
+    paymentFrequency: freq,
+  });
+}
+
 module.exports = {
   computeInstallmentDisplay,
+  computeStandingOrderInstallment,
+  resolveAnnualFeeEuros,
   frequencyLayoutKey,
   periodsPerYearFromFrequency,
   formatEurAmount,

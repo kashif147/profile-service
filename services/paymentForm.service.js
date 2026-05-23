@@ -14,6 +14,8 @@ const {
 } = require("./subscription.service.client.js");
 const {
   computeInstallmentDisplay,
+  computeStandingOrderInstallment,
+  resolveAnnualFeeEuros,
   frequencyLayoutKey,
   formatEurAmount,
 } = require("../helpers/paymentFormFinancials.js");
@@ -104,7 +106,7 @@ function resolveDebtorAddress(profile) {
 
 function buildSubscriptionPayload(subscription) {
   if (!subscription) return {};
-  return {
+  const payload = {
     membershipCategory: subscription.membershipCategory,
     paymentFrequency: subscription.paymentFrequency,
     paymentType: subscription.paymentType,
@@ -113,7 +115,19 @@ function buildSubscriptionPayload(subscription) {
       subscription.membershipFee ??
       subscription.financialDetails?.membershipFee ??
       null,
+    membershipFeeAnnualEur: subscription.membershipFeeAnnualEur ?? null,
+    annualMembershipFee: subscription.annualMembershipFee ?? null,
   };
+  payload.annualMembershipFee =
+    payload.annualMembershipFee ||
+    resolveAnnualFeeEuros({
+      ...payload,
+      financialDetails: {
+        membershipFee: subscription.financialDetails?.membershipFee,
+      },
+    }) ||
+    null;
+  return payload;
 }
 
 async function loadProfileForTenant(profileId, tenantId) {
@@ -159,15 +173,21 @@ async function hydrateFormFields(profile, subscription, tenantCtx, formType) {
 
   if (formType === "STANDING_ORDER") {
     const ben = applyTenantBeneficiary(org, {});
+    const soFrequency = "Monthly";
+    const installment = computeStandingOrderInstallment({
+      ...sub,
+      paymentFrequency: soFrequency,
+    });
     return {
       ...base,
       standingOrder: {
         ...ben,
         beneficiaryReference: profile.membershipNumber,
-        paymentFrequency: sub.paymentFrequency || "Monthly",
+        paymentFrequency: soFrequency,
         frequencyLayoutKey: installment.layoutFreqKey,
         installmentAmountEur: installment.installmentAmountEur,
         installmentAmountDisplay: installment.amountStr,
+        annualMembershipFeeEur: installment.annualEur || sub.annualMembershipFee || null,
       },
     };
   }
@@ -364,6 +384,22 @@ function applyFormBodyUpdates(form, body) {
       form.standingOrder.frequencyLayoutKey = frequencyLayoutKey(
         form.standingOrder.paymentFrequency
       );
+    }
+    if (
+      so.paymentFrequency !== undefined &&
+      so.installmentAmountEur === undefined &&
+      Number(form.standingOrder.annualMembershipFeeEur) > 0
+    ) {
+      const recalc = computeInstallmentDisplay(
+        {
+          annualMembershipFee: form.standingOrder.annualMembershipFeeEur,
+        },
+        { paymentFrequency: form.standingOrder.paymentFrequency }
+      );
+      if (recalc.installmentAmountEur > 0) {
+        form.standingOrder.installmentAmountEur = recalc.installmentAmountEur;
+        form.standingOrder.installmentAmountDisplay = recalc.amountStr;
+      }
     }
     if (so.installmentAmountEur !== undefined && so.installmentAmountEur !== null) {
       const eur = Number(so.installmentAmountEur);
