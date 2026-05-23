@@ -12,7 +12,11 @@ const {
   fetchCurrentSubscriptionByProfileId,
   SUBSCRIPTION_SERVICE_URL,
 } = require("./subscription.service.client.js");
-const { computeInstallmentDisplay } = require("../helpers/paymentFormFinancials.js");
+const {
+  computeInstallmentDisplay,
+  frequencyLayoutKey,
+  formatEurAmount,
+} = require("../helpers/paymentFormFinancials.js");
 const { resolveClientIp } = require("../helpers/clientIp.js");
 const {
   validateIban,
@@ -105,6 +109,10 @@ function buildSubscriptionPayload(subscription) {
     paymentFrequency: subscription.paymentFrequency,
     paymentType: subscription.paymentType,
     payrollNo: subscription.payrollNo,
+    membershipFee:
+      subscription.membershipFee ??
+      subscription.financialDetails?.membershipFee ??
+      null,
   };
 }
 
@@ -345,16 +353,34 @@ function applyFormBodyUpdates(form, body) {
       debtorAccountName:
         so.debtorAccountName ?? form.standingOrder.debtorAccountName,
       startDate: so.startDate ? new Date(so.startDate) : form.standingOrder.startDate,
+      paymentFrequency:
+        so.paymentFrequency ?? form.standingOrder.paymentFrequency ?? "Monthly",
       signatureDates:
         so.signatureDates?.length > 0
           ? so.signatureDates.map((d) => new Date(d))
           : form.standingOrder.signatureDates,
     });
+    if (so.paymentFrequency !== undefined) {
+      form.standingOrder.frequencyLayoutKey = frequencyLayoutKey(
+        form.standingOrder.paymentFrequency
+      );
+    }
+    if (so.installmentAmountEur !== undefined && so.installmentAmountEur !== null) {
+      const eur = Number(so.installmentAmountEur);
+      if (!Number.isFinite(eur) || eur <= 0) {
+        throw AppError.badRequest("Installment amount must be a positive number");
+      }
+      form.standingOrder.installmentAmountEur = Math.round(eur * 100) / 100;
+      form.standingOrder.installmentAmountDisplay = formatEurAmount(
+        form.standingOrder.installmentAmountEur
+      );
+    }
   }
 
   if (body.salaryDeduction) {
     const sd = body.salaryDeduction;
     Object.assign(form.salaryDeduction, {
+      memberFullName: sd.memberFullName ?? form.salaryDeduction.memberFullName,
       commencingDate: sd.commencingDate
         ? new Date(sd.commencingDate)
         : form.salaryDeduction.commencingDate,
@@ -536,6 +562,28 @@ async function getById(id, tenantId, { includeSensitive = false, portalUserId = 
   return out;
 }
 
+function buildSignatureDownloadUrls(form) {
+  const urls = [];
+  const pushPath = (blobPath) => {
+    const url = azureBlob.getDownloadSasUrl(blobPath);
+    if (url) urls.push(url);
+  };
+  if (form.formType === "STANDING_ORDER") {
+    (form.standingOrder?.signatureBlobPaths || []).forEach((p) => {
+      if (p) pushPath(p);
+    });
+  } else if (form.formType === "SALARY_DEDUCTION") {
+    if (form.salaryDeduction?.signatureBlobPath) {
+      pushPath(form.salaryDeduction.signatureBlobPath);
+    }
+  } else if (form.formType === "DD_MANDATE") {
+    (form.directDebitMandate?.signatureBlobPaths || []).forEach((p) => {
+      if (p) pushPath(p);
+    });
+  }
+  return urls;
+}
+
 function buildDownloadUrls(form) {
   const urls = {};
   if (form.generatedPdf?.blobPath) {
@@ -547,7 +595,70 @@ function buildDownloadUrls(form) {
   if (form.paperUpload?.blobPath) {
     urls.paperUpload = azureBlob.getDownloadSasUrl(form.paperUpload.blobPath);
   }
+  const signatureUrls = buildSignatureDownloadUrls(form);
+  if (signatureUrls.length > 0) {
+    urls.signatures = signatureUrls;
+  }
   return urls;
+}
+
+function decodeSignatureInput({ file, imageBase64 }) {
+  if (file?.buffer) {
+    return {
+      buffer: file.buffer,
+      mimetype: file.mimetype || "image/png",
+      originalname: file.originalname || "signature.png",
+    };
+  }
+  if (imageBase64) {
+    const raw = String(imageBase64).trim();
+    const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    const mimetype = match ? match[1] : "image/png";
+    const b64 = match ? match[2] : raw;
+    if (!b64) throw AppError.badRequest("Invalid imageBase64");
+    const buffer = Buffer.from(b64, "base64");
+    if (!buffer.length) throw AppError.badRequest("Empty signature image");
+    const ext = mimetype.split("/")[1] || "png";
+    return { buffer, mimetype, originalname: `signature.${ext}` };
+  }
+  throw AppError.badRequest("Provide multipart file or imageBase64");
+}
+
+function assertPortalFormAccess(form, req, portal) {
+  if (portal && form.userId && String(form.userId) !== String(req.userId)) {
+    throw AppError.forbidden("Access denied");
+  }
+}
+
+function persistSignatureOnForm(form, blobPath, { slot = 0, signedDate } = {}) {
+  if (form.formType === "STANDING_ORDER") {
+    form.standingOrder = form.standingOrder || {};
+    const paths = [...(form.standingOrder.signatureBlobPaths || [])];
+    while (paths.length <= slot) paths.push(null);
+    paths[slot] = blobPath;
+    form.standingOrder.signatureBlobPaths = paths;
+    if (signedDate) {
+      const dates = [...(form.standingOrder.signatureDates || [])];
+      while (dates.length <= slot) dates.push(null);
+      dates[slot] = new Date(signedDate);
+      form.standingOrder.signatureDates = dates;
+    }
+    return;
+  }
+  if (form.formType === "SALARY_DEDUCTION") {
+    form.salaryDeduction = form.salaryDeduction || {};
+    form.salaryDeduction.signatureBlobPath = blobPath;
+    if (signedDate) form.salaryDeduction.signedDate = new Date(signedDate);
+    return;
+  }
+  if (form.formType === "DD_MANDATE") {
+    form.directDebitMandate = form.directDebitMandate || {};
+    const paths = [...(form.directDebitMandate.signatureBlobPaths || [])];
+    while (paths.length <= slot) paths.push(null);
+    paths[slot] = blobPath;
+    form.directDebitMandate.signatureBlobPaths = paths;
+    if (signedDate) form.directDebitMandate.signedDate = new Date(signedDate);
+  }
 }
 
 async function updateForm(id, tenantId, body, req, { portal = false } = {}) {
@@ -560,11 +671,71 @@ async function updateForm(id, tenantId, body, req, { portal = false } = {}) {
 
   applyFormBodyUpdates(form, body);
 
+  if (Array.isArray(body.signatures) && body.signatures.length > 0) {
+    for (const sig of body.signatures) {
+      if (!sig?.imageBase64) continue;
+      const { buffer, mimetype, originalname } = decodeSignatureInput({
+        imageBase64: sig.imageBase64,
+      });
+      const slot = Number(sig.slot ?? 0);
+      if (form.formType === "STANDING_ORDER" && slot > 1) {
+        throw AppError.badRequest("slot must be 0 or 1 for standing order");
+      }
+      const suffix = `signature-${String(form.formType).toLowerCase()}-slot${slot}.${mimetype.split("/")[1] || "png"}`;
+      const blobPath = azureBlob.buildPaymentFormBlobPath(
+        tenantId,
+        form.profileId,
+        suffix
+      );
+      await azureBlob.uploadToBlob(blobPath, buffer, mimetype, originalname);
+      persistSignatureOnForm(form, blobPath, {
+        slot,
+        signedDate: sig.signedDate,
+      });
+    }
+  }
+
   form.meta = form.meta || {};
   form.meta.updatedBy = req.user?.id || req.userId || null;
   pushAudit(form, "updated", req);
   await form.save();
-  return getById(id, tenantId, { includeSensitive: !portal });
+  return getById(id, tenantId, {
+    includeSensitive: !portal,
+    portalUserId: portal ? req.userId : null,
+  });
+}
+
+function assertFormReadyToSubmit(form) {
+  if (form.formType === "STANDING_ORDER") {
+    const so = form.standingOrder || {};
+    if (!so.startDate) {
+      throw AppError.badRequest("Start date is required for standing order forms");
+    }
+    if (!String(so.paymentFrequency || "").trim()) {
+      throw AppError.badRequest("Payment frequency is required for standing order forms");
+    }
+    const amount = Number(so.installmentAmountEur);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw AppError.badRequest("Installment amount is required for standing order forms");
+    }
+  }
+  if (form.formType === "SALARY_DEDUCTION") {
+    const sd = form.salaryDeduction || {};
+    if (!String(sd.memberFullName || "").trim()) {
+      throw AppError.badRequest("Member name is required for salary deduction forms");
+    }
+    if (!String(sd.employedAt || "").trim()) {
+      throw AppError.badRequest("Employed at is required for salary deduction forms");
+    }
+    if (!String(sd.payrollStaffNo || "").trim()) {
+      throw AppError.badRequest(
+        "Payroll / staff number is required for salary deduction forms"
+      );
+    }
+    if (!sd.commencingDate) {
+      throw AppError.badRequest("Commencing date is required for salary deduction forms");
+    }
+  }
 }
 
 async function submitForm(id, tenantId, req, { portal = false } = {}) {
@@ -573,6 +744,8 @@ async function submitForm(id, tenantId, req, { portal = false } = {}) {
   if (portal && form.userId && String(form.userId) !== String(req.userId)) {
     throw AppError.forbidden("Access denied");
   }
+
+  assertFormReadyToSubmit(form);
 
   const { clientIp, ipSource } = resolveClientIp(req);
   form.status = "submitted";
@@ -731,9 +904,10 @@ async function uploadPaper(id, tenantId, file, req) {
   return { ...getById(id, tenantId, { includeSensitive: true }), uploadUrl: url };
 }
 
-async function uploadSignedPdf(id, tenantId, file, req) {
+async function uploadSignedPdf(id, tenantId, file, req, { portal = false } = {}) {
   const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
   if (!form) throw AppError.notFound("Payment form not found");
+  assertPortalFormAccess(form, req, portal);
   const blobPath = azureBlob.buildPaymentFormBlobPath(
     tenantId,
     form.profileId,
@@ -752,7 +926,53 @@ async function uploadSignedPdf(id, tenantId, file, req) {
   };
   pushAudit(form, "signed_pdf_uploaded", req);
   await form.save();
-  return getById(id, tenantId, { includeSensitive: true });
+  return getById(id, tenantId, {
+    includeSensitive: !portal,
+    portalUserId: portal ? req.userId : null,
+  });
+}
+
+async function uploadSignature(
+  id,
+  tenantId,
+  { file, imageBase64, slot, signedDate },
+  req,
+  { portal = false } = {}
+) {
+  const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
+  if (!form) throw AppError.notFound("Payment form not found");
+  assertPortalFormAccess(form, req, portal);
+
+  const slotNum = Number(slot ?? 0);
+  if (form.formType === "STANDING_ORDER" && slotNum > 1) {
+    throw AppError.badRequest("slot must be 0 or 1 for standing order");
+  }
+  if (form.formType === "SALARY_DEDUCTION" && slotNum !== 0) {
+    throw AppError.badRequest("salary deduction supports one signature (slot 0)");
+  }
+
+  const { buffer, mimetype, originalname } = decodeSignatureInput({
+    file,
+    imageBase64,
+  });
+  const ext = mimetype.split("/")[1] || "png";
+  const suffix = `signature-${String(form.formType).toLowerCase()}-slot${slotNum}.${ext}`;
+  const blobPath = azureBlob.buildPaymentFormBlobPath(
+    tenantId,
+    form.profileId,
+    suffix
+  );
+  await azureBlob.uploadToBlob(blobPath, buffer, mimetype, originalname);
+  persistSignatureOnForm(form, blobPath, { slot: slotNum, signedDate });
+  pushAudit(form, "signature_uploaded", req, {
+    slot: slotNum,
+    channel: portal ? "portal" : "crm",
+  });
+  await form.save();
+  return getById(id, tenantId, {
+    includeSensitive: !portal,
+    portalUserId: portal ? req.userId : null,
+  });
 }
 
 const APPROVAL_EMAIL_BODY =
@@ -862,6 +1082,7 @@ module.exports = {
   rejectForm,
   uploadPaper,
   uploadSignedPdf,
+  uploadSignature,
   sendFormEmail,
   listForProfile,
   listPortalForUser,

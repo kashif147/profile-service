@@ -1,0 +1,579 @@
+{
+  "info": {
+    "name": "Profile Service – Payment Forms",
+    "description": "Standing order, salary deduction, and SEPA direct debit forms.\n\n**Portal** (`/api/payment-forms/portal`): member save/load/submit.\n**CRM** (`/api/payment-forms`): staff workflows.\n\nSet `baseUrl` (e.g. `http://localhost:4002` or `https://host/profile-service`) and `authToken` (Bearer JWT with portal or CRM permissions).\n\nAfter **Create draft**, the response `_id` is saved to `paymentFormId`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4002", "type": "string" },
+    { "key": "authToken", "value": "", "type": "string" },
+    { "key": "profileId", "value": "", "type": "string" },
+    { "key": "paymentFormId", "value": "", "type": "string" },
+    { "key": "formType", "value": "STANDING_ORDER", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Portal",
+      "description": "Member portal APIs. Profile is resolved from the authenticated portal user.",
+      "item": [
+        {
+          "name": "List my forms",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/mine",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", "mine"]
+            },
+            "description": "Returns submitted/active/portal-visible forms. Drafts are loaded by id after create."
+          }
+        },
+        {
+          "name": "Create draft – Standing Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const form = json?.data?.paymentForm || json?.paymentForm;",
+                  "if (form?._id) {",
+                  "  pm.collectionVariables.set('paymentFormId', form._id);",
+                  "  pm.collectionVariables.set('formType', form.formType || 'STANDING_ORDER');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formType\": \"STANDING_ORDER\",\n  \"standingOrder\": {\n    \"debtorBankName\": \"AIB\",\n    \"debtorBankAddress\": \"1 Bank Centre, Dublin 2\",\n    \"debtorAccountName\": \"Jane Member\",\n    \"debtorIban\": \"IE29AIBK93115212345678\",\n    \"debtorBic\": \"AIBKIE2D\",\n    \"startDate\": \"2026-06-01T00:00:00.000Z\",\n    \"paymentFrequency\": \"Monthly\",\n    \"installmentAmountEur\": 45,\n    \"signatureDates\": [\n      \"2026-05-23T00:00:00.000Z\",\n      \"2026-05-23T00:00:00.000Z\"\n    ]\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", ""]
+            },
+            "description": "Creates a hydrated draft.\n\n**Writable on create/PATCH:** standingOrder.debtor fields, startDate, paymentFrequency (default Monthly), installmentAmountEur (pre-calculated from subscription, editable), signatureDates[], gdpr.consentCapturedAt\n\n**Read-only (prefilled):** beneficiary/creditor fields, beneficiaryReference"
+          }
+        },
+        {
+          "name": "Create draft – Salary Deduction",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const form = json?.data?.paymentForm || json?.paymentForm;",
+                  "if (form?._id) {",
+                  "  pm.collectionVariables.set('paymentFormId', form._id);",
+                  "  pm.collectionVariables.set('formType', form.formType || 'SALARY_DEDUCTION');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formType\": \"SALARY_DEDUCTION\",\n  \"salaryDeduction\": {\n    \"memberFullName\": \"JANE MEMBER\",\n    \"employedAt\": \"St James Hospital\",\n    \"payrollStaffNo\": \"12345\",\n    \"commencingDate\": \"2026-06-01T00:00:00.000Z\",\n    \"signedDate\": \"2026-05-23T00:00:00.000Z\"\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", ""]
+            },
+            "description": "**Required on submit:** memberFullName, employedAt (work location), payrollStaffNo, commencingDate\n\n**Writable:** salaryDeduction.memberFullName, employedAt, payrollStaffNo, commencingDate, signedDate, gdpr.consentCapturedAt\n\n**Read-only (prefilled):** referenceMembershipNo, installmentAmountEur, installmentAmountDisplay\n\n**IMPORTANT footer:** use `organisationSnapshot` (legalName/tradingName + bankAddress) from GET response"
+          }
+        },
+        {
+          "name": "Create draft – Direct Debit (DD_MANDATE)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const form = json?.data?.paymentForm || json?.paymentForm;",
+                  "if (form?._id) {",
+                  "  pm.collectionVariables.set('paymentFormId', form._id);",
+                  "  pm.collectionVariables.set('formType', form.formType || 'DD_MANDATE');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formType\": \"DD_MANDATE\",\n  \"directDebitMandate\": {\n    \"debtorName\": \"Jane Member\",\n    \"debtorAddress\": \"1 Main Street\",\n    \"debtorCity\": \"Dublin\",\n    \"debtorPostcode\": \"D01 ABC1\",\n    \"debtorCountry\": \"Ireland\",\n    \"debtorIban\": \"IE29AIBK93115212345678\",\n    \"debtorBic\": \"AIBKIE2D\",\n    \"signedDate\": \"2026-05-23T00:00:00.000Z\",\n    \"isAuthorized\": true\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", ""]
+            },
+            "description": "**Writable:** directDebitMandate.debtorName, debtorAddress, debtorCity, debtorPostcode, debtorCountry, debtorIban, debtorBic, signedDate, isAuthorized, gdpr.consentCapturedAt\n\n**Read-only (prefilled):** directDebitMandate.creditorName, creditorIdentifier, creditorAddress, creditorCity, creditorPostcode, creditorCountry, uniqueMandateReference, paymentTypeRecurrent"
+          }
+        },
+        {
+          "name": "Get form by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/{{paymentFormId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", "{{paymentFormId}}"]
+            },
+            "description": "IBAN/BIC are masked on portal responses."
+          }
+        },
+        {
+          "name": "Update – Standing Order",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"standingOrder\": {\n    \"debtorBankName\": \"AIB\",\n    \"debtorBankAddress\": \"1 Bank Centre, Dublin 2\",\n    \"debtorAccountName\": \"Jane Member\",\n    \"debtorIban\": \"IE29AIBK93115212345678\",\n    \"debtorBic\": \"AIBKIE2D\",\n    \"startDate\": \"2026-06-01T00:00:00.000Z\",\n    \"paymentFrequency\": \"Monthly\",\n    \"installmentAmountEur\": 45,\n    \"signatureDates\": [\n      \"2026-05-23T00:00:00.000Z\",\n      \"2026-05-23T00:00:00.000Z\"\n    ]\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/{{paymentFormId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", "{{paymentFormId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update – Salary Deduction",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"salaryDeduction\": {\n    \"memberFullName\": \"JANE MEMBER\",\n    \"employedAt\": \"St James Hospital\",\n    \"payrollStaffNo\": \"12345\",\n    \"commencingDate\": \"2026-06-01T00:00:00.000Z\",\n    \"signedDate\": \"2026-05-23T00:00:00.000Z\"\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/{{paymentFormId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", "{{paymentFormId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update – Direct Debit Mandate",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"directDebitMandate\": {\n    \"debtorName\": \"Jane Member\",\n    \"debtorAddress\": \"1 Main Street\",\n    \"debtorCity\": \"Dublin\",\n    \"debtorPostcode\": \"D01 ABC1\",\n    \"debtorCountry\": \"Ireland\",\n    \"debtorIban\": \"IE29AIBK93115212345678\",\n    \"debtorBic\": \"AIBKIE2D\",\n    \"signedDate\": \"2026-05-23T00:00:00.000Z\",\n    \"isAuthorized\": true\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/{{paymentFormId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", "{{paymentFormId}}"]
+            }
+          }
+        },
+        {
+          "name": "Submit form",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/{{paymentFormId}}/submit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", "{{paymentFormId}}", "submit"]
+            },
+            "description": "Electronic submit; records client IP and user agent."
+          }
+        },
+        {
+          "name": "Upload signature (canvas PNG)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imageBase64\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\",\n  \"slot\": 0,\n  \"signedDate\": \"2026-05-23T12:00:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/{{paymentFormId}}/upload-signature",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", "{{paymentFormId}}", "upload-signature"]
+            },
+            "description": "Optional drawn signature from portal canvas.\n\n**JSON:** `imageBase64` (data URL or raw base64), optional `slot` (0|1 for standing order), optional `signedDate`.\n\n**Multipart alternative:** `file` (PNG/JPEG), `slot`, `signedDate`.\n\nStored in Azure Blob; paths saved on form:\n- STANDING_ORDER → `standingOrder.signatureBlobPaths[slot]`\n- SALARY_DEDUCTION → `salaryDeduction.signatureBlobPath`\n- DD_MANDATE → `directDebitMandate.signatureBlobPaths[slot]`\n\nGET response includes `downloadUrls.signatures[]` SAS URLs.\n\nAlternatively include on PATCH: `signatures: [{ imageBase64, slot, signedDate }]`."
+          }
+        },
+        {
+          "name": "Upload signature (multipart file)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [], "description": "PNG or JPEG" },
+                { "key": "slot", "value": "0", "type": "text" },
+                { "key": "signedDate", "value": "2026-05-23T12:00:00.000Z", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/{{paymentFormId}}/upload-signature",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", "{{paymentFormId}}", "upload-signature"]
+            }
+          }
+        },
+        {
+          "name": "Upload signed PDF",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Signed PDF file"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/{{paymentFormId}}/upload-signed",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", "{{paymentFormId}}", "upload-signed"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "CRM",
+      "description": "Staff CRM APIs on profile-service.",
+      "item": [
+        {
+          "name": "Prefill (preview, not saved)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/prefill?profileId={{profileId}}&formType={{formType}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "prefill"],
+              "query": [
+                { "key": "profileId", "value": "{{profileId}}" },
+                { "key": "formType", "value": "{{formType}}", "description": "STANDING_ORDER | SALARY_DEDUCTION | DD_MANDATE" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filter / list",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filters\": {\n    \"formType\": \"STANDING_ORDER\",\n    \"status\": \"submitted\",\n    \"membershipNumber\": \"123456\"\n  },\n  \"page\": 1,\n  \"limit\": 50\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/filter",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "filter"]
+            }
+          }
+        },
+        {
+          "name": "Create draft (CRM)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const form = json?.data?.paymentForm || json?.paymentForm;",
+                  "if (form?._id) pm.collectionVariables.set('paymentFormId', form._id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profileId\": \"{{profileId}}\",\n  \"formType\": \"STANDING_ORDER\",\n  \"standingOrder\": {\n    \"debtorBankName\": \"AIB\",\n    \"debtorBankAddress\": \"1 Bank Centre, Dublin 2\",\n    \"debtorAccountName\": \"Jane Member\",\n    \"debtorIban\": \"IE29AIBK93115212345678\",\n    \"debtorBic\": \"AIBKIE2D\",\n    \"startDate\": \"2026-06-01T00:00:00.000Z\",\n    \"paymentFrequency\": \"Monthly\",\n    \"installmentAmountEur\": 45,\n    \"signatureDates\": [\n      \"2026-05-23T00:00:00.000Z\",\n      \"2026-05-23T00:00:00.000Z\"\n    ]\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", ""]
+            }
+          }
+        },
+        {
+          "name": "List by profile (Documents tab)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/profile/{{profileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "profile", "{{profileId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get form by ID (CRM – full IBAN)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/{{paymentFormId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "{{paymentFormId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update – Standing Order (CRM)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"standingOrder\": {\n    \"debtorBankName\": \"AIB\",\n    \"debtorBankAddress\": \"1 Bank Centre, Dublin 2\",\n    \"debtorAccountName\": \"Jane Member\",\n    \"debtorIban\": \"IE29AIBK93115212345678\",\n    \"debtorBic\": \"AIBKIE2D\",\n    \"startDate\": \"2026-06-01T00:00:00.000Z\",\n    \"paymentFrequency\": \"Monthly\",\n    \"installmentAmountEur\": 45,\n    \"signatureDates\": [\n      \"2026-05-23T00:00:00.000Z\",\n      \"2026-05-23T00:00:00.000Z\"\n    ]\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/{{paymentFormId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "{{paymentFormId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update – Salary Deduction (CRM)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"salaryDeduction\": {\n    \"memberFullName\": \"JANE MEMBER\",\n    \"employedAt\": \"St James Hospital\",\n    \"payrollStaffNo\": \"12345\",\n    \"commencingDate\": \"2026-06-01T00:00:00.000Z\",\n    \"signedDate\": \"2026-05-23T00:00:00.000Z\"\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/{{paymentFormId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "{{paymentFormId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update – Direct Debit Mandate (CRM)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"directDebitMandate\": {\n    \"debtorName\": \"Jane Member\",\n    \"debtorAddress\": \"1 Main Street\",\n    \"debtorCity\": \"Dublin\",\n    \"debtorPostcode\": \"D01 ABC1\",\n    \"debtorCountry\": \"Ireland\",\n    \"debtorIban\": \"IE29AIBK93115212345678\",\n    \"debtorBic\": \"AIBKIE2D\",\n    \"signedDate\": \"2026-05-23T00:00:00.000Z\",\n    \"isAuthorized\": true\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/{{paymentFormId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "{{paymentFormId}}"]
+            }
+          }
+        },
+        {
+          "name": "Submit (CRM)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/{{paymentFormId}}/submit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "{{paymentFormId}}", "submit"]
+            }
+          }
+        },
+        {
+          "name": "Verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/{{paymentFormId}}/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "{{paymentFormId}}", "verify"]
+            }
+          }
+        },
+        {
+          "name": "Approve",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/{{paymentFormId}}/approve",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "{{paymentFormId}}", "approve"]
+            },
+            "description": "Updates subscription, emails member, publishes portal notification event."
+          }
+        },
+        {
+          "name": "Reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Incomplete bank details\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/{{paymentFormId}}/reject",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "{{paymentFormId}}", "reject"]
+            }
+          }
+        },
+        {
+          "name": "Upload paper scan",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/{{paymentFormId}}/upload-paper",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "{{paymentFormId}}", "upload-paper"]
+            }
+          }
+        },
+        {
+          "name": "Upload signed PDF (CRM)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/{{paymentFormId}}/upload-signed",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "{{paymentFormId}}", "upload-signed"]
+            }
+          }
+        },
+        {
+          "name": "Send email",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sendTo\": \"member@example.com\",\n  \"subject\": \"Your payment form\",\n  \"body\": \"Please find your payment form attached.\",\n  \"attachPdf\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/{{paymentFormId}}/send-email",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "{{paymentFormId}}", "send-email"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

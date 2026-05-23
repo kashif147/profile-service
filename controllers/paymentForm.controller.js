@@ -175,7 +175,29 @@ exports.uploadSignedPdf = async (req, res, next) => {
       req.params.id,
       tenantId,
       req.file,
-      req
+      req,
+      { portal: false }
+    );
+    return res.success({ paymentForm: data });
+  } catch (e) {
+    return next(e);
+  }
+};
+
+exports.uploadSignature = async (req, res, next) => {
+  try {
+    const { tenantId } = extractUserAndCreatorContext(req);
+    const data = await paymentFormService.uploadSignature(
+      req.params.id,
+      tenantId,
+      {
+        file: req.file,
+        imageBase64: req.body?.imageBase64,
+        slot: req.body?.slot,
+        signedDate: req.body?.signedDate,
+      },
+      req,
+      { portal: false }
     );
     return res.success({ paymentForm: data });
   } catch (e) {
@@ -267,6 +289,43 @@ exports.portalCreate = async (req, res, next) => {
       source: "portal",
       payload,
     });
+    return res.success({ paymentForm: data });
+  } catch (e) {
+    return next(e);
+  }
+};
+
+exports.portalUploadSignedPdf = async (req, res, next) => {
+  try {
+    const { tenantId } = extractUserAndCreatorContext(req);
+    const data = await paymentFormService.uploadSignedPdf(
+      req.params.id,
+      tenantId,
+      req.file,
+      req,
+      { portal: true }
+    );
+    return res.success({ paymentForm: data });
+  } catch (e) {
+    return next(e);
+  }
+};
+
+exports.portalUploadSignature = async (req, res, next) => {
+  try {
+    const { tenantId } = extractUserAndCreatorContext(req);
+    const data = await paymentFormService.uploadSignature(
+      req.params.id,
+      tenantId,
+      {
+        file: req.file,
+        imageBase64: req.body?.imageBase64,
+        slot: req.body?.slot,
+        signedDate: req.body?.signedDate,
+      },
+      req,
+      { portal: true }
+    );
     return res.success({ paymentForm: data });
   } catch (e) {
     return next(e);

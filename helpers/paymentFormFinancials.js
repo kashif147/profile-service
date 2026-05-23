@@ -1,21 +1,41 @@
-const path = require("path");
+const MEMBERSHIP_FEE_EUR_BY_KEY = {
+  FULL_TIME: 540.0,
+  PART_TIME: 360.0,
+  STUDENT: 120.0,
+  RETIRED: 60.0,
+  ASSOCIATE: 240.0,
+  GENERAL_ALL_GRADE: 326.0,
+  PRIVATE_NURSING: 243.0,
+};
 
-function loadGetMembershipFeeByCategory() {
-  try {
-    const svcPath = path.join(
-      __dirname,
-      "../../subscription-service/helpers/serviceClient.js"
-    );
-    const mod = require(svcPath);
-    return typeof mod.getMembershipFeeByCategory === "function"
-      ? mod.getMembershipFeeByCategory
-      : () => 0;
-  } catch {
-    return () => 0;
-  }
+const MEMBERSHIP_FEE_KEY_ALIASES = {
+  FULLTIME: "FULL_TIME",
+  PARTTIME: "PART_TIME",
+  FT: "FULL_TIME",
+  PT: "PART_TIME",
+};
+
+function normalizeMembershipCategoryKey(category) {
+  if (category == null || category === "") return "";
+  return String(category)
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
-const getMembershipFeeByCategory = loadGetMembershipFeeByCategory();
+function getMembershipFeeByCategory(category) {
+  const norm = normalizeMembershipCategoryKey(category);
+  if (!norm) return 0;
+  const key = MEMBERSHIP_FEE_KEY_ALIASES[norm] || norm;
+  if (Object.prototype.hasOwnProperty.call(MEMBERSHIP_FEE_EUR_BY_KEY, key)) {
+    return MEMBERSHIP_FEE_EUR_BY_KEY[key];
+  }
+  if (Object.prototype.hasOwnProperty.call(MEMBERSHIP_FEE_EUR_BY_KEY, norm)) {
+    return MEMBERSHIP_FEE_EUR_BY_KEY[norm];
+  }
+  return 0;
+}
 
 function normalizeFrequency(raw) {
   if (raw == null || raw === "") return "";
@@ -55,6 +75,13 @@ function frequencyLayoutKey(raw) {
   return "Monthly";
 }
 
+function formatEurAmount(amount) {
+  return new Intl.NumberFormat("en-IE", {
+    style: "currency",
+    currency: "EUR",
+  }).format(amount);
+}
+
 function resolveAnnualFeeEuros(subscriptionDetails = {}) {
   const sd = subscriptionDetails || {};
   const tryNum = (v) => {
@@ -65,6 +92,7 @@ function resolveAnnualFeeEuros(subscriptionDetails = {}) {
     sd.membershipFeeAnnualEur,
     sd.annualMembershipFee,
     sd.membershipFee,
+    sd.financialDetails?.membershipFee,
   ];
   for (const c of explicit) {
     const v = tryNum(c);
@@ -79,25 +107,23 @@ function computeInstallmentDisplay(subscriptionDetails = {}) {
   const periods = periodsPerYearFromFrequency(
     subscriptionDetails.paymentFrequency
   );
+  const layoutFreqKey = frequencyLayoutKey(subscriptionDetails.paymentFrequency);
   if (!annual || !periods) {
     return {
       amountStr: "",
       installmentAmountEur: 0,
       annualEur: annual,
       periods,
-      layoutFreqKey: frequencyLayoutKey(subscriptionDetails.paymentFrequency),
+      layoutFreqKey,
     };
   }
   const per = annual / periods;
   return {
-    amountStr: new Intl.NumberFormat("en-IE", {
-      style: "currency",
-      currency: "EUR",
-    }).format(per),
+    amountStr: formatEurAmount(per),
     installmentAmountEur: Math.round(per * 100) / 100,
     annualEur: annual,
     periods,
-    layoutFreqKey: frequencyLayoutKey(subscriptionDetails.paymentFrequency),
+    layoutFreqKey,
   };
 }
 
@@ -105,4 +131,6 @@ module.exports = {
   computeInstallmentDisplay,
   frequencyLayoutKey,
   periodsPerYearFromFrequency,
+  formatEurAmount,
+  getMembershipFeeByCategory,
 };

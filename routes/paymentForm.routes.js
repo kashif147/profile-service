@@ -29,6 +29,12 @@ router.post(
   upload.single("file"),
   controller.uploadSignedPdf
 );
+router.post(
+  "/:id/upload-signature",
+  portalWrite,
+  upload.single("file"),
+  controller.uploadSignature
+);
 router.post("/:id/send-email", portalWrite, controller.sendEmail);
 
 const portalRouter = express.Router();
@@ -41,7 +47,13 @@ portalRouter.post(
   "/:id/upload-signed",
   portalWrite,
   upload.single("file"),
-  controller.uploadSignedPdf
+  controller.portalUploadSignedPdf
+);
+portalRouter.post(
+  "/:id/upload-signature",
+  portalWrite,
+  upload.single("file"),
+  controller.portalUploadSignature
 );
 
 router.use("/portal", portalRouter);

@@ -12,7 +12,7 @@ Base path: `/api/payment-forms` (requires authentication).
 | `GET` | `/profile/:profileId` | List forms for member Documents tab |
 | `GET` | `/:id` | Get one (includes sensitive fields for CRM) |
 | `PATCH` | `/:id` | Update debtor/creditor fields |
-| `POST` | `/:id/submit` | Mark submitted (records client IP) |
+| `POST` | `/:id/submit` | Mark submitted (records client IP). Standing order requires `standingOrder.startDate`. |
 | `POST` | `/:id/verify` | Mark verified |
 | `POST` | `/:id/approve` | Approve, update subscription, notify member |
 | `POST` | `/:id/reject` | Reject |
@@ -36,8 +36,9 @@ On **approve**, profile-service automatically queues member email (when profile 
 | `POST` | `/` | Create draft (`formType`) |
 | `GET` | `/:id` | Get (masked IBAN) |
 | `PATCH` | `/:id` | Update editable fields |
-| `POST` | `/:id/submit` | Electronic submit (IP logged) |
+| `POST` | `/:id/submit` | Electronic submit (IP logged). Standing order requires `standingOrder.startDate`. |
 | `POST` | `/:id/upload-signed` | Upload signed PDF |
+| `POST` | `/:id/upload-signature` | Upload drawn signature image (optional); PNG/JPEG multipart or JSON `imageBase64` |
 
 ## Environment
 
