@@ -91,18 +91,15 @@ function resolveWorkLocation(profile) {
   );
 }
 
-function resolveDebtorAddress(profile) {
+function resolveDebtorAddressLines(profile) {
   const ci = profile?.contactInfo || {};
-  if (ci.fullAddress) return String(ci.fullAddress).trim();
-  const parts = [
-    ci.buildingOrHouse,
-    ci.streetOrRoad,
-    ci.areaOrTown,
-    ci.countyCityOrPostCode,
-    ci.eircode,
-    ci.country,
-  ].filter(Boolean);
-  return parts.join(", ");
+  const line1 = String(ci.buildingOrHouse || "").trim();
+  const line2 = String(ci.streetOrRoad || "").trim();
+  return {
+    line1,
+    line2,
+    combined: [line1, line2].filter(Boolean).join("\n"),
+  };
 }
 
 function buildSubscriptionPayload(subscription) {
@@ -209,7 +206,7 @@ async function hydrateFormFields(profile, subscription, tenantCtx, formType) {
 
   if (formType === "DD_MANDATE") {
     const ben = applyTenantBeneficiary(org, {});
-    const addr = resolveDebtorAddress(profile);
+    const debtorAddr = resolveDebtorAddressLines(profile);
     return {
       ...base,
       directDebitMandate: {
@@ -222,7 +219,7 @@ async function hydrateFormFields(profile, subscription, tenantCtx, formType) {
         uniqueMandateReference: profile.membershipNumber,
         paymentTypeRecurrent: true,
         debtorName: memberName,
-        debtorAddress: addr,
+        debtorAddress: debtorAddr.combined,
         debtorCity: profile.contactInfo?.areaOrTown || "",
         debtorPostcode:
           profile.contactInfo?.eircode ||
