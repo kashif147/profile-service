@@ -60,9 +60,18 @@ function buildPaymentFormBlobPath(tenantId, profileId, suffix) {
   return `payment-forms/${tenantId}/${profileId}/${uuidv4()}-${suffix}`;
 }
 
+async function deleteBlob(blobPath) {
+  if (!isConfigured || !blobPath) return false;
+  const container = blobServiceClient.getContainerClient(containerName);
+  const blobClient = container.getBlockBlobClient(blobPath);
+  await blobClient.deleteIfExists();
+  return true;
+}
+
 module.exports = {
   uploadToBlob,
   getDownloadSasUrl,
   buildPaymentFormBlobPath,
+  deleteBlob,
   isConfigured,
 };

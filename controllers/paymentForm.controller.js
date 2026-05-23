@@ -140,6 +140,17 @@ exports.rejectPaymentForm = async (req, res, next) => {
   }
 };
 
+exports.deletePaymentForm = async (req, res, next) => {
+  try {
+    const { tenantId } = extractUserAndCreatorContext(req);
+    if (!tenantId) return next(AppError.badRequest("tenantId is required"));
+    const data = await paymentFormService.deleteForm(req.params.id, tenantId);
+    return res.success(data);
+  } catch (e) {
+    return next(e);
+  }
+};
+
 exports.listProfilePaymentForms = async (req, res, next) => {
   try {
     const { tenantId } = extractUserAndCreatorContext(req);

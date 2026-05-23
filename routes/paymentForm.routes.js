@@ -17,6 +17,7 @@ router.post("/:id/submit", portalWrite, controller.submitPaymentForm);
 router.post("/:id/verify", portalWrite, controller.verifyPaymentForm);
 router.post("/:id/approve", portalWrite, controller.approvePaymentForm);
 router.post("/:id/reject", portalWrite, controller.rejectPaymentForm);
+router.delete("/:id", portalWrite, controller.deletePaymentForm);
 router.post(
   "/:id/upload-paper",
   portalWrite,

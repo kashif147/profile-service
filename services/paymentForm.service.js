@@ -1141,6 +1141,36 @@ async function listPortalForUser(tenantId, userId, req) {
   return listForProfile(profile._id, tenantId, { portalUserId: userId });
 }
 
+const DELETABLE_PAYMENT_FORM_STATUSES = new Set(["draft", "generated"]);
+
+function collectPaymentFormBlobPaths(form) {
+  const paths = [];
+  const push = (p) => {
+    if (p) paths.push(p);
+  };
+  push(form.generatedPdf?.blobPath);
+  push(form.signedPdf?.blobPath);
+  push(form.paperUpload?.blobPath);
+  push(form.salaryDeduction?.signatureBlobPath);
+  (form.standingOrder?.signatureBlobPaths || []).forEach(push);
+  (form.directDebitMandate?.signatureBlobPaths || []).forEach(push);
+  return [...new Set(paths)];
+}
+
+async function deleteForm(id, tenantId) {
+  const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
+  if (!form) throw AppError.notFound("Payment form not found");
+  if (!DELETABLE_PAYMENT_FORM_STATUSES.has(form.status)) {
+    throw AppError.badRequest(
+      "Only draft or generated payment forms can be deleted"
+    );
+  }
+  const blobPaths = collectPaymentFormBlobPaths(form);
+  await MemberPaymentForm.deleteOne({ _id: form._id, tenantId });
+  await Promise.allSettled(blobPaths.map((p) => azureBlob.deleteBlob(p)));
+  return { deleted: true, id: String(form._id) };
+}
+
 module.exports = {
   prefillForm,
   createForm,
@@ -1151,6 +1181,7 @@ module.exports = {
   verifyForm,
   approveForm,
   rejectForm,
+  deleteForm,
   uploadPaper,
   uploadSignedPdf,
   uploadSignature,
