@@ -32,6 +32,11 @@ function deepClone(o) {
   return JSON.parse(JSON.stringify(o));
 }
 
+const {
+  parseDateOnlyToUtcNoon,
+  normalizeSubscriptionDetailsDates,
+} = require("../helpers/parseDateOnly.js");
+
 function normalizeSubscriptionDetails(
   subscriptionDetails = {},
   professional = {}
@@ -43,11 +48,10 @@ function normalizeSubscriptionDetails(
   ) {
     normalized.membershipCategory = professional.membershipCategory;
   }
-  // Ensure dateJoined is set - use current date if not provided
   if (!normalized.dateJoined) {
-    normalized.dateJoined = new Date();
+    normalized.dateJoined = parseDateOnlyToUtcNoon(null, true);
   }
-  return normalized;
+  return normalizeSubscriptionDetailsDates(normalized);
 }
 
 async function approveApplication({
@@ -183,11 +187,14 @@ async function approveApplication({
       const now = new Date();
       // Use dateJoined from approval if available, otherwise use current date
       const firstJoinedDate = effective.subscriptionDetails?.dateJoined
-        ? new Date(effective.subscriptionDetails.dateJoined)
-        : now;
+        ? parseDateOnlyToUtcNoon(effective.subscriptionDetails.dateJoined, true)
+        : parseDateOnlyToUtcNoon(null, true);
       const submissionDate =
         effective.subscriptionDetails?.submissionDate != null
-          ? new Date(effective.subscriptionDetails.submissionDate)
+          ? parseDateOnlyToUtcNoon(
+              effective.subscriptionDetails.submissionDate,
+              false
+            )
           : now;
 
       // Generate membership number for new profile

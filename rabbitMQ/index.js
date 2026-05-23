@@ -9,6 +9,7 @@ const {
 const { createRabbitStructuredLogHandlers } = require("@projectShell/logging-lib");
 const bizLogger = require("../config/bizLogger.js");
 const mongoose = require("mongoose");
+const { parseDateOnlyToUtcNoon } = require("../helpers/parseDateOnly.js");
 
 // Import local event definitions
 const {
@@ -236,8 +237,8 @@ async function setupConsumers() {
             ).trim();
           }
           if (sd.dateJoined != null && sd.dateJoined !== "") {
-            const dj = new Date(sd.dateJoined);
-            if (!Number.isNaN(dj.getTime())) {
+            const dj = parseDateOnlyToUtcNoon(sd.dateJoined, false);
+            if (dj) {
               subSet["subscriptionDetails.dateJoined"] = dj;
             }
           }

@@ -27,60 +27,11 @@ const {
   findOrCreateProfileByEmail,
 } = require("../services/profileLookup.service.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
+const {
+  parseDateOnlyToUtcNoon,
+} = require("../helpers/parseDateOnly.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
-
-function parseDateOnlyToUtcNoon(value, fallbackNow = false) {
-  if (value == null || value === "") {
-    if (!fallbackNow) return null;
-    const now = new Date();
-    return new Date(
-      Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth(),
-        now.getUTCDate(),
-        12,
-        0,
-        0,
-        0
-      )
-    );
-  }
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return fallbackNow ? new Date() : null;
-    return new Date(
-      Date.UTC(
-        value.getUTCFullYear(),
-        value.getUTCMonth(),
-        value.getUTCDate(),
-        12,
-        0,
-        0,
-        0
-      )
-    );
-  }
-  const raw = String(value).trim();
-  if (!raw) return fallbackNow ? new Date() : null;
-  const datePart = raw.split("T")[0];
-  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
-    const [year, month, day] = datePart.split("-").map(Number);
-    return new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
-  }
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return fallbackNow ? new Date() : null;
-  return new Date(
-    Date.UTC(
-      parsed.getUTCFullYear(),
-      parsed.getUTCMonth(),
-      parsed.getUTCDate(),
-      12,
-      0,
-      0,
-      0
-    )
-  );
-}
 
 const subAttrs = (s = {}) => ({
   payrollNo: s?.payrollNo ?? null,

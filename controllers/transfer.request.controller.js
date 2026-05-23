@@ -8,6 +8,52 @@ const axios = require("axios");
 const mongoose = require("mongoose");
 const { publishDomainEvent, MEMBERSHIP_EVENTS } = require("../rabbitMQ");
 
+const findHierarchyByCode = (hierarchy, code) =>
+  (hierarchy || []).find((h) => h?.lookuptypeId?.code === code) || null;
+
+const nodeDisplayName = (node) =>
+  node?.name || node?.DisplayName || node?.lookupname || null;
+
+/** Supports simple nested tree (default) and legacy hierarchy responses */
+const extractLocationNamesFromHierarchy = (lookupData = {}) => {
+  if (lookupData.type === "workLocation") {
+    return {
+      workLocationName: nodeDisplayName(lookupData),
+      branchName: nodeDisplayName(lookupData.branch),
+      regionName: nodeDisplayName(
+        lookupData.branch?.region || lookupData.region
+      ),
+    };
+  }
+
+  if (lookupData.type === "branch") {
+    return {
+      workLocationName: null,
+      branchName: nodeDisplayName(lookupData),
+      regionName: nodeDisplayName(lookupData.region),
+    };
+  }
+
+  const hierarchy = lookupData.hierarchy || [];
+  const workLocation =
+    lookupData.workLocation ||
+    findHierarchyByCode(hierarchy, "WORKLOC") ||
+    lookupData.requestedLookup;
+  const branch =
+    lookupData.branch || findHierarchyByCode(hierarchy, "BRANCH");
+  const region =
+    lookupData.region || findHierarchyByCode(hierarchy, "REGION");
+
+  return {
+    workLocationName:
+      nodeDisplayName(workLocation) ||
+      nodeDisplayName(lookupData.requestedLookup) ||
+      null,
+    branchName: nodeDisplayName(branch),
+    regionName: nodeDisplayName(region),
+  };
+};
+
 /**
  * Submit a new transfer request
  * Body: { currentWorkLocationId, requestedWorkLocationId, reason }
@@ -143,12 +189,11 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
           );
 
           const currentLocationData = currentLocationResponse.data || {};
-          const currentWorkLocationName =
-            currentLocationData.workLocation?.DisplayName ||
-            currentLocationData.requestedLookup?.DisplayName ||
-            null;
-          const currentBranchName = currentLocationData.branch?.DisplayName || null;
-          const currentRegionName = currentLocationData.region?.DisplayName || null;
+          const {
+            workLocationName: currentWorkLocationName,
+            branchName: currentBranchName,
+            regionName: currentRegionName,
+          } = extractLocationNamesFromHierarchy(currentLocationData);
 
           // Fetch hierarchy for requested work location
           const requestedLocationResponse = await axios.get(
@@ -161,12 +206,11 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
           );
 
           const requestedLocationData = requestedLocationResponse.data || {};
-          const requestedWorkLocationName =
-            requestedLocationData.workLocation?.DisplayName ||
-            requestedLocationData.requestedLookup?.DisplayName ||
-            null;
-          const requestedBranchName = requestedLocationData.branch?.DisplayName || null;
-          const requestedRegionName = requestedLocationData.region?.DisplayName || null;
+          const {
+            workLocationName: requestedWorkLocationName,
+            branchName: requestedBranchName,
+            regionName: requestedRegionName,
+          } = extractLocationNamesFromHierarchy(requestedLocationData);
 
           // Exclude userId from the response payload (CRM will use profile info instead)
           const { userId, ...requestWithoutUserId } = request;
@@ -270,12 +314,11 @@ exports.getTransferRequestsForPortal = async (req, res, next) => {
           );
 
           const currentLocationData = currentLocationResponse.data || {};
-          const currentWorkLocationName =
-            currentLocationData.workLocation?.DisplayName ||
-            currentLocationData.requestedLookup?.DisplayName ||
-            null;
-          const currentBranchName = currentLocationData.branch?.DisplayName || null;
-          const currentRegionName = currentLocationData.region?.DisplayName || null;
+          const {
+            workLocationName: currentWorkLocationName,
+            branchName: currentBranchName,
+            regionName: currentRegionName,
+          } = extractLocationNamesFromHierarchy(currentLocationData);
 
           // Fetch hierarchy for requested work location
           const requestedLocationResponse = await axios.get(
@@ -288,12 +331,11 @@ exports.getTransferRequestsForPortal = async (req, res, next) => {
           );
 
           const requestedLocationData = requestedLocationResponse.data || {};
-          const requestedWorkLocationName =
-            requestedLocationData.workLocation?.DisplayName ||
-            requestedLocationData.requestedLookup?.DisplayName ||
-            null;
-          const requestedBranchName = requestedLocationData.branch?.DisplayName || null;
-          const requestedRegionName = requestedLocationData.region?.DisplayName || null;
+          const {
+            workLocationName: requestedWorkLocationName,
+            branchName: requestedBranchName,
+            regionName: requestedRegionName,
+          } = extractLocationNamesFromHierarchy(requestedLocationData);
 
           return {
             ...request,
@@ -411,15 +453,11 @@ exports.reviewTransferRequest = async (req, res, next) => {
           );
 
           const lookupData = lookupResponse.data || {};
-
-          // Extract DisplayNames from hierarchy response (save as strings, not IDs)
-          // For work location use convenience field if present, otherwise fallback to requestedLookup.
-          const workLocationName =
-            lookupData.workLocation?.DisplayName ||
-            lookupData.requestedLookup?.DisplayName ||
-            null;
-          const branchName = lookupData.branch?.DisplayName || null;
-          const regionName = lookupData.region?.DisplayName || null;
+          const {
+            workLocationName,
+            branchName,
+            regionName,
+          } = extractLocationNamesFromHierarchy(lookupData);
 
           // Update profile with DisplayName strings (not IDs)
           if (!profile.professionalDetails) {

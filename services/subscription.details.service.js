@@ -5,6 +5,9 @@ const { APPLICATION_STATUS } = require("../constants/enums");
 const { AppError } = require("../errors/AppError");
 const mongoose = require("mongoose");
 const bizLogger = require("../config/bizLogger.js");
+const {
+  normalizeSubscriptionDetailsDates,
+} = require("../helpers/parseDateOnly.js");
 
 /**
  * Subscription Details Service Layer
@@ -98,6 +101,9 @@ class SubscriptionDetailsService {
         enforcePaymentFrequencyRule,
       } = require("../helpers/payment.frequency.helper.js");
       createData.subscriptionDetails = enforcePaymentFrequencyRule(
+        createData.subscriptionDetails
+      );
+      createData.subscriptionDetails = normalizeSubscriptionDetailsDates(
         createData.subscriptionDetails
       );
 
@@ -342,6 +348,9 @@ class SubscriptionDetailsService {
           enforcePaymentFrequencyRule,
         } = require("../helpers/payment.frequency.helper.js");
         safeUpdateData.subscriptionDetails = enforcePaymentFrequencyRule(
+          safeUpdateData.subscriptionDetails
+        );
+        safeUpdateData.subscriptionDetails = normalizeSubscriptionDetailsDates(
           safeUpdateData.subscriptionDetails
         );
       }

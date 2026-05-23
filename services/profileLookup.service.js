@@ -4,6 +4,7 @@ const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
   generateMembershipNumber,
 } = require("../helpers/membership.number.generator.js");
+const { parseDateOnlyToUtcNoon } = require("../helpers/parseDateOnly.js");
 const { publishProfileAfterUpdateOne } = require("./profile.audit.publisher.js");
 
 // Helper function to handle bypass user ObjectId conversion
@@ -101,11 +102,11 @@ async function findOrCreateProfileByEmail({
     const now = new Date();
     // Use dateJoined from approval if available, otherwise use current date
     const firstJoinedDate = effective.subscriptionDetails?.dateJoined
-      ? new Date(effective.subscriptionDetails.dateJoined)
-      : now;
+      ? parseDateOnlyToUtcNoon(effective.subscriptionDetails.dateJoined, true)
+      : parseDateOnlyToUtcNoon(null, true);
     const submissionDate =
       effective.subscriptionDetails?.submissionDate != null
-        ? new Date(effective.subscriptionDetails.submissionDate)
+        ? parseDateOnlyToUtcNoon(effective.subscriptionDetails.submissionDate, false)
         : now;
 
     // Generate membership number for new profile
