@@ -103,6 +103,8 @@ const MemberPaymentFormSchema = new mongoose.Schema(
       creditorCity: String,
       creditorPostcode: String,
       creditorCountry: String,
+      creditorIban: String,
+      creditorBic: String,
       uniqueMandateReference: String,
       paymentTypeRecurrent: { type: Boolean, default: true },
       debtorName: String,

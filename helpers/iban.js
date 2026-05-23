@@ -1,7 +1,12 @@
 function normalizeIban(value) {
   return String(value || "")
+    .trim()
     .replace(/\s+/g, "")
     .toUpperCase();
+}
+
+function isMaskedIban(value) {
+  return String(value || "").includes("****");
 }
 
 function mod97(iban) {
@@ -57,7 +62,12 @@ function debtorMatchesOrganisationBank({ debtorIban, organisationIban }) {
   const orgIban = normalizeIban(organisationIban);
   const memberIban = normalizeIban(debtorIban);
 
-  if (orgIban && memberIban && memberIban === orgIban) {
+  if (
+    orgIban &&
+    memberIban &&
+    !isMaskedIban(memberIban) &&
+    memberIban === orgIban
+  ) {
     return {
       matches: true,
       message:

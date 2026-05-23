@@ -216,6 +216,8 @@ async function hydrateFormFields(profile, subscription, tenantCtx, formType) {
         creditorCity: ben.creditorCity,
         creditorPostcode: ben.creditorPostcode,
         creditorCountry: ben.creditorCountry,
+        creditorIban: org.iban || "",
+        creditorBic: org.bic || "",
         uniqueMandateReference: profile.membershipNumber,
         paymentTypeRecurrent: true,
         debtorName: memberName,
@@ -353,10 +355,34 @@ async function prefillForm({ tenantId, profileId, formType, req }) {
 
 function resolveOrganisationBankDetails(form) {
   const org = form.organisationSnapshot || {};
+  const orgProfile =
+    org.organisationProfile && typeof org.organisationProfile === "object"
+      ? org.organisationProfile
+      : org;
   const so = form.standingOrder || {};
+  const dd = form.directDebitMandate || {};
+  const pickIban = (...values) => {
+    for (const v of values) {
+      const n = normalizeIban(v);
+      if (n) return n;
+    }
+    return "";
+  };
+  const pickBic = (...values) => {
+    for (const v of values) {
+      const n = normalizeBic(v);
+      if (n) return n;
+    }
+    return "";
+  };
   return {
-    iban: so.beneficiaryIban || org.iban || "",
-    bic: so.beneficiaryBic || org.bic || "",
+    iban: pickIban(
+      so.beneficiaryIban,
+      dd.creditorIban,
+      org.iban,
+      orgProfile.iban
+    ),
+    bic: pickBic(so.beneficiaryBic, dd.creditorBic, org.bic, orgProfile.bic),
   };
 }
 
@@ -478,6 +504,10 @@ function applyFormBodyUpdates(form, body) {
         typeof dd.isAuthorized === "boolean"
           ? dd.isAuthorized
           : form.directDebitMandate.isAuthorized,
+      paymentTypeRecurrent:
+        typeof dd.paymentTypeRecurrent === "boolean"
+          ? dd.paymentTypeRecurrent
+          : form.directDebitMandate.paymentTypeRecurrent,
     });
   }
 
