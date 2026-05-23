@@ -363,13 +363,12 @@ function resolveOrganisationBankDetails(form) {
   };
 }
 
-function assertDebtorNotOrganisationBank(form, { debtorIban, debtorBic }) {
+function assertDebtorNotOrganisationBank(form, { debtorIban }) {
+  if (!debtorIban) return;
   const orgBank = resolveOrganisationBankDetails(form);
   const match = debtorMatchesOrganisationBank({
     debtorIban,
-    debtorBic,
     organisationIban: orgBank.iban,
-    organisationBic: orgBank.bic,
   });
   if (match.matches) {
     throw AppError.badRequest(match.message);
@@ -379,11 +378,8 @@ function assertDebtorNotOrganisationBank(form, { debtorIban, debtorBic }) {
 function applyFormBodyUpdates(form, body) {
   if (body.standingOrder) {
     const so = body.standingOrder;
-    if (so.debtorIban || so.debtorBic) {
-      assertDebtorNotOrganisationBank(form, {
-        debtorIban: so.debtorIban,
-        debtorBic: so.debtorBic,
-      });
+    if (so.debtorIban) {
+      assertDebtorNotOrganisationBank(form, { debtorIban: so.debtorIban });
     }
     if (so.debtorIban) {
       const v = validateIban(so.debtorIban);
@@ -459,11 +455,8 @@ function applyFormBodyUpdates(form, body) {
 
   if (body.directDebitMandate) {
     const dd = body.directDebitMandate;
-    if (dd.debtorIban || dd.debtorBic) {
-      assertDebtorNotOrganisationBank(form, {
-        debtorIban: dd.debtorIban,
-        debtorBic: dd.debtorBic,
-      });
+    if (dd.debtorIban) {
+      assertDebtorNotOrganisationBank(form, { debtorIban: dd.debtorIban });
     }
     if (dd.debtorIban) {
       const v = validateIban(dd.debtorIban);
@@ -810,13 +803,11 @@ function assertFormReadyToSubmit(form) {
   if (form.formType === "STANDING_ORDER" && form.standingOrder?.debtorIban?.value) {
     assertDebtorNotOrganisationBank(form, {
       debtorIban: decryptField(form.standingOrder.debtorIban),
-      debtorBic: decryptField(form.standingOrder.debtorBic),
     });
   }
   if (form.formType === "DD_MANDATE" && form.directDebitMandate?.debtorIban?.value) {
     assertDebtorNotOrganisationBank(form, {
       debtorIban: decryptField(form.directDebitMandate.debtorIban),
-      debtorBic: decryptField(form.directDebitMandate.debtorBic),
     });
   }
 }

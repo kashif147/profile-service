@@ -53,29 +53,15 @@ function validateBic(value) {
   return { valid: true, bic };
 }
 
-function debtorMatchesOrganisationBank({
-  debtorIban,
-  debtorBic,
-  organisationIban,
-  organisationBic,
-}) {
+function debtorMatchesOrganisationBank({ debtorIban, organisationIban }) {
   const orgIban = normalizeIban(organisationIban);
-  const orgBic = normalizeBic(organisationBic);
   const memberIban = normalizeIban(debtorIban);
-  const memberBic = normalizeBic(debtorBic);
 
   if (orgIban && memberIban && memberIban === orgIban) {
     return {
       matches: true,
       message:
         "Debtor IBAN cannot be the same as the organisation creditor/beneficiary IBAN",
-    };
-  }
-  if (orgBic && memberBic && memberBic === orgBic) {
-    return {
-      matches: true,
-      message:
-        "Debtor BIC cannot be the same as the organisation creditor/beneficiary BIC",
     };
   }
   return { matches: false };
