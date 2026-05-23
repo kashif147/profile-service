@@ -8,6 +8,7 @@ const portalRead = defaultPolicyMiddleware.requirePermission("portal", "read");
 const portalWrite = defaultPolicyMiddleware.requirePermission("portal", "write");
 
 router.put("/filter", portalRead, controller.filterPaymentForms);
+router.get("/prefill", portalRead, controller.prefillPaymentForm);
 router.post("/", portalWrite, controller.createPaymentForm);
 router.get("/profile/:profileId", portalRead, controller.listProfilePaymentForms);
 router.get("/:id", portalRead, controller.getPaymentFormById);

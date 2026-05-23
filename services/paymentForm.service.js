@@ -199,9 +199,17 @@ function decryptFormForResponse(doc, { includeSensitive = false } = {}) {
     if (o.standingOrder?.debtorIban?.value) {
       o.standingOrder.debtorIbanPlain = decryptField(o.standingOrder.debtorIban);
     }
+    if (o.standingOrder?.debtorBic?.value) {
+      o.standingOrder.debtorBicPlain = decryptField(o.standingOrder.debtorBic);
+    }
     if (o.directDebitMandate?.debtorIban?.value) {
       o.directDebitMandate.debtorIbanPlain = decryptField(
         o.directDebitMandate.debtorIban
+      );
+    }
+    if (o.directDebitMandate?.debtorBic?.value) {
+      o.directDebitMandate.debtorBicPlain = decryptField(
+        o.directDebitMandate.debtorBic
       );
     }
   }
@@ -221,7 +229,122 @@ function pushAudit(form, action, req, extra = {}) {
   });
 }
 
-async function createDraft({ tenantId, profileId, formType, req, source = "crm" }) {
+async function prefillForm({ tenantId, profileId, formType, req }) {
+  if (!PAYMENT_FORM_TYPES.includes(formType)) {
+    throw AppError.badRequest(`formType must be one of: ${PAYMENT_FORM_TYPES.join(", ")}`);
+  }
+  const profile = await loadProfileForTenant(profileId, tenantId);
+  const subscription = await fetchCurrentSubscriptionByProfileId(
+    profileId,
+    tenantId,
+    req,
+    profile.currentSubscriptionId
+  );
+  const tenantCtx = await fetchTenantContext(tenantId, req);
+  const hydrated = await hydrateFormFields(
+    profile,
+    subscription,
+    tenantCtx,
+    formType
+  );
+  return {
+    formType,
+    profileId: String(profile._id),
+    membershipNumber: profile.membershipNumber,
+    source: "crm",
+    unsaved: true,
+    formTypeLabel: FORM_TYPE_LABELS[formType] || formType,
+    ...hydrated,
+  };
+}
+
+function applyFormBodyUpdates(form, body) {
+  if (body.standingOrder) {
+    const so = body.standingOrder;
+    if (so.debtorIban) {
+      const v = validateIban(so.debtorIban);
+      if (!v.valid) throw AppError.badRequest(v.message);
+      form.standingOrder.debtorIban = encryptField(v.iban);
+    }
+    if (so.debtorBic) {
+      const b = validateBic(so.debtorBic);
+      if (!b.valid) throw AppError.badRequest(b.message);
+      form.standingOrder.debtorBic = encryptField(b.bic);
+    }
+    Object.assign(form.standingOrder, {
+      debtorBankName: so.debtorBankName ?? form.standingOrder.debtorBankName,
+      debtorBankAddress:
+        so.debtorBankAddress ?? form.standingOrder.debtorBankAddress,
+      debtorAccountName:
+        so.debtorAccountName ?? form.standingOrder.debtorAccountName,
+      startDate: so.startDate ? new Date(so.startDate) : form.standingOrder.startDate,
+      signatureDates:
+        so.signatureDates?.length > 0
+          ? so.signatureDates.map((d) => new Date(d))
+          : form.standingOrder.signatureDates,
+    });
+  }
+
+  if (body.salaryDeduction) {
+    const sd = body.salaryDeduction;
+    Object.assign(form.salaryDeduction, {
+      commencingDate: sd.commencingDate
+        ? new Date(sd.commencingDate)
+        : form.salaryDeduction.commencingDate,
+      signedDate: sd.signedDate
+        ? new Date(sd.signedDate)
+        : form.salaryDeduction.signedDate,
+      payrollStaffNo: sd.payrollStaffNo ?? form.salaryDeduction.payrollStaffNo,
+      employedAt: sd.employedAt ?? form.salaryDeduction.employedAt,
+    });
+  }
+
+  if (body.directDebitMandate) {
+    const dd = body.directDebitMandate;
+    if (dd.debtorIban) {
+      const v = validateIban(dd.debtorIban);
+      if (!v.valid) throw AppError.badRequest(v.message);
+      form.directDebitMandate.debtorIban = encryptField(v.iban);
+    }
+    if (dd.debtorBic) {
+      const b = validateBic(dd.debtorBic);
+      if (!b.valid) throw AppError.badRequest(b.message);
+      form.directDebitMandate.debtorBic = encryptField(b.bic);
+    }
+    Object.assign(form.directDebitMandate, {
+      debtorName: dd.debtorName ?? form.directDebitMandate.debtorName,
+      debtorAddress: dd.debtorAddress ?? form.directDebitMandate.debtorAddress,
+      debtorCity: dd.debtorCity ?? form.directDebitMandate.debtorCity,
+      debtorPostcode: dd.debtorPostcode ?? form.directDebitMandate.debtorPostcode,
+      debtorCountry: dd.debtorCountry ?? form.directDebitMandate.debtorCountry,
+      signedDate: dd.signedDate
+        ? new Date(dd.signedDate)
+        : form.directDebitMandate.signedDate,
+      isAuthorized:
+        typeof dd.isAuthorized === "boolean"
+          ? dd.isAuthorized
+          : form.directDebitMandate.isAuthorized,
+    });
+  }
+
+  if (body.emailOptions) {
+    form.emailOptions = { ...form.emailOptions?.toObject?.(), ...body.emailOptions };
+  }
+
+  if (body.gdpr?.consentCapturedAt) {
+    form.gdpr = form.gdpr || {};
+    form.gdpr.consentCapturedAt = new Date(body.gdpr.consentCapturedAt);
+  }
+}
+
+async function createForm({
+  tenantId,
+  profileId,
+  formType,
+  req,
+  source = "crm",
+  payload = {},
+}) {
   if (!PAYMENT_FORM_TYPES.includes(formType)) {
     throw AppError.badRequest(`formType must be one of: ${PAYMENT_FORM_TYPES.join(", ")}`);
   }
@@ -245,16 +368,20 @@ async function createDraft({ tenantId, profileId, formType, req, source = "crm" 
     profileId: profile._id,
     membershipNumber: profile.membershipNumber,
     formType,
-    status: "generated",
+    status: "draft",
     source,
     ...hydrated,
     meta: { createdBy: req.user?.id || null },
     visibility: { portalVisible: false },
   });
 
+  if (payload && Object.keys(payload).length > 0) {
+    applyFormBodyUpdates(form, payload);
+  }
+
   pushAudit(form, "created", req, { channel: source });
   await form.save();
-  return decryptFormForResponse(form, { includeSensitive: true });
+  return getById(String(form._id), tenantId, { includeSensitive: true });
 }
 
 async function listWithFilter({ tenantId, filters = {}, page = 1, limit = 500 }) {
@@ -362,78 +489,7 @@ async function updateForm(id, tenantId, body, req, { portal = false } = {}) {
     throw AppError.forbidden("Access denied");
   }
 
-  if (body.standingOrder) {
-    const so = body.standingOrder;
-    if (so.debtorIban) {
-      const v = validateIban(so.debtorIban);
-      if (!v.valid) throw AppError.badRequest(v.message);
-      form.standingOrder.debtorIban = encryptField(v.iban);
-    }
-    if (so.debtorBic) {
-      const b = validateBic(so.debtorBic);
-      if (!b.valid) throw AppError.badRequest(b.message);
-      form.standingOrder.debtorBic = encryptField(b.bic);
-    }
-    Object.assign(form.standingOrder, {
-      debtorBankName: so.debtorBankName ?? form.standingOrder.debtorBankName,
-      debtorBankAddress:
-        so.debtorBankAddress ?? form.standingOrder.debtorBankAddress,
-      debtorAccountName:
-        so.debtorAccountName ?? form.standingOrder.debtorAccountName,
-      startDate: so.startDate ? new Date(so.startDate) : form.standingOrder.startDate,
-      signatureDates: so.signatureDates || form.standingOrder.signatureDates,
-    });
-  }
-
-  if (body.salaryDeduction) {
-    const sd = body.salaryDeduction;
-    Object.assign(form.salaryDeduction, {
-      commencingDate: sd.commencingDate
-        ? new Date(sd.commencingDate)
-        : form.salaryDeduction.commencingDate,
-      signedDate: sd.signedDate
-        ? new Date(sd.signedDate)
-        : form.salaryDeduction.signedDate,
-      payrollStaffNo: sd.payrollStaffNo ?? form.salaryDeduction.payrollStaffNo,
-      employedAt: sd.employedAt ?? form.salaryDeduction.employedAt,
-    });
-  }
-
-  if (body.directDebitMandate) {
-    const dd = body.directDebitMandate;
-    if (dd.debtorIban) {
-      const v = validateIban(dd.debtorIban);
-      if (!v.valid) throw AppError.badRequest(v.message);
-      form.directDebitMandate.debtorIban = encryptField(v.iban);
-    }
-    if (dd.debtorBic) {
-      const b = validateBic(dd.debtorBic);
-      if (!b.valid) throw AppError.badRequest(b.message);
-      form.directDebitMandate.debtorBic = encryptField(b.bic);
-    }
-    Object.assign(form.directDebitMandate, {
-      debtorName: dd.debtorName ?? form.directDebitMandate.debtorName,
-      debtorAddress: dd.debtorAddress ?? form.directDebitMandate.debtorAddress,
-      debtorCity: dd.debtorCity ?? form.directDebitMandate.debtorCity,
-      debtorPostcode: dd.debtorPostcode ?? form.directDebitMandate.debtorPostcode,
-      debtorCountry: dd.debtorCountry ?? form.directDebitMandate.debtorCountry,
-      signedDate: dd.signedDate
-        ? new Date(dd.signedDate)
-        : form.directDebitMandate.signedDate,
-      isAuthorized:
-        typeof dd.isAuthorized === "boolean"
-          ? dd.isAuthorized
-          : form.directDebitMandate.isAuthorized,
-    });
-  }
-
-  if (body.emailOptions) {
-    form.emailOptions = { ...form.emailOptions?.toObject?.(), ...body.emailOptions };
-  }
-
-  if (body.gdpr?.consentCapturedAt) {
-    form.gdpr.consentCapturedAt = new Date(body.gdpr.consentCapturedAt);
-  }
+  applyFormBodyUpdates(form, body);
 
   form.meta = form.meta || {};
   form.meta.updatedBy = req.user?.id || req.userId || null;
@@ -554,6 +610,14 @@ async function approveForm(id, tenantId, req) {
     correlationId: require("crypto").randomUUID(),
   });
 
+  const emailed = await queueMemberNotificationEmail(form, profile, req, {
+    trigger: "approval",
+  });
+  if (emailed) {
+    pushAudit(form, "email_queued", req, { automatic: true });
+    await form.save();
+  }
+
   return getById(id, tenantId, { includeSensitive: true });
 }
 
@@ -622,43 +686,71 @@ async function uploadSignedPdf(id, tenantId, file, req) {
   return getById(id, tenantId, { includeSensitive: true });
 }
 
-async function sendFormEmail(id, tenantId, emailBody, req) {
-  const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
-  if (!form) throw AppError.notFound("Payment form not found");
+const APPROVAL_EMAIL_BODY =
+  "Your payment form has been approved. You can view it in the member portal.";
 
-  const profile = await Profile.findById(form.profileId).lean();
+async function queueMemberNotificationEmail(
+  form,
+  profile,
+  req,
+  { sendTo: overrideTo, subject, body, attachPdf = true, trigger = "manual" } = {}
+) {
   const sendTo =
-    emailBody.sendTo ||
+    overrideTo ||
     profile?.contactInfo?.personalEmail ||
     profile?.contactInfo?.workEmail;
-  if (!sendTo) throw AppError.badRequest("Recipient email is required");
+  if (!sendTo) return false;
+
+  const resolvedSubject =
+    subject ||
+    `${FORM_TYPE_LABELS[form.formType]} – ${form.membershipNumber}`;
+  const resolvedBody =
+    body ||
+    (trigger === "approval" ? APPROVAL_EMAIL_BODY : "Please find your payment form attached.");
 
   form.emailOptions = {
     sendTo,
-    subject:
-      emailBody.subject ||
-      `${FORM_TYPE_LABELS[form.formType]} – ${form.membershipNumber}`,
-    body: emailBody.body || "",
-    attachPdf: emailBody.attachPdf !== false,
+    subject: resolvedSubject,
+    body: resolvedBody,
+    attachPdf: attachPdf !== false,
     sentAt: new Date(),
     sentBy: req.user?.id || req.userId,
+    trigger,
   };
 
   await PaymentFormEventPublisher.publishMemberNotificationRequested({
-    tenantId,
+    tenantId: form.tenantId,
     userId: form.userId || profile?.userId?.toString?.(),
     profileId: String(form.profileId),
-    title: form.emailOptions.subject,
-    body: form.emailOptions.body || "Please find your payment form attached.",
+    title: resolvedSubject,
+    body: resolvedBody,
     metadata: {
       type: "PAYMENT_FORM_EMAIL",
       paymentFormId: String(form._id),
       formType: form.formType,
       memberId: form.membershipNumber,
       sendTo,
+      trigger,
     },
     correlationId: require("crypto").randomUUID(),
   });
+
+  return true;
+}
+
+async function sendFormEmail(id, tenantId, emailBody, req) {
+  const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
+  if (!form) throw AppError.notFound("Payment form not found");
+
+  const profile = await Profile.findById(form.profileId).lean();
+  const queued = await queueMemberNotificationEmail(form, profile, req, {
+    sendTo: emailBody.sendTo,
+    subject: emailBody.subject,
+    body: emailBody.body,
+    attachPdf: emailBody.attachPdf,
+    trigger: "manual",
+  });
+  if (!queued) throw AppError.badRequest("Recipient email is required");
 
   pushAudit(form, "email_queued", req);
   await form.save();
@@ -690,7 +782,8 @@ async function listPortalForUser(tenantId, userId, req) {
 }
 
 module.exports = {
-  createDraft,
+  prefillForm,
+  createForm,
   listWithFilter,
   getById,
   updateForm,

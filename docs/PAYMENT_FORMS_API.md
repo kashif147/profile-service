@@ -7,7 +7,8 @@ Base path: `/api/payment-forms` (requires authentication).
 | Method | Path | Description |
 |--------|------|-------------|
 | `PUT` | `/filter` | List/filter payment forms (`paymentForms`, pagination) |
-| `POST` | `/` | Create & hydrate form (`profileId`, `formType`) |
+| `GET` | `/prefill?profileId=&formType=` | Hydrated preview (not stored) |
+| `POST` | `/` | Save new form (`profileId`, `formType`, optional field body); status `draft` |
 | `GET` | `/profile/:profileId` | List forms for member Documents tab |
 | `GET` | `/:id` | Get one (includes sensitive fields for CRM) |
 | `PATCH` | `/:id` | Update debtor/creditor fields |
@@ -17,7 +18,9 @@ Base path: `/api/payment-forms` (requires authentication).
 | `POST` | `/:id/reject` | Reject |
 | `POST` | `/:id/upload-paper` | Multipart `file` – paper scan |
 | `POST` | `/:id/upload-signed` | Multipart `file` – signed PDF |
-| `POST` | `/:id/send-email` | Queue email via `members.member.notification.requested.v1` |
+| `POST` | `/:id/send-email` | Queue email manually (CRM automation uses approve instead) |
+
+On **approve**, profile-service automatically queues member email (when profile has an address) and publishes `members.payment-form.approved.v1` for portal push.
 
 ### `formType` values
 

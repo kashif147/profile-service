@@ -2,20 +2,41 @@ const paymentFormService = require("../services/paymentForm.service.js");
 const { AppError } = require("../errors/AppError.js");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 
-exports.createPaymentForm = async (req, res, next) => {
+exports.prefillPaymentForm = async (req, res, next) => {
   try {
-    const { profileId, formType } = req.body;
+    const { profileId, formType } = req.query;
     if (!profileId || !formType) {
       return next(AppError.badRequest("profileId and formType are required"));
     }
     const { tenantId } = extractUserAndCreatorContext(req);
     if (!tenantId) return next(AppError.badRequest("tenantId is required"));
-    const data = await paymentFormService.createDraft({
+    const data = await paymentFormService.prefillForm({
+      tenantId,
+      profileId,
+      formType,
+      req,
+    });
+    return res.success({ paymentForm: data });
+  } catch (e) {
+    return next(e);
+  }
+};
+
+exports.createPaymentForm = async (req, res, next) => {
+  try {
+    const { profileId, formType, ...payload } = req.body;
+    if (!profileId || !formType) {
+      return next(AppError.badRequest("profileId and formType are required"));
+    }
+    const { tenantId } = extractUserAndCreatorContext(req);
+    if (!tenantId) return next(AppError.badRequest("tenantId is required"));
+    const data = await paymentFormService.createForm({
       tenantId,
       profileId,
       formType,
       req,
       source: "crm",
+      payload,
     });
     return res.success({ paymentForm: data });
   } catch (e) {
@@ -230,17 +251,18 @@ exports.portalSubmit = async (req, res, next) => {
 exports.portalCreate = async (req, res, next) => {
   try {
     const { tenantId, userId } = extractUserAndCreatorContext(req);
-    const { formType } = req.body;
+    const { formType, ...payload } = req.body;
     if (!formType) return next(AppError.badRequest("formType is required"));
     const Profile = require("../models/profile.model.js");
     const profile = await Profile.findOne({ tenantId, userId }).lean();
     if (!profile) return next(AppError.notFound("Member profile not found"));
-    const data = await paymentFormService.createDraft({
+    const data = await paymentFormService.createForm({
       tenantId,
       profileId: profile._id,
       formType,
       req,
       source: "portal",
+      payload,
     });
     return res.success({ paymentForm: data });
   } catch (e) {
