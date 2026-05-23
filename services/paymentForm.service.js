@@ -25,6 +25,7 @@ const {
   validateBic,
   maskIban,
   normalizeIban,
+  debtorMatchesOrganisationBank,
 } = require("../helpers/iban.js");
 const { encryptField, decryptField } = require("../helpers/paymentFormCrypto.js");
 const azureBlob = require("./azure.blob.service.js");
@@ -353,9 +354,37 @@ async function prefillForm({ tenantId, profileId, formType, req }) {
   };
 }
 
+function resolveOrganisationBankDetails(form) {
+  const org = form.organisationSnapshot || {};
+  const so = form.standingOrder || {};
+  return {
+    iban: so.beneficiaryIban || org.iban || "",
+    bic: so.beneficiaryBic || org.bic || "",
+  };
+}
+
+function assertDebtorNotOrganisationBank(form, { debtorIban, debtorBic }) {
+  const orgBank = resolveOrganisationBankDetails(form);
+  const match = debtorMatchesOrganisationBank({
+    debtorIban,
+    debtorBic,
+    organisationIban: orgBank.iban,
+    organisationBic: orgBank.bic,
+  });
+  if (match.matches) {
+    throw AppError.badRequest(match.message);
+  }
+}
+
 function applyFormBodyUpdates(form, body) {
   if (body.standingOrder) {
     const so = body.standingOrder;
+    if (so.debtorIban || so.debtorBic) {
+      assertDebtorNotOrganisationBank(form, {
+        debtorIban: so.debtorIban,
+        debtorBic: so.debtorBic,
+      });
+    }
     if (so.debtorIban) {
       const v = validateIban(so.debtorIban);
       if (!v.valid) throw AppError.badRequest(v.message);
@@ -430,6 +459,12 @@ function applyFormBodyUpdates(form, body) {
 
   if (body.directDebitMandate) {
     const dd = body.directDebitMandate;
+    if (dd.debtorIban || dd.debtorBic) {
+      assertDebtorNotOrganisationBank(form, {
+        debtorIban: dd.debtorIban,
+        debtorBic: dd.debtorBic,
+      });
+    }
     if (dd.debtorIban) {
       const v = validateIban(dd.debtorIban);
       if (!v.valid) throw AppError.badRequest(v.message);
@@ -771,6 +806,18 @@ function assertFormReadyToSubmit(form) {
     if (!sd.commencingDate) {
       throw AppError.badRequest("Commencing date is required for salary deduction forms");
     }
+  }
+  if (form.formType === "STANDING_ORDER" && form.standingOrder?.debtorIban?.value) {
+    assertDebtorNotOrganisationBank(form, {
+      debtorIban: decryptField(form.standingOrder.debtorIban),
+      debtorBic: decryptField(form.standingOrder.debtorBic),
+    });
+  }
+  if (form.formType === "DD_MANDATE" && form.directDebitMandate?.debtorIban?.value) {
+    assertDebtorNotOrganisationBank(form, {
+      debtorIban: decryptField(form.directDebitMandate.debtorIban),
+      debtorBic: decryptField(form.directDebitMandate.debtorBic),
+    });
   }
 }
 
