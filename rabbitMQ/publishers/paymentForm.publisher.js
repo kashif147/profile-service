@@ -11,7 +11,7 @@ class PaymentFormEventPublisher {
     membershipNumber,
     correlationId,
   }) {
-    return publisher.publish(
+    const result = await publisher.publish(
       PAYMENT_FORM_EVENTS.PAYMENT_FORM_APPROVED,
       {
         tenantId,
@@ -30,6 +30,14 @@ class PaymentFormEventPublisher {
         metadata: { service: "profile-service", version: "1.0" },
       }
     );
+    if (!result?.success) {
+      console.warn(
+        "[paymentForm] publishPaymentFormApproved failed:",
+        result?.error || "unknown",
+        { paymentFormId, formType }
+      );
+    }
+    return result;
   }
 
   async publishMemberNotificationRequested({

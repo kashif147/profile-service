@@ -520,10 +520,12 @@ function applyFormBodyUpdates(form, body) {
         typeof dd.isAuthorized === "boolean"
           ? dd.isAuthorized
           : form.directDebitMandate.isAuthorized,
-      paymentTypeRecurrent:
-        typeof dd.paymentTypeRecurrent === "boolean"
-          ? dd.paymentTypeRecurrent
-          : form.directDebitMandate.paymentTypeRecurrent,
+      paymentTypeRecurrent: Object.prototype.hasOwnProperty.call(
+        dd,
+        "paymentTypeRecurrent"
+      )
+        ? Boolean(dd.paymentTypeRecurrent)
+        : form.directDebitMandate.paymentTypeRecurrent,
     });
   }
 
@@ -776,6 +778,10 @@ async function updateForm(id, tenantId, body, req, { portal = false } = {}) {
     throw AppError.forbidden("Access denied");
   }
 
+  if (form.status === "active") {
+    throw AppError.badRequest("Approved payment forms cannot be edited");
+  }
+
   applyFormBodyUpdates(form, body);
 
   if (Array.isArray(body.signatures) && body.signatures.length > 0) {
@@ -959,15 +965,34 @@ async function approveForm(id, tenantId, req) {
   await syncSubscriptionPaymentType(form, req);
 
   const profile = await Profile.findById(form.profileId).lean();
-  await PaymentFormEventPublisher.publishPaymentFormApproved({
+  const memberUserId =
+    form.userId?.toString?.() || profile?.userId?.toString?.() || null;
+  if (!form.userId && memberUserId) {
+    form.userId = memberUserId;
+    await form.save();
+  }
+
+  const approvalPublish = await PaymentFormEventPublisher.publishPaymentFormApproved({
     tenantId,
-    userId: form.userId || profile?.userId?.toString?.(),
+    userId: memberUserId,
     profileId: String(form.profileId),
     paymentFormId: String(form._id),
     formType: form.formType,
     membershipNumber: form.membershipNumber,
     correlationId: require("crypto").randomUUID(),
   });
+  if (!approvalPublish?.success) {
+    console.warn(
+      "[paymentForm] approval notification event failed:",
+      approvalPublish?.error || "unknown",
+      { paymentFormId: String(form._id), formType: form.formType }
+    );
+  } else if (!memberUserId) {
+    console.warn(
+      "[paymentForm] approval notification skipped — no portal userId on form or profile",
+      { paymentFormId: String(form._id), profileId: String(form.profileId) }
+    );
+  }
 
   const emailed = await queueMemberNotificationEmail(form, profile, req, {
     trigger: "approval",
@@ -1124,22 +1149,25 @@ async function queueMemberNotificationEmail(
     trigger,
   };
 
-  await PaymentFormEventPublisher.publishMemberNotificationRequested({
-    tenantId: form.tenantId,
-    userId: form.userId || profile?.userId?.toString?.(),
-    profileId: String(form.profileId),
-    title: resolvedSubject,
-    body: resolvedBody,
-    metadata: {
-      type: "PAYMENT_FORM_EMAIL",
-      paymentFormId: String(form._id),
-      formType: form.formType,
-      memberId: form.membershipNumber,
-      sendTo,
-      trigger,
-    },
-    correlationId: require("crypto").randomUUID(),
-  });
+  // Approval push is sent via members.payment-form.approved.v1 (not gated on email).
+  if (trigger !== "approval") {
+    await PaymentFormEventPublisher.publishMemberNotificationRequested({
+      tenantId: form.tenantId,
+      userId: form.userId || profile?.userId?.toString?.(),
+      profileId: String(form.profileId),
+      title: resolvedSubject,
+      body: resolvedBody,
+      metadata: {
+        type: "PAYMENT_FORM_EMAIL",
+        paymentFormId: String(form._id),
+        formType: form.formType,
+        memberId: form.membershipNumber,
+        sendTo,
+        trigger,
+      },
+      correlationId: require("crypto").randomUUID(),
+    });
+  }
 
   return true;
 }

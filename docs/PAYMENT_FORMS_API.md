@@ -20,7 +20,7 @@ Base path: `/api/payment-forms` (requires authentication).
 | `POST` | `/:id/upload-signed` | Multipart `file` – signed PDF |
 | `POST` | `/:id/send-email` | Queue email manually (CRM automation uses approve instead) |
 
-On **approve**, profile-service automatically queues member email (when profile has an address) and publishes `members.payment-form.approved.v1` for portal push.
+On **approve**, profile-service publishes `members.payment-form.approved.v1` for portal/mobile push (all form types, requires member `userId` on profile). Email options are recorded when the profile has an address; push is not gated on email.
 
 ### `formType` values
 
