@@ -8,9 +8,15 @@ const portalRead = defaultPolicyMiddleware.requirePermission("portal", "read");
 const portalWrite = defaultPolicyMiddleware.requirePermission("portal", "write");
 
 router.put("/filter", portalRead, controller.filterPaymentForms);
+router.post(
+  "/direct-debit/mandates-for-prepare",
+  portalRead,
+  controller.listDirectDebitMandatesForPrepare,
+);
 router.get("/prefill", portalRead, controller.prefillPaymentForm);
 router.post("/", portalWrite, controller.createPaymentForm);
 router.get("/profile/:profileId", portalRead, controller.listProfilePaymentForms);
+router.get("/:id/pdf", portalRead, controller.downloadPaymentFormPdf);
 router.get("/:id", portalRead, controller.getPaymentFormById);
 router.patch("/:id", portalWrite, controller.updatePaymentForm);
 router.post("/:id/submit", portalWrite, controller.submitPaymentForm);

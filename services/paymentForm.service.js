@@ -1231,6 +1231,20 @@ function collectPaymentFormBlobPaths(form) {
   return [...new Set(paths)];
 }
 
+async function exportFormPdf(id, tenantId) {
+  const form = await getById(id, tenantId, { includeSensitive: true });
+  const {
+    buildPaymentFormPdfBuffer,
+    pdfFilenameForForm,
+  } = require("./paymentFormPdf.service.js");
+  const buffer = await buildPaymentFormPdfBuffer(form);
+  return {
+    buffer,
+    filename: pdfFilenameForForm(form),
+    contentType: "application/pdf",
+  };
+}
+
 async function deleteForm(id, tenantId) {
   const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
   if (!form) throw AppError.notFound("Payment form not found");
@@ -1245,6 +1259,102 @@ async function deleteForm(id, tenantId) {
   return { deleted: true, id: String(form._id) };
 }
 
+function resolveMemberNameFromProfile(profile) {
+  const pi = profile?.personalInfo || {};
+  const forename = pi.forename || pi.firstName || "";
+  const surname = pi.surname || pi.lastName || "";
+  return `${forename} ${surname}`.trim() || profile?.membershipNumber || "";
+}
+
+/**
+ * CRM-authenticated: active authorized DD mandates with decrypted debtor fields.
+ * Called by account-service during DD run prepare (JWT forwarded from CRM user).
+ */
+async function listDirectDebitMandatesForPrepare({ tenantId, profileIds = [] }) {
+  const query = {
+    tenantId,
+    formType: "DD_MANDATE",
+    status: "active",
+    "directDebitMandate.isAuthorized": true,
+  };
+
+  const objectIds = (profileIds || [])
+    .map((id) => {
+      try {
+        if (mongoose.Types.ObjectId.isValid(id)) {
+          return new mongoose.Types.ObjectId(id);
+        }
+      } catch {
+        /* skip */
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+  if (objectIds.length) {
+    query.profileId = { $in: objectIds };
+  }
+
+  const forms = await MemberPaymentForm.find(query)
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  const byProfile = new Map();
+  for (const form of forms) {
+    const key = String(form.profileId);
+    if (!byProfile.has(key)) byProfile.set(key, form);
+  }
+
+  const uniqueProfileIds = [...byProfile.values()].map((f) => f.profileId);
+  const profiles = uniqueProfileIds.length
+    ? await Profile.find({ _id: { $in: uniqueProfileIds }, tenantId })
+        .select("membershipNumber personalInfo contactInfo")
+        .lean()
+    : [];
+  const profileMap = new Map(profiles.map((p) => [String(p._id), p]));
+
+  const mandates = [];
+  for (const form of byProfile.values()) {
+    const profile = profileMap.get(String(form.profileId));
+    const decrypted = decryptFormForResponse(form, { includeSensitive: true });
+    const dd = decrypted.directDebitMandate || {};
+    const membershipNumber =
+      form.membershipNumber || profile?.membershipNumber || null;
+
+    mandates.push({
+      paymentFormId: form._id,
+      profileId: form.profileId,
+      membershipNumber,
+      memberSnapshot: {
+        membershipNumber,
+        fullName: resolveMemberNameFromProfile(profile),
+        email:
+          profile?.contactInfo?.personalEmail ||
+          profile?.contactInfo?.workEmail ||
+          null,
+      },
+      mandate: {
+        umr: dd.uniqueMandateReference || null,
+        signedDate: dd.signedDate || null,
+        debtorName: dd.debtorName || null,
+        debtorIban: dd.debtorIbanPlain || safeDecryptField(dd.debtorIban) || null,
+        debtorBic: dd.debtorBicPlain || safeDecryptField(dd.debtorBic) || null,
+        debtorAddress: dd.debtorAddress || null,
+        debtorCity: dd.debtorCity || null,
+        debtorPostcode: dd.debtorPostcode || null,
+        debtorCountry: dd.debtorCountry || "IE",
+        creditorName: dd.creditorName || null,
+        creditorIdentifier: dd.creditorIdentifier || null,
+        creditorIban: dd.creditorIban || null,
+        creditorBic: dd.creditorBic || null,
+      },
+      organisationSnapshot: form.organisationSnapshot || {},
+    });
+  }
+
+  return mandates;
+}
+
 module.exports = {
   prefillForm,
   createForm,
@@ -1256,12 +1366,14 @@ module.exports = {
   approveForm,
   rejectForm,
   deleteForm,
+  exportFormPdf,
   uploadPaper,
   uploadSignedPdf,
   uploadSignature,
   sendFormEmail,
   listForProfile,
   listPortalForUser,
+  listDirectDebitMandatesForPrepare,
   PAYMENT_FORM_TYPES,
   FORM_TYPE_LABELS,
 };

@@ -51,6 +51,18 @@ exports.filterPaymentForms = async (req, res, next) => {
   try {
     const { tenantId } = extractUserAndCreatorContext(req);
     if (!tenantId) return next(AppError.badRequest("tenantId is required"));
+
+    if (req.body?.purpose === "direct-debit-prepare") {
+      const profileIds = Array.isArray(req.body?.profileIds)
+        ? req.body.profileIds
+        : [];
+      const mandates = await paymentFormService.listDirectDebitMandatesForPrepare({
+        tenantId,
+        profileIds,
+      });
+      return res.success({ mandates });
+    }
+
     const page = Number(req.body.page) || 1;
     const limit = Math.min(Number(req.body.limit) || 500, 500);
     const filters = req.body.filters || {};
@@ -63,6 +75,42 @@ exports.filterPaymentForms = async (req, res, next) => {
       limit,
     });
     return res.success(result);
+  } catch (e) {
+    return next(e);
+  }
+};
+
+exports.listDirectDebitMandatesForPrepare = async (req, res, next) => {
+  try {
+    const { tenantId } = extractUserAndCreatorContext(req);
+    if (!tenantId) return next(AppError.badRequest("tenantId is required"));
+    const profileIds = Array.isArray(req.body?.profileIds)
+      ? req.body.profileIds
+      : [];
+    const mandates = await paymentFormService.listDirectDebitMandatesForPrepare({
+      tenantId,
+      profileIds,
+    });
+    return res.success({ mandates });
+  } catch (e) {
+    return next(e);
+  }
+};
+
+exports.downloadPaymentFormPdf = async (req, res, next) => {
+  try {
+    const { tenantId } = extractUserAndCreatorContext(req);
+    if (!tenantId) return next(AppError.badRequest("tenantId is required"));
+    const { buffer, filename, contentType } = await paymentFormService.exportFormPdf(
+      req.params.id,
+      tenantId
+    );
+    res.setHeader("Content-Type", contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename.replace(/"/g, "")}"`
+    );
+    return res.send(buffer);
   } catch (e) {
     return next(e);
   }

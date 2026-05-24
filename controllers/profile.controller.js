@@ -1384,6 +1384,224 @@ async function getMyAllDetails(req, res, next) {
   }
 }
 
+const BATCH_PROFILE_LOOKUP_SELECT =
+  "membershipNumber personalInfo contactInfo professionalDetails preferences tenantId";
+
+function parseProfileIdsFromRequest(req) {
+  let profileIds = req.body?.profileIds;
+  if (!profileIds || !Array.isArray(profileIds)) {
+    const q = req.query?.profileIds;
+    profileIds =
+      typeof q === "string"
+        ? q
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : Array.isArray(q)
+          ? q.filter((id) => id != null && String(id).trim())
+          : [];
+  }
+  return profileIds;
+}
+
+function profileIdsToObjectIds(profileIds) {
+  return profileIds
+    .map((id) => {
+      try {
+        if (mongoose.Types.ObjectId.isValid(id)) {
+          return new mongoose.Types.ObjectId(id);
+        }
+        return null;
+      } catch (_) {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+async function findProfilesByObjectIds(objectIds, tenantId) {
+  if (!objectIds.length) return [];
+  const query = { _id: { $in: objectIds } };
+  if (tenantId) {
+    query.tenantId = tenantId;
+  }
+  const profiles = await Profile.find(query)
+    .select(BATCH_PROFILE_LOOKUP_SELECT)
+    .lean();
+  enrichPersonalInfoFullNameOnDocuments(profiles);
+  return profiles;
+}
+
+/**
+ * CRM-authenticated batch lookup by profile IDs (gateway JWT / headers).
+ * POST /api/profile/batch-lookup
+ */
+async function getProfilesBatchAuthenticated(req, res, next) {
+  try {
+    const profileIds = parseProfileIdsFromRequest(req);
+    if (!profileIds.length) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "profileIds array is required and must not be empty (body.profileIds or query.profileIds)",
+      });
+    }
+  if (profileIds.length > 5000) {
+    return next(
+      AppError.badRequest("Too many profileIds (max 5000 per request)"),
+    );
+  }
+
+    const objectIds = profileIdsToObjectIds(profileIds);
+    const profiles = await findProfilesByObjectIds(objectIds, req.tenantId);
+
+    return res.status(200).json({
+      success: true,
+      data: profiles,
+    });
+  } catch (error) {
+    console.error(
+      "ProfileController [getProfilesBatchAuthenticated] Error:",
+      error,
+    );
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to fetch profiles by IDs",
+      ),
+    );
+  }
+}
+
+/**
+ * CRM-authenticated lookup by membership numbers (batch Excel matching, finance identity).
+ * POST /api/profile/lookup-by-membership
+ * Body: { membershipNumbers: string[], diagnose?: boolean }
+ */
+async function lookupProfilesByMembershipNumbers(req, res, next) {
+  try {
+    let membershipNumbers = req.body?.membershipNumbers;
+    if (!Array.isArray(membershipNumbers)) {
+      return next(AppError.badRequest("membershipNumbers array is required"));
+    }
+
+    membershipNumbers = [
+      ...new Set(
+        membershipNumbers.map((n) => String(n).trim()).filter(Boolean),
+      ),
+    ];
+    if (membershipNumbers.length > 5000) {
+      return next(
+        AppError.badRequest("Too many membershipNumbers (max 5000 per request)"),
+      );
+    }
+    if (membershipNumbers.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const tenantId = req.tenantId;
+    const tenantFilter = tenantId ? { tenantId } : {};
+
+    let profiles = await Profile.find({
+      ...tenantFilter,
+      membershipNumber: { $in: membershipNumbers },
+    })
+      .select(BATCH_PROFILE_LOOKUP_SELECT)
+      .lean();
+
+    const foundKeys = new Set(
+      profiles.map((p) => String(p.membershipNumber || "").trim().toLowerCase()),
+    );
+    const missingExact = membershipNumbers.filter(
+      (n) => !foundKeys.has(n.toLowerCase()),
+    );
+
+    if (missingExact.length && tenantId) {
+      for (const mn of missingExact) {
+        const ci = await Profile.findOne({
+          tenantId,
+          membershipNumber: {
+            $regex: new RegExp(`^${escapeRegex(mn)}$`, "i"),
+          },
+        })
+          .select(BATCH_PROFILE_LOOKUP_SELECT)
+          .lean();
+        if (ci) {
+          profiles.push(ci);
+          foundKeys.add(String(ci.membershipNumber || "").trim().toLowerCase());
+        }
+      }
+    }
+
+    enrichPersonalInfoFullNameOnDocuments(profiles);
+
+    const diagnose =
+      req.body?.diagnose === true && membershipNumbers.length === 1;
+    if (diagnose && profiles.length === 0 && tenantId) {
+      const mn = membershipNumbers[0];
+      const byNumber = await Profile.findOne({ membershipNumber: mn })
+        .select("tenantId membershipNumber")
+        .lean();
+      const byNumberCi =
+        byNumber ||
+        (await Profile.findOne({
+          membershipNumber: {
+            $regex: new RegExp(`^${escapeRegex(mn)}$`, "i"),
+          },
+        })
+          .select("tenantId membershipNumber")
+          .lean());
+
+      if (byNumberCi) {
+        const pt = byNumberCi.tenantId;
+        if (pt != null && pt !== "" && pt !== tenantId) {
+          return res.status(200).json({
+            success: true,
+            data: [],
+            lookupError:
+              "A profile exists for this membership number but under a different tenant than your session. Align profile.tenantId with the gateway x-tenant-id (or use the correct CRM tenant).",
+          });
+        }
+        if (pt == null || pt === "") {
+          return res.status(200).json({
+            success: true,
+            data: [],
+            lookupError:
+              "A profile exists for this membership number but it has no tenantId set; batch resolution requires tenantId on the profile to match your session.",
+          });
+        }
+        if (pt === tenantId) {
+          const full = await Profile.findById(byNumberCi._id)
+            .select(BATCH_PROFILE_LOOKUP_SELECT)
+            .lean();
+          if (full) {
+            enrichPersonalInfoFullNameOnDocument(full);
+            return res.status(200).json({ success: true, data: [full] });
+          }
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: [],
+        lookupError:
+          "No profile found with this membership number. Confirm the member exists in profile-service and the number matches exactly.",
+      });
+    }
+
+    return res.status(200).json({ success: true, data: profiles });
+  } catch (error) {
+    console.error(
+      "ProfileController [lookupProfilesByMembershipNumbers] Error:",
+      error,
+    );
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to lookup profiles by membership number",
+      ),
+    );
+  }
+}
+
 /**
  * Batch endpoint for gateway aggregation: get profiles by profile IDs.
  * POST /api/profile/batch
@@ -1687,6 +1905,8 @@ module.exports = {
   getMySubscriptionDetails,
   getMyAllDetails,
   getProfilesBatch,
+  getProfilesBatchAuthenticated,
+  lookupProfilesByMembershipNumbers,
   getProfilesByUserIds,
   getProfileByEmailInternal,
 };

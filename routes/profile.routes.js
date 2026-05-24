@@ -25,6 +25,11 @@ router.get(
 router.get("/check-email", profileController.checkEmailExists);
 router.get("/", profileController.getAllProfiles);
 router.get("/search", profileController.searchProfiles);
+router.post(
+  "/lookup-by-membership",
+  profileController.lookupProfilesByMembershipNumbers,
+);
+router.post("/batch-lookup", profileController.getProfilesBatchAuthenticated);
 router.get("/my-profile", profileController.getMyProfile);
 router.put("/my-profile", profileController.updateMyProfile);
 router.get("/my-personal-details", profileController.getMyPersonalDetails);
