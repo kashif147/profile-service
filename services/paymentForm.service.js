@@ -475,6 +475,16 @@ function applyFormBodyUpdates(form, body) {
         form.standingOrder.installmentAmountEur
       );
     }
+    if (Object.prototype.hasOwnProperty.call(so, "authorisationMode")) {
+      const mode =
+        so.authorisationMode === "on_file" || so.authorisationMode === "digital"
+          ? so.authorisationMode
+          : null;
+      form.standingOrder.authorisationMode = mode;
+      form.standingOrder.isAuthorized = mode !== null;
+    } else if (typeof so.isAuthorized === "boolean") {
+      form.standingOrder.isAuthorized = so.isAuthorized;
+    }
   }
 
   if (body.salaryDeduction) {
@@ -490,6 +500,16 @@ function applyFormBodyUpdates(form, body) {
       payrollStaffNo: sd.payrollStaffNo ?? form.salaryDeduction.payrollStaffNo,
       employedAt: sd.employedAt ?? form.salaryDeduction.employedAt,
     });
+    if (Object.prototype.hasOwnProperty.call(sd, "authorisationMode")) {
+      const mode =
+        sd.authorisationMode === "on_file" || sd.authorisationMode === "digital"
+          ? sd.authorisationMode
+          : null;
+      form.salaryDeduction.authorisationMode = mode;
+      form.salaryDeduction.isAuthorized = mode !== null;
+    } else if (typeof sd.isAuthorized === "boolean") {
+      form.salaryDeduction.isAuthorized = sd.isAuthorized;
+    }
   }
 
   if (body.directDebitMandate) {
@@ -693,8 +713,14 @@ function formatListRow(doc) {
     debtorBankName,
     debtorIbanDisplay,
     debtorBic,
-    isAuthorized: dd.isAuthorized || false,
-    authorisationMode: dd.authorisationMode || null,
+    isAuthorized: Boolean(
+      dd.isAuthorized || so.isAuthorized || sd.isAuthorized,
+    ),
+    authorisationMode:
+      dd.authorisationMode ||
+      so.authorisationMode ||
+      sd.authorisationMode ||
+      null,
     hasAttachment: Boolean(o.paperUpload?.blobPath || o.signedPdf?.blobPath),
     paymentTypeRecurrent:
       dd.paymentTypeRecurrent === undefined ? null : dd.paymentTypeRecurrent,

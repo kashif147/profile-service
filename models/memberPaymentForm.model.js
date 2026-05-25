@@ -93,6 +93,12 @@ const MemberPaymentFormSchema = new mongoose.Schema(
       startDate: Date,
       signatureDates: [Date],
       signatureBlobPaths: [String],
+      isAuthorized: { type: Boolean, default: false },
+      authorisationMode: {
+        type: String,
+        enum: ["digital", "on_file", null],
+        default: null,
+      },
     },
     salaryDeduction: {
       memberFullName: String,
@@ -104,6 +110,12 @@ const MemberPaymentFormSchema = new mongoose.Schema(
       commencingDate: Date,
       signedDate: Date,
       signatureBlobPath: String,
+      isAuthorized: { type: Boolean, default: false },
+      authorisationMode: {
+        type: String,
+        enum: ["digital", "on_file", null],
+        default: null,
+      },
     },
     directDebitMandate: {
       creditorName: String,
