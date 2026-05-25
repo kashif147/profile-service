@@ -32,6 +32,24 @@
           }
         },
         {
+          "name": "Prefill (preview creditor details, not saved)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/payment-forms/portal/prefill?formType={{formType}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payment-forms", "portal", "prefill"],
+              "query": [
+                { "key": "formType", "value": "{{formType}}", "description": "STANDING_ORDER | DD_MANDATE | SALARY_DEDUCTION. Omit to auto-resolve from current subscription." }
+              ]
+            },
+            "description": "Resolves the portal member's profile from the token and returns a hydrated form preview – including creditor/beneficiary block from the tenant's organisationProfile – without persisting a draft.\n\nUse before the portal user submits, so the form shows creditor details (name, identifier, address, IBAN/BIC) up-front.\n\n**Response shape (DD_MANDATE):**\n`paymentForm.directDebitMandate.creditorName | creditorIdentifier | creditorAddress | creditorCity | creditorPostcode | creditorCountry | creditorIban | creditorBic`\n\n**Response shape (STANDING_ORDER):**\n`paymentForm.standingOrder.beneficiaryAccountName | beneficiaryBankName | beneficiaryAddress | beneficiaryIban | beneficiaryBic | beneficiaryReference`\n\nAlso returns `paymentForm.organisationSnapshot` for any extra org fields."
+          }
+        },
+        {
           "name": "Create draft – Standing Order",
           "event": [
             {
