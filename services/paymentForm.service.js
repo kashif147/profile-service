@@ -520,6 +520,14 @@ function applyFormBodyUpdates(form, body) {
         typeof dd.isAuthorized === "boolean"
           ? dd.isAuthorized
           : form.directDebitMandate.isAuthorized,
+      authorisationMode: Object.prototype.hasOwnProperty.call(
+        dd,
+        "authorisationMode"
+      )
+        ? dd.authorisationMode === "on_file" || dd.authorisationMode === "digital"
+          ? dd.authorisationMode
+          : null
+        : form.directDebitMandate.authorisationMode,
       paymentTypeRecurrent: Object.prototype.hasOwnProperty.call(
         dd,
         "paymentTypeRecurrent"
@@ -527,6 +535,11 @@ function applyFormBodyUpdates(form, body) {
         ? Boolean(dd.paymentTypeRecurrent)
         : form.directDebitMandate.paymentTypeRecurrent,
     });
+    if (dd.authorisationMode === "on_file" || dd.authorisationMode === "digital") {
+      form.directDebitMandate.isAuthorized = true;
+    } else if (dd.authorisationMode === null) {
+      form.directDebitMandate.isAuthorized = false;
+    }
   }
 
   if (body.emailOptions) {
@@ -631,29 +644,68 @@ async function listWithFilter({ tenantId, filters = {}, page = 1, limit = 500 })
 
 function formatListRow(doc) {
   const o = decryptFormForResponse(doc, { includeSensitive: false });
-  const pi = {
+  const so = o.standingOrder || {};
+  const sd = o.salaryDeduction || {};
+  const dd = o.directDebitMandate || {};
+  const debtorIbanDisplay =
+    dd.debtorIbanDisplay || so.debtorIbanDisplay || null;
+  const debtorBic =
+    dd.debtorBicPlain || so.debtorBicPlain || null;
+  const debtorBankName = so.debtorBankName || null;
+  const memberFullName =
+    sd.memberFullName ||
+    dd.debtorName ||
+    so.debtorAccountName ||
+    "";
+  const installmentAmountEur =
+    so.installmentAmountEur ??
+    sd.installmentAmountEur ??
+    null;
+  const installmentAmountDisplay =
+    so.installmentAmountDisplay ||
+    sd.installmentAmountDisplay ||
+    null;
+  const paymentFrequency = so.paymentFrequency || null;
+  const startDate = so.startDate || sd.commencingDate || null;
+  const signedDate =
+    dd.signedDate ||
+    sd.signedDate ||
+    (Array.isArray(so.signatureDates) ? so.signatureDates[0] : null) ||
+    null;
+  return {
+    _id: o._id,
+    profileId: o.profileId,
     formType: o.formType,
     formTypeLabel: FORM_TYPE_LABELS[o.formType] || o.formType,
     status: o.status,
-    membershipNumber: o.membershipNumber,
-    profileId: o.profileId,
-    _id: o._id,
+    source: o.source,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
-    source: o.source,
-    memberFullName:
-      o.salaryDeduction?.memberFullName ||
-      o.directDebitMandate?.debtorName ||
-      o.standingOrder?.debtorAccountName ||
-      "",
+    membershipNumber: o.membershipNumber,
+    memberFullName,
     referenceMembershipNo:
-      o.salaryDeduction?.referenceMembershipNo ||
-      o.directDebitMandate?.uniqueMandateReference ||
-      o.standingOrder?.beneficiaryReference ||
+      sd.referenceMembershipNo ||
+      dd.uniqueMandateReference ||
+      so.beneficiaryReference ||
       o.membershipNumber,
-    isAuthorized: o.directDebitMandate?.isAuthorized || false,
+    uniqueMandateReference: dd.uniqueMandateReference || null,
+    debtorName: dd.debtorName || so.debtorAccountName || null,
+    debtorBankName,
+    debtorIbanDisplay,
+    debtorBic,
+    isAuthorized: dd.isAuthorized || false,
+    authorisationMode: dd.authorisationMode || null,
+    hasAttachment: Boolean(o.paperUpload?.blobPath || o.signedPdf?.blobPath),
+    paymentTypeRecurrent:
+      dd.paymentTypeRecurrent === undefined ? null : dd.paymentTypeRecurrent,
+    paymentFrequency,
+    installmentAmountEur,
+    installmentAmountDisplay,
+    startDate,
+    signedDate,
+    employedAt: sd.employedAt || null,
+    payrollStaffNo: sd.payrollStaffNo || null,
   };
-  return pi;
 }
 
 async function getById(id, tenantId, { includeSensitive = false, portalUserId = null }) {

@@ -126,6 +126,11 @@ const MemberPaymentFormSchema = new mongoose.Schema(
       signedDate: Date,
       signatureBlobPaths: [String],
       isAuthorized: { type: Boolean, default: false },
+      authorisationMode: {
+        type: String,
+        enum: ["digital", "on_file", null],
+        default: null,
+      },
     },
     generatedPdf: {
       blobPath: String,
