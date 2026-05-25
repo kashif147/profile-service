@@ -59,7 +59,16 @@ const MemberPaymentFormSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ["portal", "mobile", "crm", "notification", "post", "email"],
+      enum: [
+        "portal",
+        "mobile",
+        "crm",
+        "notification",
+        "post",
+        "email",
+        "walk_in",
+        "phone",
+      ],
       default: "crm",
     },
     brandingSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },

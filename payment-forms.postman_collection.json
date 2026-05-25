@@ -377,13 +377,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"profileId\": \"{{profileId}}\",\n  \"formType\": \"STANDING_ORDER\",\n  \"standingOrder\": {\n    \"debtorBankName\": \"AIB\",\n    \"debtorBankAddress\": \"1 Bank Centre, Dublin 2\",\n    \"debtorAccountName\": \"Jane Member\",\n    \"debtorIban\": \"IE29AIBK93115212345678\",\n    \"debtorBic\": \"AIBKIE2D\",\n    \"startDate\": \"2026-06-01T00:00:00.000Z\",\n    \"paymentFrequency\": \"Monthly\",\n    \"installmentAmountEur\": 45,\n    \"signatureDates\": [\n      \"2026-05-23T00:00:00.000Z\",\n      \"2026-05-23T00:00:00.000Z\"\n    ]\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
+              "raw": "{\n  \"profileId\": \"{{profileId}}\",\n  \"formType\": \"STANDING_ORDER\",\n  \"source\": \"post\",\n  \"standingOrder\": {\n    \"debtorBankName\": \"AIB\",\n    \"debtorBankAddress\": \"1 Bank Centre, Dublin 2\",\n    \"debtorAccountName\": \"Jane Member\",\n    \"debtorIban\": \"IE29AIBK93115212345678\",\n    \"debtorBic\": \"AIBKIE2D\",\n    \"startDate\": \"2026-06-01T00:00:00.000Z\",\n    \"paymentFrequency\": \"Monthly\",\n    \"installmentAmountEur\": 45,\n    \"signatureDates\": [\n      \"2026-05-23T00:00:00.000Z\",\n      \"2026-05-23T00:00:00.000Z\"\n    ]\n  },\n  \"gdpr\": {\n    \"consentCapturedAt\": \"2026-05-23T12:00:00.000Z\"\n  }\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/payment-forms/",
               "host": ["{{baseUrl}}"],
               "path": ["api", "payment-forms", ""]
-            }
+            },
+            "description": "**source** (optional): `post` | `email` | `walk_in` | `phone` | `crm`. Records how the form was received. Defaults to `post` when omitted. Portal endpoints always set `portal` server-side."
           }
         },
         {

@@ -672,25 +672,19 @@ async function getById(id, tenantId, { includeSensitive = false, portalUserId = 
 }
 
 function buildSignatureDownloadUrls(form) {
-  const urls = [];
-  const pushPath = (blobPath) => {
-    const url = azureBlob.getDownloadSasUrl(blobPath);
-    if (url) urls.push(url);
-  };
+  const toUrl = (blobPath) =>
+    blobPath ? azureBlob.getDownloadSasUrl(blobPath) || null : null;
   if (form.formType === "STANDING_ORDER") {
-    (form.standingOrder?.signatureBlobPaths || []).forEach((p) => {
-      if (p) pushPath(p);
-    });
-  } else if (form.formType === "SALARY_DEDUCTION") {
-    if (form.salaryDeduction?.signatureBlobPath) {
-      pushPath(form.salaryDeduction.signatureBlobPath);
-    }
-  } else if (form.formType === "DD_MANDATE") {
-    (form.directDebitMandate?.signatureBlobPaths || []).forEach((p) => {
-      if (p) pushPath(p);
-    });
+    return (form.standingOrder?.signatureBlobPaths || []).map(toUrl);
   }
-  return urls;
+  if (form.formType === "SALARY_DEDUCTION") {
+    const url = toUrl(form.salaryDeduction?.signatureBlobPath);
+    return url ? [url] : [];
+  }
+  if (form.formType === "DD_MANDATE") {
+    return (form.directDebitMandate?.signatureBlobPaths || []).map(toUrl);
+  }
+  return [];
 }
 
 function buildDownloadUrls(form) {
@@ -705,7 +699,7 @@ function buildDownloadUrls(form) {
     urls.paperUpload = azureBlob.getDownloadSasUrl(form.paperUpload.blobPath);
   }
   const signatureUrls = buildSignatureDownloadUrls(form);
-  if (signatureUrls.length > 0) {
+  if (signatureUrls.some(Boolean)) {
     urls.signatures = signatureUrls;
   }
   return urls;
@@ -1037,7 +1031,7 @@ async function uploadPaper(id, tenantId, file, req) {
     uploadedAt: new Date(),
     uploadedBy: req.user?.id || req.userId,
   };
-  form.source = form.source === "crm" ? "post" : form.source;
+  if (!form.source || form.source === "crm") form.source = "post";
   if (form.status === "draft" || form.status === "generated") {
     form.status = "submitted";
   }

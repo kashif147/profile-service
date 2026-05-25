@@ -25,20 +25,23 @@ exports.prefillPaymentForm = async (req, res, next) => {
   }
 };
 
+const CRM_SOURCE_VALUES = new Set(["crm", "post", "email", "walk_in", "phone"]);
+
 exports.createPaymentForm = async (req, res, next) => {
   try {
-    const { profileId, formType, ...payload } = req.body;
+    const { profileId, formType, source, ...payload } = req.body;
     if (!profileId || !formType) {
       return next(AppError.badRequest("profileId and formType are required"));
     }
     const { tenantId } = extractUserAndCreatorContext(req);
     if (!tenantId) return next(AppError.badRequest("tenantId is required"));
+    const resolvedSource = CRM_SOURCE_VALUES.has(source) ? source : "post";
     const data = await paymentFormService.createForm({
       tenantId,
       profileId,
       formType,
       req,
-      source: "crm",
+      source: resolvedSource,
       payload,
     });
     return res.success({ paymentForm: data });
