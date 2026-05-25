@@ -6,7 +6,8 @@ Base path: `/api/payment-forms` (requires authentication).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `PUT` | `/filter` | List/filter payment forms (`paymentForms`, pagination) |
+| `PUT` | `/filter` | List/filter payment forms (`paymentForms`, pagination). Body `purpose: "direct-debit-prepare"` + `profileIds[]` returns `{ mandates }` for account-service DD prepare. |
+| `POST` | `/direct-debit/mandates-for-prepare` | Active authorized DD mandates with decrypted IBAN/BIC for DD run prepare (`profileIds[]` → `{ mandates }`) |
 | `GET` | `/prefill?profileId=&formType=` | Hydrated preview (not stored) |
 | `POST` | `/` | Save new form (`profileId`, `formType`, optional field body); status `draft` |
 | `GET` | `/profile/:profileId` | List forms for member Documents tab |

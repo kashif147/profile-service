@@ -46,6 +46,7 @@ router.post("/:id/send-email", portalWrite, controller.sendEmail);
 
 const portalRouter = express.Router();
 portalRouter.get("/mine", portalRead, controller.portalListMine);
+portalRouter.get("/prefill", portalRead, controller.portalPrefill);
 portalRouter.post("/", portalWrite, controller.portalCreate);
 portalRouter.get("/:id", portalRead, controller.portalGetById);
 portalRouter.patch("/:id", portalWrite, controller.portalUpdate);

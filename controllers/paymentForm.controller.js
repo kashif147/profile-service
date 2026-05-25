@@ -279,6 +279,30 @@ exports.sendEmail = async (req, res, next) => {
   }
 };
 
+exports.portalPrefill = async (req, res, next) => {
+  try {
+    const { formType } = req.query;
+    if (formType && !paymentFormService.PAYMENT_FORM_TYPES.includes(formType)) {
+      return next(AppError.badRequest("Invalid formType"));
+    }
+    const { tenantId, userId } = extractUserAndCreatorContext(req);
+    if (!tenantId) return next(AppError.badRequest("tenantId is required"));
+    if (!userId) return next(AppError.forbidden("Portal user required"));
+    const Profile = require("../models/profile.model.js");
+    const profile = await Profile.findOne({ tenantId, userId }).lean();
+    if (!profile) return next(AppError.notFound("Member profile not found"));
+    const data = await paymentFormService.prefillForm({
+      tenantId,
+      profileId: profile._id,
+      formType,
+      req,
+    });
+    return res.success({ paymentForm: { ...data, source: "portal" } });
+  } catch (e) {
+    return next(e);
+  }
+};
+
 // Portal
 exports.portalListMine = async (req, res, next) => {
   try {
