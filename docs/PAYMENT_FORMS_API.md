@@ -15,7 +15,7 @@ Base path: `/api/payment-forms` (requires authentication).
 | `PATCH` | `/:id` | Update debtor/creditor fields |
 | `POST` | `/:id/submit` | Mark submitted (records client IP). Standing order requires `standingOrder.startDate`. |
 | `POST` | `/:id/verify` | Mark verified |
-| `POST` | `/:id/approve` | Approve, update subscription, notify member |
+| `POST` | `/:id/approve` | Approve, update subscription, notify member. For `DD_MANDATE`, any other active mandate for the same profile is set to `superseded`. |
 | `POST` | `/:id/reject` | Reject |
 | `POST` | `/:id/upload-paper` | Multipart `file` – paper scan |
 | `POST` | `/:id/upload-signed` | Multipart `file` – signed PDF |

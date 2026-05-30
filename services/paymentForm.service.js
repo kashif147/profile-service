@@ -1004,6 +1004,32 @@ async function syncSubscriptionPaymentType(form, req) {
   }
 }
 
+/**
+ * When a new DD mandate is approved, prior active mandates for the same member
+ * are superseded so only one mandate remains collectible.
+ */
+async function supersedePreviousActiveDdMandates(approvedForm, req) {
+  if (approvedForm.formType !== "DD_MANDATE") return;
+
+  const previous = await MemberPaymentForm.find({
+    tenantId: approvedForm.tenantId,
+    profileId: approvedForm.profileId,
+    formType: "DD_MANDATE",
+    status: "active",
+    _id: { $ne: approvedForm._id },
+  });
+
+  for (const prior of previous) {
+    prior.status = "superseded";
+    prior.visibility = prior.visibility || {};
+    prior.visibility.portalVisible = false;
+    pushAudit(prior, "superseded", req, {
+      channel: `replaced-by:${approvedForm._id}`,
+    });
+    await prior.save();
+  }
+}
+
 async function approveForm(id, tenantId, req) {
   const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
   if (!form) throw AppError.notFound("Payment form not found");
@@ -1011,6 +1037,10 @@ async function approveForm(id, tenantId, req) {
     throw AppError.badRequest(
       `Cannot approve form in status ${form.status}`
     );
+  }
+
+  if (form.formType === "DD_MANDATE") {
+    await supersedePreviousActiveDdMandates(form, req);
   }
 
   const { clientIp } = resolveClientIp(req);
