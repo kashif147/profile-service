@@ -12,9 +12,13 @@ const {
 } = require("../constants/enums");
 
 const ALL_TEMPLATE_FILTER_KEYS = [
-  ...new Set([...ALLOWED_FILTER_KEYS, ...PROFILE_TEMPLATE_FILTER_KEYS]),
+  ...new Set([
+    ...ALLOWED_FILTER_KEYS,
+    ...PROFILE_TEMPLATE_FILTER_KEYS,
+  ]),
 ];
 const PROFILE_LIKE_TEMPLATE_TYPES = ["profile", "member", "members"];
+const OPEN_COLUMN_TEMPLATE_TYPES = [...PROFILE_LIKE_TEMPLATE_TYPES];
 
 module.exports.personal_details_create = Joi.object({
   personalInfo: Joi.object({
@@ -335,12 +339,21 @@ module.exports.profile_update = Joi.object({
   }).optional(),
 });
 
-// Schema for a single filter: operator (equal_to | not_equal_to) + values array
+// Schema for a single filter: operator + values array (date filters allow between/within/more_than)
 const filterEntrySchema = Joi.object({
   operator: Joi.string()
-    .valid(FILTER_OPERATOR.EQUAL_TO, FILTER_OPERATOR.NOT_EQUAL_TO)
+    .valid(
+      FILTER_OPERATOR.EQUAL_TO,
+      FILTER_OPERATOR.NOT_EQUAL_TO,
+      FILTER_OPERATOR.BETWEEN,
+      FILTER_OPERATOR.WITHIN,
+      FILTER_OPERATOR.MORE_THAN,
+    )
     .required(),
-  values: Joi.array().items(Joi.string()).min(1).required(),
+  values: Joi.array()
+    .items(Joi.alternatives().try(Joi.string(), Joi.number()))
+    .min(1)
+    .required(),
 });
 
 // No restriction on filter values; user sends values that match the model. Operator is required in filters only (not in columns).
@@ -365,9 +378,9 @@ module.exports.filter_template_create = Joi.object({
       .optional()
       .default({}),
   }),
-  /** Columns: application templates use APPLICATION_RESPONSE_COLUMNS; profile templates allow any string (optional projection). */
+  /** Columns: application templates use APPLICATION_RESPONSE_COLUMNS; profile allows any string. */
   columns: Joi.when("templateType", {
-    is: Joi.valid(...PROFILE_LIKE_TEMPLATE_TYPES),
+    is: Joi.valid(...OPEN_COLUMN_TEMPLATE_TYPES),
     then: Joi.array().items(Joi.string().trim()).optional().default([]),
     otherwise: Joi.array()
       .items(Joi.string().valid(...APPLICATION_RESPONSE_COLUMNS))

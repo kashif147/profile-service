@@ -15,7 +15,9 @@
     "docker:build": "docker build -t profile-service .",
     "docker:run": "docker run -p 4001:4001 profile-service",
     "test:ci": "npm test && npm run lint",
-    "migrate:batch-status": "node scripts/add-status-to-batches.js"
+    "migrate:batch-status": "node scripts/add-status-to-batches.js",
+    "seed:grid-system-default": "node scripts/seed-grid-system-default-template.js --env=staging",
+    "seed:grid-system-default:all": "node ../../scripts/seed-grid-system-defaults.cjs --env=staging --force"
   },
   "keywords": [
     "profile",

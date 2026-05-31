@@ -68,6 +68,9 @@ exports.OVERLAY_DECISION = {
 exports.FILTER_OPERATOR = {
   EQUAL_TO: "equal_to",
   NOT_EQUAL_TO: "not_equal_to",
+  BETWEEN: "between",
+  WITHIN: "within",
+  MORE_THAN: "more_than",
 };
 
 // Allowed filter field names for application templates (camelCase as sent by frontend)
@@ -150,6 +153,20 @@ exports.PROFILE_FILTER_FIELD_MAP = {
 
 exports.PROFILE_TEMPLATE_FILTER_KEYS = Object.keys(
   exports.PROFILE_FILTER_FIELD_MAP,
+);
+
+/** Credit notes list filter keys (templateType creditnotes). */
+exports.CREDIT_NOTE_FILTER_FIELD_MAP = {
+  status: "status",
+  memberId: "memberId",
+  docNo: "docNo",
+  invoiceDocNo: "invoiceDocNo",
+  effectiveDate: "effectiveDate",
+  createdAt: "createdAt",
+};
+
+exports.CREDIT_NOTE_TEMPLATE_FILTER_KEYS = Object.keys(
+  exports.CREDIT_NOTE_FILTER_FIELD_MAP,
 );
 
 // All columns that can be returned in application list response (template columns). User sends camelCase. Empty array = all columns.
