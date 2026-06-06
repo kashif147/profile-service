@@ -30,6 +30,9 @@ const {
   normalizeEmail,
 } = require("../services/profileLookup.service.js");
 const {
+  ensureDuplicateReviewAllowsApproval,
+} = require("../services/duplicate.review.service.js");
+const {
   publishPostApprovalEvents,
 } = require("../services/publishPostApprovalEvents.js");
 const {
@@ -125,6 +128,18 @@ async function approveSingleApplication({
         status: "failed",
         success: false,
         error: "Application not found in database",
+      };
+    }
+
+    try {
+      await ensureDuplicateReviewAllowsApproval(applicationId, tenantId);
+    } catch (duplicateError) {
+      return {
+        applicationId,
+        status: "failed",
+        success: false,
+        error: duplicateError.message,
+        code: duplicateError.code || "DUPLICATE_REVIEW_REQUIRED",
       };
     }
 

@@ -393,6 +393,8 @@ exports.getAllApplicationsWithDetails = (
               approvalDetails: application.approvalDetails,
               isPotentialDuplicate:
                 !!application?.duplicateDetection?.isPotentialDuplicate,
+              duplicateReviewStatus:
+                application?.duplicateReview?.status || "NOT_CHECKED",
               createdAt: application.createdAt,
               updatedAt: application.updatedAt,
             };
@@ -700,6 +702,8 @@ exports.getApplicationsWithTemplateFilters = (
               approvalDetails: application.approvalDetails,
               isPotentialDuplicate:
                 !!application?.duplicateDetection?.isPotentialDuplicate,
+              duplicateReviewStatus:
+                application?.duplicateReview?.status || "NOT_CHECKED",
               createdAt: application.createdAt,
               updatedAt: application.updatedAt,
             };
@@ -717,6 +721,10 @@ exports.getApplicationsWithTemplateFilters = (
               !!fullApplication?.isPotentialDuplicate ||
               !!fullApplication?.personalDetails?.duplicateDetection
                 ?.isPotentialDuplicate;
+            row.duplicateReviewStatus =
+              fullApplication?.duplicateReviewStatus ||
+              fullApplication?.personalDetails?.duplicateReview?.status ||
+              "NOT_CHECKED";
             enrichApplicationRowPersonalFullName(row);
             return row;
           } catch (error) {

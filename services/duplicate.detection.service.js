@@ -1,449 +1,438 @@
 const PersonalDetails = require("../models/personal.details.model.js");
+const ProfessionalDetails = require("../models/professional.details.model.js");
+const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
+const { APPLICATION_STATUS, DUPLICATE_REVIEW_STATUS } = require("../constants/enums.js");
+const {
+  normalizeEmail,
+  normalizePhoneNumber,
+  normalizeIdentifier,
+  buildMatchableRecord,
+  scorePair,
+  toMatchSummaryEntry,
+} = require("./duplicate.matching.js");
 
-/**
- * Normalize email for comparison
- */
-function normalizeEmail(email) {
-  if (!email) return null;
-  return email.toLowerCase().trim();
+const NON_APPROVED_STATUSES = [
+  APPLICATION_STATUS.IN_PROGRESS,
+  APPLICATION_STATUS.SUBMITTED,
+];
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * Normalize phone number for comparison (remove spaces, dashes, etc.)
- */
-function normalizePhoneNumber(phone) {
-  if (!phone) return null;
-  return phone.replace(/[\s\-\(\)]/g, "");
-}
+async function loadApplicationBundle(applicationId) {
+  const [personal, professional, subscription] = await Promise.all([
+    PersonalDetails.findOne({ applicationId }).lean(),
+    ProfessionalDetails.findOne({ applicationId }).lean(),
+    SubscriptionDetails.findOne({ applicationId }).lean(),
+  ]);
 
-/**
- * Normalize string for comparison (lowercase, trim)
- */
-function normalizeString(str) {
-  if (!str) return null;
-  return str.toLowerCase().trim();
-}
+  if (!personal) return null;
 
-/**
- * Compare dates (only year, month, day)
- */
-function compareDates(date1, date2) {
-  if (!date1 || !date2) return false;
-  const d1 = new Date(date1);
-  const d2 = new Date(date2);
-  return (
-    d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate()
-  );
-}
-
-/**
- * Get address line 1 (buildingOrHouse or streetOrRoad)
- */
-function getAddressLine1(contactInfo) {
-  if (!contactInfo) return null;
-  return (
-    contactInfo.buildingOrHouse ||
-    contactInfo.streetOrRoad ||
-    null
-  );
-}
-
-/**
- * Check exact match: normalizedEmail OR mobileNumber
- */
-async function checkExactMatch(applicationData, tenantId, excludeApplicationId) {
-  const matches = {
-    applications: [],
-    profiles: [],
-    matchType: null,
+  return {
+    personal,
+    professional: professional?.professionalDetails || {},
+    subscription: subscription?.subscriptionDetails || {},
   };
-
-  const normalizedEmail = normalizeEmail(
-    applicationData.contactInfo?.personalEmail ||
-      applicationData.contactInfo?.workEmail
-  );
-  const normalizedMobile = normalizePhoneNumber(
-    applicationData.contactInfo?.mobileNumber
-  );
-
-  // Check exact email match
-  if (normalizedEmail) {
-    // Check other applications
-    const emailAppMatches = await PersonalDetails.find({
-      applicationId: { $ne: excludeApplicationId },
-      $or: [
-        { "contactInfo.personalEmail": new RegExp(`^${normalizedEmail}$`, "i") },
-        { "contactInfo.workEmail": new RegExp(`^${normalizedEmail}$`, "i") },
-      ],
-      "meta.deleted": { $ne: true },
-    }).select("applicationId");
-
-    if (emailAppMatches.length > 0) {
-      matches.applications.push(...emailAppMatches.map((a) => a.applicationId));
-      matches.matchType = "exact_email";
-    }
-
-    // Check profiles
-    const emailProfileMatches = await Profile.find({
-      tenantId,
-      normalizedEmail: normalizedEmail,
-    }).select("_id");
-
-    if (emailProfileMatches.length > 0) {
-      matches.profiles.push(...emailProfileMatches.map((p) => p._id));
-      if (!matches.matchType) {
-        matches.matchType = "exact_email";
-      }
-    }
-  }
-
-  // Check exact mobile match
-  if (normalizedMobile) {
-    // Check other applications
-    const mobileAppMatches = await PersonalDetails.find({
-      applicationId: { $ne: excludeApplicationId },
-      "contactInfo.mobileNumber": new RegExp(
-        normalizedMobile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-        "i"
-      ),
-      "meta.deleted": { $ne: true },
-    }).select("applicationId");
-
-    if (mobileAppMatches.length > 0) {
-      matches.applications.push(...mobileAppMatches.map((a) => a.applicationId));
-      if (!matches.matchType) {
-        matches.matchType = "exact_mobile";
-      }
-    }
-
-    // Check profiles
-    const mobileProfileMatches = await Profile.find({
-      tenantId,
-      "contactInfo.mobileNumber": new RegExp(
-        normalizedMobile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-        "i"
-      ),
-    }).select("_id");
-
-    if (mobileProfileMatches.length > 0) {
-      matches.profiles.push(...mobileProfileMatches.map((p) => p._id));
-      if (!matches.matchType) {
-        matches.matchType = "exact_mobile";
-      }
-    }
-  }
-
-  return matches;
 }
 
-/**
- * Check fuzzy match: 3 out of 4 of (forename, surname, dateOfBirth, address line 1)
- */
-async function checkFuzzyMatch(applicationData, tenantId, excludeApplicationId) {
-  const matches = {
-    applications: [],
-    profiles: [],
-    matchType: null,
-  };
+function bundleToRecord(bundle) {
+  return buildMatchableRecord({
+    personalInfo: bundle.personal.personalInfo,
+    contactInfo: bundle.personal.contactInfo,
+    professionalDetails: bundle.professional,
+    subscriptionDetails: bundle.subscription,
+    applicationId: bundle.personal.applicationId,
+  });
+}
 
-  const forename = normalizeString(applicationData.personalInfo?.forename);
-  const surname = normalizeString(applicationData.personalInfo?.surname);
-  const dateOfBirth = applicationData.personalInfo?.dateOfBirth;
-  const addressLine1 = normalizeString(getAddressLine1(applicationData.contactInfo));
+function profileToRecord(profile) {
+  return buildMatchableRecord({
+    personalInfo: profile.personalInfo,
+    contactInfo: profile.contactInfo,
+    professionalDetails: profile.professionalDetails,
+    subscriptionDetails: {
+      payrollNo: profile.professionalDetails?.payrollNo,
+    },
+    profileId: profile._id,
+    membershipNumber: profile.membershipNumber,
+  });
+}
 
-  // Need at least 3 fields to do fuzzy matching
-  const fieldCount = [forename, surname, dateOfBirth, addressLine1].filter(
-    (f) => f !== null && f !== undefined
-  ).length;
-
-  if (fieldCount < 3) {
-    return matches; // Not enough data for fuzzy matching
-  }
-
-  // Build query to find potential matches (we'll filter to 3/4 later)
-  // Include all fields that might match to reduce false negatives
-  const matchConditions = [];
-
-  if (forename) {
-    matchConditions.push({
-      "personalInfo.forename": new RegExp(`^${forename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
-    });
-  }
-
-  if (surname) {
-    matchConditions.push({
-      "personalInfo.surname": new RegExp(`^${surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
-    });
-  }
-
-  if (dateOfBirth) {
-    // Match date of birth (year, month, day)
-    const dob = new Date(dateOfBirth);
-    const startOfDay = new Date(dob.getFullYear(), dob.getMonth(), dob.getDate());
-    const endOfDay = new Date(dob.getFullYear(), dob.getMonth(), dob.getDate() + 1);
-    matchConditions.push({
-      "personalInfo.dateOfBirth": {
-        $gte: startOfDay,
-        $lt: endOfDay,
-      },
-    });
-  }
-
-  if (addressLine1) {
-    matchConditions.push({
-      $or: [
-        { "contactInfo.buildingOrHouse": new RegExp(`^${addressLine1.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
-        { "contactInfo.streetOrRoad": new RegExp(`^${addressLine1.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
-      ],
-    });
-  }
-
-  // Need at least one condition to query
-  if (matchConditions.length === 0) {
-    return matches;
-  }
-
-  // Check applications - use $or to find any potential matches, then filter
-  const applicationMatches = await PersonalDetails.find({
-    applicationId: { $ne: excludeApplicationId },
-    $or: matchConditions, // Use $or to find any field matches
+async function filterNonApprovedApplicationIds(applicationIds) {
+  if (!applicationIds.length) return [];
+  const rows = await PersonalDetails.find({
+    applicationId: { $in: applicationIds },
+    applicationStatus: { $in: NON_APPROVED_STATUSES },
     "meta.deleted": { $ne: true },
-  }).select("applicationId personalInfo contactInfo");
+  })
+    .select("applicationId")
+    .lean();
+  return rows.map((row) => row.applicationId);
+}
 
-  // Filter applications that match 3 out of 4 fields
-  const filteredApplications = applicationMatches.filter((app) => {
-    let matchCount = 0;
+async function findExactApplicationCandidates(source, excludeApplicationId) {
+  const ids = new Set();
+  const orConditions = [];
 
-    if (forename && normalizeString(app.personalInfo?.forename) === forename) {
-      matchCount++;
-    }
-    if (surname && normalizeString(app.personalInfo?.surname) === surname) {
-      matchCount++;
-    }
-    if (dateOfBirth && compareDates(app.personalInfo?.dateOfBirth, dateOfBirth)) {
-      matchCount++;
-    }
-    if (
-      addressLine1 &&
-      normalizeString(getAddressLine1(app.contactInfo)) === addressLine1
-    ) {
-      matchCount++;
-    }
-
-    return matchCount >= 3;
-  });
-
-  if (filteredApplications.length > 0) {
-    matches.applications.push(
-      ...filteredApplications.map((a) => a.applicationId)
+  if (source.email) {
+    orConditions.push(
+      { "contactInfo.personalEmail": new RegExp(`^${escapeRegex(source.email)}$`, "i") },
+      { "contactInfo.workEmail": new RegExp(`^${escapeRegex(source.email)}$`, "i") },
     );
-    matches.matchType = "fuzzy_3of4";
   }
-
-  // Check profiles - use same logic
-  const profileMatchConditions = [];
-
-  if (forename) {
-    profileMatchConditions.push({
-      "personalInfo.forename": new RegExp(`^${forename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
+  if (source.mobile) {
+    orConditions.push({
+      "contactInfo.mobileNumber": new RegExp(escapeRegex(source.mobile), "i"),
     });
   }
 
-  if (surname) {
-    profileMatchConditions.push({
-      "personalInfo.surname": new RegExp(`^${surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
-    });
+  if (orConditions.length > 0) {
+    const emailMobileMatches = await PersonalDetails.find({
+      applicationId: { $ne: excludeApplicationId },
+      applicationStatus: { $in: NON_APPROVED_STATUSES },
+      "meta.deleted": { $ne: true },
+      $or: orConditions,
+    })
+      .select("applicationId")
+      .lean();
+    emailMobileMatches.forEach((row) => ids.add(row.applicationId));
   }
 
-  if (dateOfBirth) {
-    const dob = new Date(dateOfBirth);
+  if (source.nmbiNumber) {
+    const nmbiMatches = await ProfessionalDetails.find({
+      applicationId: { $ne: excludeApplicationId },
+      "professionalDetails.nmbiNumber": new RegExp(
+        `^${escapeRegex(source.nmbiNumber)}$`,
+        "i",
+      ),
+    })
+      .select("applicationId")
+      .lean();
+    nmbiMatches.forEach((row) => ids.add(row.applicationId));
+  }
+
+  if (source.payrollNo) {
+    const payrollMatches = await SubscriptionDetails.find({
+      applicationId: { $ne: excludeApplicationId },
+      "subscriptionDetails.payrollNo": new RegExp(
+        `^${escapeRegex(source.payrollNo)}$`,
+        "i",
+      ),
+    })
+      .select("applicationId")
+      .lean();
+    payrollMatches.forEach((row) => ids.add(row.applicationId));
+  }
+
+  if (source.previousMembershipNo) {
+    const prevMatches = await SubscriptionDetails.find({
+      applicationId: { $ne: excludeApplicationId },
+      "subscriptionDetails.previousMembershipNo": new RegExp(
+        `^${escapeRegex(source.previousMembershipNo)}$`,
+        "i",
+      ),
+    })
+      .select("applicationId")
+      .lean();
+    prevMatches.forEach((row) => ids.add(row.applicationId));
+  }
+
+  return filterNonApprovedApplicationIds([...ids]);
+}
+
+async function findFuzzyApplicationCandidates(source, excludeApplicationId) {
+  const conditions = [];
+
+  if (source.surname) {
+    conditions.push({
+      "personalInfo.surname": new RegExp(`^${escapeRegex(source.surname)}$`, "i"),
+    });
+  }
+  if (source.forename) {
+    conditions.push({
+      "personalInfo.forename": new RegExp(`^${escapeRegex(source.forename)}$`, "i"),
+    });
+  }
+  if (source.eircode) {
+    conditions.push({
+      "contactInfo.eircode": new RegExp(`^${escapeRegex(source.eircode)}$`, "i"),
+    });
+  }
+  if (source.addressLine1) {
+    conditions.push(
+      {
+        "contactInfo.buildingOrHouse": new RegExp(
+          `^${escapeRegex(source.addressLine1)}$`,
+          "i",
+        ),
+      },
+      {
+        "contactInfo.streetOrRoad": new RegExp(
+          `^${escapeRegex(source.addressLine1)}$`,
+          "i",
+        ),
+      },
+    );
+  }
+  if (source.dateOfBirth) {
+    const dob = new Date(source.dateOfBirth);
     const startOfDay = new Date(dob.getFullYear(), dob.getMonth(), dob.getDate());
     const endOfDay = new Date(dob.getFullYear(), dob.getMonth(), dob.getDate() + 1);
-    profileMatchConditions.push({
-      "personalInfo.dateOfBirth": {
-        $gte: startOfDay,
-        $lt: endOfDay,
+    conditions.push({
+      "personalInfo.dateOfBirth": { $gte: startOfDay, $lt: endOfDay },
+    });
+  }
+
+  if (conditions.length === 0) return [];
+
+  const rows = await PersonalDetails.find({
+    applicationId: { $ne: excludeApplicationId },
+    applicationStatus: { $in: NON_APPROVED_STATUSES },
+    "meta.deleted": { $ne: true },
+    $or: conditions,
+  })
+    .select("applicationId")
+    .lean();
+
+  return rows.map((row) => row.applicationId);
+}
+
+async function findExactProfileCandidates(source, tenantId) {
+  const ids = new Set();
+
+  if (source.email) {
+    const emailMatches = await Profile.find({
+      tenantId,
+      normalizedEmail: source.email,
+    })
+      .select("_id")
+      .lean();
+    emailMatches.forEach((row) => ids.add(String(row._id)));
+  }
+
+  if (source.mobile) {
+    const mobileMatches = await Profile.find({
+      tenantId,
+      "contactInfo.mobileNumber": new RegExp(escapeRegex(source.mobile), "i"),
+    })
+      .select("_id")
+      .lean();
+    mobileMatches.forEach((row) => ids.add(String(row._id)));
+  }
+
+  if (source.nmbiNumber) {
+    const nmbiMatches = await Profile.find({
+      tenantId,
+      "professionalDetails.nmbiNumber": new RegExp(
+        `^${escapeRegex(source.nmbiNumber)}$`,
+        "i",
+      ),
+    })
+      .select("_id")
+      .lean();
+    nmbiMatches.forEach((row) => ids.add(String(row._id)));
+  }
+
+  if (source.payrollNo) {
+    const payrollMatches = await Profile.find({
+      tenantId,
+      "professionalDetails.payrollNo": new RegExp(
+        `^${escapeRegex(source.payrollNo)}$`,
+        "i",
+      ),
+    })
+      .select("_id")
+      .lean();
+    payrollMatches.forEach((row) => ids.add(String(row._id)));
+  }
+
+  if (source.previousMembershipNo) {
+    const membershipMatches = await Profile.find({
+      tenantId,
+      membershipNumber: new RegExp(
+        `^${escapeRegex(source.previousMembershipNo)}$`,
+        "i",
+      ),
+    })
+      .select("_id")
+      .lean();
+    membershipMatches.forEach((row) => ids.add(String(row._id)));
+  }
+
+  return [...ids];
+}
+
+async function findFuzzyProfileCandidates(source, tenantId) {
+  const conditions = [];
+
+  if (source.surname) {
+    conditions.push({
+      "personalInfo.surname": new RegExp(`^${escapeRegex(source.surname)}$`, "i"),
+    });
+  }
+  if (source.forename) {
+    conditions.push({
+      "personalInfo.forename": new RegExp(`^${escapeRegex(source.forename)}$`, "i"),
+    });
+  }
+  if (source.eircode) {
+    conditions.push({
+      "contactInfo.eircode": new RegExp(`^${escapeRegex(source.eircode)}$`, "i"),
+    });
+  }
+  if (source.addressLine1) {
+    conditions.push(
+      {
+        "contactInfo.buildingOrHouse": new RegExp(
+          `^${escapeRegex(source.addressLine1)}$`,
+          "i",
+        ),
       },
+      {
+        "contactInfo.streetOrRoad": new RegExp(
+          `^${escapeRegex(source.addressLine1)}$`,
+          "i",
+        ),
+      },
+    );
+  }
+  if (source.dateOfBirth) {
+    const dob = new Date(source.dateOfBirth);
+    const startOfDay = new Date(dob.getFullYear(), dob.getMonth(), dob.getDate());
+    const endOfDay = new Date(dob.getFullYear(), dob.getMonth(), dob.getDate() + 1);
+    conditions.push({
+      "personalInfo.dateOfBirth": { $gte: startOfDay, $lt: endOfDay },
     });
   }
 
-  if (addressLine1) {
-    profileMatchConditions.push({
-      $or: [
-        { "contactInfo.buildingOrHouse": new RegExp(`^${addressLine1.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
-        { "contactInfo.streetOrRoad": new RegExp(`^${addressLine1.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
-      ],
-    });
+  if (conditions.length === 0) return [];
+
+  const rows = await Profile.find({ tenantId, $or: conditions })
+    .select("_id")
+    .lean();
+  return rows.map((row) => String(row._id));
+}
+
+async function scoreApplicationCandidates(source, applicationIds) {
+  const matches = [];
+  for (const applicationId of applicationIds) {
+    const bundle = await loadApplicationBundle(applicationId);
+    if (!bundle) continue;
+    const record = bundleToRecord(bundle);
+    const result = scorePair(source, record);
+    if (!result) continue;
+    matches.push(toMatchSummaryEntry("APPLICATION", record, result));
   }
-
-  if (profileMatchConditions.length === 0) {
-    return matches;
-  }
-
-  const profileMatches = await Profile.find({
-    tenantId,
-    $or: profileMatchConditions, // Use $or to find any field matches
-  }).select("_id personalInfo contactInfo");
-
-  // Filter profiles that match 3 out of 4 fields
-  const filteredProfiles = profileMatches.filter((profile) => {
-    let matchCount = 0;
-
-    if (
-      forename &&
-      normalizeString(profile.personalInfo?.forename) === forename
-    ) {
-      matchCount++;
-    }
-    if (
-      surname &&
-      normalizeString(profile.personalInfo?.surname) === surname
-    ) {
-      matchCount++;
-    }
-    if (
-      dateOfBirth &&
-      compareDates(profile.personalInfo?.dateOfBirth, dateOfBirth)
-    ) {
-      matchCount++;
-    }
-    if (
-      addressLine1 &&
-      normalizeString(getAddressLine1(profile.contactInfo)) === addressLine1
-    ) {
-      matchCount++;
-    }
-
-    return matchCount >= 3;
-  });
-
-  if (filteredProfiles.length > 0) {
-    matches.profiles.push(...filteredProfiles.map((p) => p._id));
-    if (!matches.matchType) {
-      matches.matchType = "fuzzy_3of4";
-    }
-  }
-
   return matches;
 }
 
-/**
- * Detect duplicates for an application
- * Runs in background - doesn't block the main flow
- */
+async function scoreProfileCandidates(source, profileIds) {
+  const matches = [];
+  for (const profileId of profileIds) {
+    const profile = await Profile.findById(profileId).lean();
+    if (!profile) continue;
+    const record = profileToRecord(profile);
+    const result = scorePair(source, record);
+    if (!result) continue;
+    matches.push(toMatchSummaryEntry("PROFILE", record, result));
+  }
+  return matches;
+}
+
+async function findDuplicateMatches(applicationId, tenantId) {
+  const bundle = await loadApplicationBundle(applicationId);
+  if (!bundle) {
+    return {
+      matchingApplications: [],
+      matchingProfiles: [],
+      matchSummary: [],
+      hasPotentialDuplicate: false,
+    };
+  }
+
+  const source = bundleToRecord(bundle);
+
+  const applicationCandidateIds = new Set([
+    ...(await findExactApplicationCandidates(source, applicationId)),
+    ...(await findFuzzyApplicationCandidates(source, applicationId)),
+  ]);
+
+  const profileCandidateIds = new Set([
+    ...(await findExactProfileCandidates(source, tenantId)),
+    ...(await findFuzzyProfileCandidates(source, tenantId)),
+  ]);
+
+  const [applicationMatches, profileMatches] = await Promise.all([
+    scoreApplicationCandidates(source, [...applicationCandidateIds]),
+    scoreProfileCandidates(source, [...profileCandidateIds]),
+  ]);
+
+  const matchSummary = [...applicationMatches, ...profileMatches].sort(
+    (a, b) => b.score - a.score,
+  );
+
+  return {
+    matchingApplications: applicationMatches,
+    matchingProfiles: profileMatches,
+    matchSummary,
+    hasPotentialDuplicate: matchSummary.some((m) => !m.ignored && m.score >= 40),
+  };
+}
+
 async function detectDuplicates(applicationId, tenantId) {
   try {
-    console.log(
-      "🔍 [DUPLICATE_DETECTION] Starting duplicate detection:",
-      {
-        applicationId,
-        tenantId,
-      }
-    );
+    const result = await findDuplicateMatches(applicationId, tenantId);
+    const activeMatches = result.matchSummary.filter((m) => !m.ignored);
+    const isDuplicate = activeMatches.length > 0;
+    const topMatch = activeMatches[0] || null;
 
-    // Get the application data
-    const application = await PersonalDetails.findOne({
-      applicationId,
-    });
+    const reviewStatus = isDuplicate
+      ? DUPLICATE_REVIEW_STATUS.POTENTIAL_MATCH
+      : DUPLICATE_REVIEW_STATUS.NO_MATCH;
 
-    if (!application) {
-      console.warn(
-        "⚠️ [DUPLICATE_DETECTION] Application not found:",
-        applicationId
-      );
-      return;
-    }
-
-    // Check for exact matches first
-    const exactMatches = await checkExactMatch(
-      {
-        personalInfo: application.personalInfo,
-        contactInfo: application.contactInfo,
-      },
-      tenantId,
-      applicationId
-    );
-
-    let isDuplicate = false;
-    let matchType = null;
-    let matchedApplicationIds = [];
-    let matchedProfileIds = [];
-
-    if (
-      exactMatches.applications.length > 0 ||
-      exactMatches.profiles.length > 0
-    ) {
-      isDuplicate = true;
-      matchType = exactMatches.matchType;
-      matchedApplicationIds = exactMatches.applications;
-      matchedProfileIds = exactMatches.profiles;
-    } else {
-      // If no exact match, check fuzzy match
-      const fuzzyMatches = await checkFuzzyMatch(
-        {
-          personalInfo: application.personalInfo,
-          contactInfo: application.contactInfo,
-        },
-        tenantId,
-        applicationId
-      );
-
-      if (
-        fuzzyMatches.applications.length > 0 ||
-        fuzzyMatches.profiles.length > 0
-      ) {
-        isDuplicate = true;
-        matchType = fuzzyMatches.matchType;
-        matchedApplicationIds = fuzzyMatches.applications;
-        matchedProfileIds = fuzzyMatches.profiles;
-      }
-    }
-
-    // Update application with duplicate detection results
     await PersonalDetails.updateOne(
       { applicationId },
       {
         $set: {
           "duplicateDetection.isPotentialDuplicate": isDuplicate,
           "duplicateDetection.detectedAt": new Date(),
-          "duplicateDetection.matchType": matchType,
-          "duplicateDetection.matchedApplicationIds": matchedApplicationIds,
-          "duplicateDetection.matchedProfileIds": matchedProfileIds,
+          "duplicateDetection.matchType": topMatch?.score === 100
+            ? "exact"
+            : topMatch
+              ? "fuzzy_scored"
+              : null,
+          "duplicateDetection.matchedApplicationIds": result.matchingApplications.map(
+            (m) => m.sourceId,
+          ),
+          "duplicateDetection.matchedProfileIds": result.matchingProfiles.map(
+            (m) => m.sourceId,
+          ),
+          "duplicateReview.status": reviewStatus,
+          "duplicateReview.matchSummary": result.matchSummary,
+          "duplicateReview.detectedAt": new Date(),
         },
-      }
+      },
     );
 
-    console.log(
-      isDuplicate
-        ? "⚠️ [DUPLICATE_DETECTION] Potential duplicate detected:"
-        : "✅ [DUPLICATE_DETECTION] No duplicates found:",
-      {
-        applicationId,
-        isDuplicate,
-        matchType,
-        matchedApplications: matchedApplicationIds.length,
-        matchedProfiles: matchedProfileIds.length,
-      }
-    );
+    return result;
   } catch (error) {
-    console.error(
-      "❌ [DUPLICATE_DETECTION] Error detecting duplicates:",
-      {
-        error: error.message,
-        applicationId,
-        stack: error.stack,
-      }
-    );
-    // Don't throw - duplicate detection failure shouldn't block the application flow
+    console.error("❌ [DUPLICATE_DETECTION] Error:", {
+      error: error.message,
+      applicationId,
+    });
+    throw error;
   }
 }
 
 module.exports = {
   detectDuplicates,
-  checkExactMatch,
-  checkFuzzyMatch,
+  findDuplicateMatches,
+  loadApplicationBundle,
+  bundleToRecord,
+  profileToRecord,
+  normalizeEmail,
+  normalizePhoneNumber,
+  normalizeIdentifier,
 };
-

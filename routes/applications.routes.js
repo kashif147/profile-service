@@ -11,10 +11,16 @@ const {
   bulkApproveApplications,
 } = require("../controllers/bulkApproval.controller.js");
 const {
+  detectDuplicatesForApplication,
+  getDuplicateMatches,
+  submitDuplicateReviewDecision,
+} = require("../controllers/duplicateReview.controller.js");
+const {
   ReviewDraftBody,
   ApproveBody,
   RejectBody,
   BulkApprovalBody,
+  DuplicateReviewDecisionBody,
 } = require("../validation/applications.validators.js");
 const { ApplicationParams } = require("../validation/params.validators.js");
 const router = Router();
@@ -45,6 +51,28 @@ router.post(
   idempotency(),
   validate(BulkApprovalBody),
   bulkApproveApplications
+);
+
+router.post(
+  "/:applicationId/detect-duplicates",
+  ensureAuthenticated,
+  validate({ params: ApplicationParams }),
+  detectDuplicatesForApplication
+);
+
+router.get(
+  "/:applicationId/duplicate-matches",
+  ensureAuthenticated,
+  validate({ params: ApplicationParams }),
+  getDuplicateMatches
+);
+
+router.post(
+  "/:applicationId/duplicate-review",
+  ensureAuthenticated,
+  idempotency(),
+  validate({ params: ApplicationParams, body: DuplicateReviewDecisionBody }),
+  submitDuplicateReviewDecision
 );
 
 module.exports = router;

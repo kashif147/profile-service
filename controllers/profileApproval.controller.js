@@ -24,8 +24,9 @@ const {
 const { loadSubmission } = require("../services/submission.service.js");
 const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const {
-  findOrCreateProfileByEmail,
-} = require("../services/profileLookup.service.js");
+  ensureDuplicateReviewAllowsApproval,
+  resolveProfileForApproval,
+} = require("../services/duplicate.review.service.js");
 const {
   publishPostApprovalEvents,
 } = require("../services/publishPostApprovalEvents.js");
@@ -205,24 +206,19 @@ async function approveApplication(req, res, next) {
       subscriptionDetails: normalizedSubscriptionDetails,
     };
 
-    // Find existing profile or create new one
-    // Check if profile exists before calling findOrCreateProfileByEmail to determine isExistingProfile
-    const email =
-      effective.contactInfo?.personalEmail || effective.contactInfo?.workEmail;
-    if (!email) throw new Error("No email found in effective data");
-    const normalizedEmail = email.toLowerCase();
-    const existingProfile = await Profile.findOne({
+    const personalForReview = await ensureDuplicateReviewAllowsApproval(
+      applicationId,
       tenantId,
-      normalizedEmail,
-    }).session(session);
+    );
 
-    // findOrCreateProfileByEmail handles both creation and update with all necessary fields
-    const { profile, linkedUserId } = await findOrCreateProfileByEmail({
-      tenantId,
-      effective,
-      reviewerId,
-      session,
-    });
+    const { profile, linkedUserId, isExistingProfile } =
+      await resolveProfileForApproval({
+        tenantId,
+        effective,
+        reviewerId,
+        duplicateReview: personalForReview.duplicateReview,
+        session,
+      });
 
     // Update main application models with approved data
     if (effective.personalInfo) {

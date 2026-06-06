@@ -147,4 +147,28 @@ module.exports = {
   ApproveBody,
   RejectBody,
   BulkApprovalBody,
+  DuplicateReviewDecisionBody: z.object({
+    action: z.enum(["LINK", "MERGE", "MARKED_NEW", "IGNORE_MATCH"]),
+    sourceType: z.enum(["PROFILE", "APPLICATION"]).optional(),
+    sourceId: z.string().optional(),
+    decisionReason: z.string().max(2000).optional(),
+  }).superRefine((data, ctx) => {
+    if (
+      (data.action === "LINK" || data.action === "MERGE" || data.action === "IGNORE_MATCH") &&
+      (!data.sourceType || !data.sourceId)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "sourceType and sourceId are required for this action",
+      });
+    }
+    if (data.action === "LINK" || data.action === "MERGE") {
+      if (data.sourceType !== "PROFILE") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Link and Merge actions require a PROFILE sourceType",
+        });
+      }
+    }
+  }),
 };

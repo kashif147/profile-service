@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const { v4: uuidv4 } = require("uuid");
 const {
   APPLICATION_STATUS,
+  DUPLICATE_REVIEW_STATUS,
   PREFERRED_ADDRESS,
   PREFERRED_EMAIL,
   USER_TYPE,
@@ -110,7 +111,14 @@ const ProfileSchema = new mongoose.Schema(
       detectedAt: Date,
       matchType: {
         type: String,
-        enum: ["exact_email", "exact_mobile", "fuzzy_3of4", null],
+        enum: [
+          "exact_email",
+          "exact_mobile",
+          "fuzzy_3of4",
+          "exact",
+          "fuzzy_scored",
+          null,
+        ],
         default: null,
       },
       matchedApplicationIds: [
@@ -122,6 +130,64 @@ const ProfileSchema = new mongoose.Schema(
         {
           type: mongoose.Schema.Types.ObjectId,
           ref: "Profile",
+        },
+      ],
+    },
+
+    duplicateReview: {
+      status: {
+        type: String,
+        enum: Object.values(DUPLICATE_REVIEW_STATUS),
+        default: DUPLICATE_REVIEW_STATUS.NOT_CHECKED,
+        index: true,
+      },
+      detectedAt: Date,
+      matchedProfileId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Profile",
+        default: null,
+      },
+      matchedApplicationId: { type: String, default: null },
+      decisionReason: { type: String, default: null },
+      reviewedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "users",
+        default: null,
+      },
+      reviewedAt: Date,
+      matchSummary: [
+        {
+          sourceType: {
+            type: String,
+            enum: ["PROFILE", "APPLICATION"],
+          },
+          sourceId: { type: String },
+          score: { type: Number },
+          classification: { type: String },
+          matchedFields: [{ type: String }],
+          matchReason: { type: String },
+          isExact: { type: Boolean, default: false },
+          ignored: { type: Boolean, default: false },
+          name: { type: String },
+          email: { type: String },
+          mobile: { type: String },
+          membershipNumber: { type: String },
+          applicationNumber: { type: String },
+        },
+      ],
+      auditHistory: [
+        {
+          action: { type: String },
+          reviewedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "users",
+          },
+          reviewedAt: { type: Date },
+          matchScore: { type: Number },
+          matchedFields: [{ type: String }],
+          decisionReason: { type: String },
+          sourceType: { type: String },
+          sourceId: { type: String },
         },
       ],
     },
