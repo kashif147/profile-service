@@ -14,6 +14,7 @@ const {
   detectDuplicatesForApplication,
   getDuplicateMatches,
   submitDuplicateReviewDecision,
+  getDuplicateMergeCompareHandler,
 } = require("../controllers/duplicateReview.controller.js");
 const {
   ReviewDraftBody,
@@ -73,6 +74,13 @@ router.post(
   idempotency(),
   validate({ params: ApplicationParams, body: DuplicateReviewDecisionBody }),
   submitDuplicateReviewDecision
+);
+
+router.get(
+  "/:applicationId/duplicate-merge-compare/:profileId",
+  ensureAuthenticated,
+  validate({ params: ApplicationParams }),
+  getDuplicateMergeCompareHandler
 );
 
 module.exports = router;

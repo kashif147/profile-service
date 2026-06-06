@@ -18,6 +18,10 @@ const {
   resolveLinkedPortalUserIdForProfile,
 } = require("./profileLookup.service.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
+const {
+  buildEffectiveFromMergeChoices,
+  validateMergeFieldChoices,
+} = require("./duplicate.merge.service.js");
 
 const APPROVAL_ALLOWED_STATUSES = new Set([
   DUPLICATE_REVIEW_STATUS.NO_MATCH,
@@ -94,6 +98,7 @@ async function recordDuplicateDecision({
   sourceType,
   sourceId,
   decisionReason,
+  mergeFieldChoices,
 }) {
   const personal = await PersonalDetails.findOne({ applicationId });
   if (!personal) {
@@ -152,6 +157,7 @@ async function recordDuplicateDecision({
     if (sourceType !== "PROFILE" || !sourceId) {
       throw AppError.badRequest("Merge action requires a profile match");
     }
+    validateMergeFieldChoices(mergeFieldChoices);
     status = DUPLICATE_REVIEW_STATUS.MERGED;
     matchedProfileId = new mongoose.Types.ObjectId(String(sourceId));
     matchedApplicationId = null;
@@ -165,6 +171,8 @@ async function recordDuplicateDecision({
     matchedProfileId,
     matchedApplicationId,
     decisionReason: decisionReason || null,
+    mergeFieldChoices:
+      action === DUPLICATE_REVIEW_ACTION.MERGE ? mergeFieldChoices : null,
     reviewedBy: getReviewerIdForDb(reviewerId),
     reviewedAt: now,
     matchSummary,
@@ -282,36 +290,38 @@ async function resolveProfileForApproval({
       throw AppError.notFound("Matched profile not found for duplicate review");
     }
 
-    if (status === DUPLICATE_REVIEW_STATUS.MERGED) {
+    if (status === DUPLICATE_REVIEW_STATUS.LINKED) {
       profile = await applyEffectiveToProfile({
         profile,
         effective,
         reviewerId,
         session,
       });
-    } else {
-      const patch = {};
-      if (reviewerId) patch.crmUserId = getReviewerIdForDb(reviewerId);
-      const userId = effective?.userId || null;
-      const userType = effective?.userType || null;
-      const email = pickPrimaryEmail(effective.contactInfo || {});
-      const portalUserId = email
-        ? await findPortalUserIdByTenantEmail(
-            tenantId,
-            normalizeEmail(email),
-            session,
-          )
-        : null;
-      const linkedUserId = resolveLinkedPortalUserIdForProfile(
-        userType,
-        userId,
-        portalUserId,
-      );
-      if (!profile.userId && linkedUserId) patch.userId = linkedUserId;
-      if (Object.keys(patch).length > 0) {
-        await Profile.updateOne({ _id: profile._id }, { $set: patch }, { session });
-        profile = await Profile.findById(profile._id).session(session);
+    } else if (status === DUPLICATE_REVIEW_STATUS.MERGED) {
+      const rawMergeChoices = duplicateReview?.mergeFieldChoices;
+      const mergeFieldChoices =
+        rawMergeChoices?.toObject?.() ??
+        (rawMergeChoices instanceof Map
+          ? Object.fromEntries(rawMergeChoices.entries())
+          : rawMergeChoices);
+      if (!mergeFieldChoices || typeof mergeFieldChoices !== "object") {
+        throw AppError.badRequest(
+          "Merge review is missing field choices. Re-open merge review and select fields to keep.",
+        );
       }
+
+      const mergedEffective = buildEffectiveFromMergeChoices(
+        effective,
+        profile,
+        mergeFieldChoices,
+      );
+
+      profile = await applyEffectiveToProfile({
+        profile,
+        effective: mergedEffective,
+        reviewerId,
+        session,
+      });
     }
 
     const linkedUserId = profile.userId || null;

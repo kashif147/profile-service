@@ -1,6 +1,9 @@
 const PersonalDetails = require("../models/personal.details.model");
 const { APPLICATION_STATUS } = require("../constants/enums");
 const { stampPersonalInfoFullName } = require("../helpers/personal.info.fullName.js");
+const {
+  queueDuplicateDetection,
+} = require("../services/duplicate.detection.service.js");
 
 const generateFullAddress = (contactInfo) => {
   if (!contactInfo) return "";
@@ -431,7 +434,17 @@ exports.updateApplicationStatus = (applicationId, status, tenantId) =>
           { new: true }
         );
       }
-      
+
+      if (
+        result &&
+        String(status).toLowerCase() === APPLICATION_STATUS.SUBMITTED
+      ) {
+        queueDuplicateDetection(
+          applicationId,
+          tenantId || result.tenantId || null,
+        );
+      }
+
       resolve(result);
     } catch (error) {
       console.error(

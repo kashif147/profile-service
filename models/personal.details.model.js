@@ -149,6 +149,11 @@ const ProfileSchema = new mongoose.Schema(
       },
       matchedApplicationId: { type: String, default: null },
       decisionReason: { type: String, default: null },
+      mergeFieldChoices: {
+        type: Map,
+        of: String,
+        default: null,
+      },
       reviewedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "users",
@@ -172,7 +177,7 @@ const ProfileSchema = new mongoose.Schema(
           email: { type: String },
           mobile: { type: String },
           membershipNumber: { type: String },
-          applicationNumber: { type: String },
+          membershipCategory: { type: String },
         },
       ],
       auditHistory: [

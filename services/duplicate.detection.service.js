@@ -11,6 +11,9 @@ const {
   scorePair,
   toMatchSummaryEntry,
 } = require("./duplicate.matching.js");
+const {
+  fetchCurrentSubscriptionByProfileId,
+} = require("./subscription.service.client.js");
 
 const NON_APPROVED_STATUSES = [
   APPLICATION_STATUS.IN_PROGRESS,
@@ -38,16 +41,22 @@ async function loadApplicationBundle(applicationId) {
 }
 
 function bundleToRecord(bundle) {
+  const membershipCategory =
+    bundle.subscription?.membershipCategory ??
+    bundle.professional?.membershipCategory ??
+    null;
+
   return buildMatchableRecord({
     personalInfo: bundle.personal.personalInfo,
     contactInfo: bundle.personal.contactInfo,
     professionalDetails: bundle.professional,
     subscriptionDetails: bundle.subscription,
     applicationId: bundle.personal.applicationId,
+    membershipCategory,
   });
 }
 
-function profileToRecord(profile) {
+function profileToRecord(profile, membershipCategory = null) {
   return buildMatchableRecord({
     personalInfo: profile.personalInfo,
     contactInfo: profile.contactInfo,
@@ -57,6 +66,7 @@ function profileToRecord(profile) {
     },
     profileId: profile._id,
     membershipNumber: profile.membershipNumber,
+    membershipCategory,
   });
 }
 
@@ -328,12 +338,24 @@ async function scoreApplicationCandidates(source, applicationIds) {
   return matches;
 }
 
-async function scoreProfileCandidates(source, profileIds) {
+async function scoreProfileCandidates(source, profileIds, tenantId) {
   const matches = [];
   for (const profileId of profileIds) {
     const profile = await Profile.findById(profileId).lean();
     if (!profile) continue;
-    const record = profileToRecord(profile);
+
+    let membershipCategory = null;
+    if (tenantId) {
+      const subscription = await fetchCurrentSubscriptionByProfileId(
+        profileId,
+        tenantId,
+        null,
+        profile.currentSubscriptionId,
+      );
+      membershipCategory = subscription?.membershipCategory ?? null;
+    }
+
+    const record = profileToRecord(profile, membershipCategory);
     const result = scorePair(source, record);
     if (!result) continue;
     matches.push(toMatchSummaryEntry("PROFILE", record, result));
@@ -366,7 +388,7 @@ async function findDuplicateMatches(applicationId, tenantId) {
 
   const [applicationMatches, profileMatches] = await Promise.all([
     scoreApplicationCandidates(source, [...applicationCandidateIds]),
-    scoreProfileCandidates(source, [...profileCandidateIds]),
+    scoreProfileCandidates(source, [...profileCandidateIds], tenantId),
   ]);
 
   const matchSummary = [...applicationMatches, ...profileMatches].sort(
@@ -426,8 +448,46 @@ async function detectDuplicates(applicationId, tenantId) {
   }
 }
 
+/**
+ * Run duplicate detection asynchronously after application data is persisted.
+ * Used on submission (CRM API path) and from the portal RabbitMQ listener.
+ */
+function queueDuplicateDetection(applicationId, tenantId) {
+  setImmediate(async () => {
+    try {
+      let resolvedTenantId = tenantId;
+      if (!resolvedTenantId) {
+        const personal = await PersonalDetails.findOne({ applicationId })
+          .select("tenantId")
+          .lean();
+        resolvedTenantId = personal?.tenantId;
+      }
+
+      if (!resolvedTenantId) {
+        console.warn(
+          "⚠️ [DUPLICATE_DETECTION] tenantId missing, skipping duplicate detection",
+          { applicationId },
+        );
+        return;
+      }
+
+      await detectDuplicates(applicationId, resolvedTenantId);
+      console.log("✅ [DUPLICATE_DETECTION] Completed for application:", {
+        applicationId,
+        tenantId: resolvedTenantId,
+      });
+    } catch (error) {
+      console.error("❌ [DUPLICATE_DETECTION] Background run failed:", {
+        error: error.message,
+        applicationId,
+      });
+    }
+  });
+}
+
 module.exports = {
   detectDuplicates,
+  queueDuplicateDetection,
   findDuplicateMatches,
   loadApplicationBundle,
   bundleToRecord,

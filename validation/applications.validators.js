@@ -152,6 +152,9 @@ module.exports = {
     sourceType: z.enum(["PROFILE", "APPLICATION"]).optional(),
     sourceId: z.string().optional(),
     decisionReason: z.string().max(2000).optional(),
+    mergeFieldChoices: z
+      .record(z.enum(["APPLICATION", "PROFILE"]))
+      .optional(),
   }).superRefine((data, ctx) => {
     if (
       (data.action === "LINK" || data.action === "MERGE" || data.action === "IGNORE_MATCH") &&
@@ -167,6 +170,16 @@ module.exports = {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Link and Merge actions require a PROFILE sourceType",
+        });
+      }
+    }
+    if (data.action === "MERGE") {
+      const choices = data.mergeFieldChoices;
+      if (!choices || Object.keys(choices).length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "mergeFieldChoices is required for MERGE",
+          path: ["mergeFieldChoices"],
         });
       }
     }

@@ -3,7 +3,7 @@ const ProfessionalDetails = require("../../models/professional.details.model.js"
 const SubscriptionDetails = require("../../models/subscription.model.js");
 const { APPLICATION_STATUS } = require("../../constants/enums.js");
 const {
-  detectDuplicates,
+  queueDuplicateDetection,
 } = require("../../services/duplicate.detection.service.js");
 
 function isRejectedStatus(value) {
@@ -108,6 +108,7 @@ class ProfileApplicationCreateListener {
         { applicationId: applicationId },
         {
           applicationId: applicationId,
+          tenantId: tenantId || personalDetails.tenantId || existingPersonal?.tenantId,
           userId: resolvedPersonalUserId,
           personalInfo: personalDetails.personalInfo,
           contactInfo: personalDetails.contactInfo,
@@ -380,30 +381,13 @@ class ProfileApplicationCreateListener {
       );
 
       // 4. Run duplicate detection in background (non-blocking)
-      // Use setImmediate to run after current event loop, doesn't block response
-      if (tenantId) {
-        setImmediate(async () => {
-          try {
-            await detectDuplicates(applicationId, tenantId);
-          } catch (error) {
-            console.error(
-              "❌ [PROFILE_CREATE_LISTENER] Background duplicate detection failed:",
-              {
-                error: error.message,
-                applicationId,
-              }
-            );
-            // Don't throw - duplicate detection failure shouldn't affect application creation
-          }
-        });
-        console.log(
-          "🔍 [PROFILE_CREATE_LISTENER] Duplicate detection queued for background processing"
-        );
-      } else {
-        console.warn(
-          "⚠️ [PROFILE_CREATE_LISTENER] tenantId missing, skipping duplicate detection"
-        );
-      }
+      queueDuplicateDetection(
+        applicationId,
+        tenantId || newPersonalDetails.tenantId || null,
+      );
+      console.log(
+        "🔍 [PROFILE_CREATE_LISTENER] Duplicate detection queued for background processing"
+      );
     } catch (error) {
       console.error(
         "❌ [PROFILE_CREATE_LISTENER] Error creating profile application:",

@@ -3,6 +3,9 @@ const {
   getDuplicateReviewState,
   recordDuplicateDecision,
 } = require("../services/duplicate.review.service.js");
+const {
+  getDuplicateMergeCompare,
+} = require("../services/duplicate.merge.service.js");
 const { DUPLICATE_REVIEW_ACTION } = require("../constants/enums.js");
 const { AppError } = require("../errors/AppError.js");
 
@@ -47,7 +50,8 @@ async function submitDuplicateReviewDecision(req, res, next) {
     const { applicationId } = req.params;
     const tenantId = req.tenantId;
     const reviewerId = req.user?.id || req.userId;
-    const { action, sourceType, sourceId, decisionReason } = req.body;
+    const { action, sourceType, sourceId, decisionReason, mergeFieldChoices } =
+      req.body;
 
     if (!tenantId) {
       return next(AppError.badRequest("Tenant context is required"));
@@ -67,6 +71,7 @@ async function submitDuplicateReviewDecision(req, res, next) {
       sourceType,
       sourceId,
       decisionReason,
+      mergeFieldChoices,
     });
 
     return res.success({
@@ -78,8 +83,28 @@ async function submitDuplicateReviewDecision(req, res, next) {
   }
 }
 
+async function getDuplicateMergeCompareHandler(req, res, next) {
+  try {
+    const { applicationId, profileId } = req.params;
+    const tenantId = req.tenantId;
+    if (!tenantId) {
+      return next(AppError.badRequest("Tenant context is required"));
+    }
+
+    const result = await getDuplicateMergeCompare(
+      applicationId,
+      profileId,
+      tenantId,
+    );
+    return res.success(result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   detectDuplicatesForApplication,
   getDuplicateMatches,
   submitDuplicateReviewDecision,
+  getDuplicateMergeCompareHandler,
 };

@@ -62,6 +62,7 @@ function buildMatchableRecord({
   subscriptionDetails = {},
   applicationId = null,
   membershipNumber = null,
+  membershipCategory = null,
   profileId = null,
 }) {
   const forename = normalizeString(personalInfo.forename);
@@ -75,6 +76,7 @@ function buildMatchableRecord({
     applicationId,
     profileId: profileId ? String(profileId) : null,
     membershipNumber: membershipNumber || null,
+    membershipCategory: membershipCategory || null,
     name: fullName || null,
     email: normalizeEmail(getPrimaryEmail(contactInfo)),
     mobile: normalizePhoneNumber(contactInfo.mobileNumber),
@@ -239,7 +241,7 @@ function toMatchSummaryEntry(sourceType, record, matchResult) {
     email: record.email,
     mobile: record.mobile,
     membershipNumber: record.membershipNumber,
-    applicationNumber: record.applicationId,
+    membershipCategory: record.membershipCategory,
   };
 }
 
