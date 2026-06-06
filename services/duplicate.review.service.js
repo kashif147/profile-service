@@ -21,6 +21,7 @@ const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
   buildEffectiveFromMergeChoices,
   validateMergeFieldChoices,
+  resolveProfileForDuplicateMerge,
 } = require("./duplicate.merge.service.js");
 
 const APPROVAL_ALLOWED_STATUSES = new Set([
@@ -48,12 +49,33 @@ async function getPersonalDetailsForReview(applicationId) {
   return personal;
 }
 
+function normalizeTenantId(tenantId) {
+  return String(tenantId || "").trim();
+}
+
+function resolveApplicationTenantId(personal, requestTenantId) {
+  const applicationTenantId = normalizeTenantId(personal?.tenantId);
+  const normalizedRequestTenantId = normalizeTenantId(requestTenantId);
+
+  if (
+    normalizedRequestTenantId &&
+    applicationTenantId &&
+    normalizedRequestTenantId !== applicationTenantId
+  ) {
+    throw AppError.notFound("Application not found");
+  }
+
+  return applicationTenantId || normalizedRequestTenantId;
+}
+
 async function runDuplicateDetection(applicationId, tenantId) {
-  const result = await detectDuplicates(applicationId, tenantId);
   const personal = await getPersonalDetailsForReview(applicationId);
+  const effectiveTenantId = resolveApplicationTenantId(personal, tenantId);
+  const result = await detectDuplicates(applicationId, effectiveTenantId);
+  const updatedPersonal = await getPersonalDetailsForReview(applicationId);
   return {
     ...result,
-    duplicateReview: personal.duplicateReview,
+    duplicateReview: updatedPersonal.duplicateReview,
     matchingApplications: result.matchingApplications.filter((m) => !m.ignored),
     matchingProfiles: result.matchingProfiles.filter((m) => !m.ignored),
   };
@@ -61,6 +83,7 @@ async function runDuplicateDetection(applicationId, tenantId) {
 
 async function getDuplicateReviewState(applicationId, tenantId) {
   let personal = await getPersonalDetailsForReview(applicationId);
+  resolveApplicationTenantId(personal, tenantId);
   const status = personal.duplicateReview?.status || DUPLICATE_REVIEW_STATUS.NOT_CHECKED;
 
   if (
@@ -266,6 +289,7 @@ async function applyEffectiveToProfile({ profile, effective, reviewerId, session
 }
 
 async function resolveProfileForApproval({
+  applicationId,
   tenantId,
   effective,
   reviewerId,
@@ -283,9 +307,12 @@ async function resolveProfileForApproval({
       throw AppError.badRequest("Duplicate review is missing matched profile");
     }
 
-    let profile = await Profile.findOne({ _id: profileId, tenantId }).session(
-      session,
+    const { profile: resolvedProfile } = await resolveProfileForDuplicateMerge(
+      applicationId,
+      profileId,
+      tenantId,
     );
+    let profile = await Profile.findById(resolvedProfile._id).session(session);
     if (!profile) {
       throw AppError.notFound("Matched profile not found for duplicate review");
     }

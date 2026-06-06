@@ -213,6 +213,7 @@ async function approveApplication(req, res, next) {
 
     const { profile, linkedUserId, isExistingProfile } =
       await resolveProfileForApproval({
+        applicationId,
         tenantId,
         effective,
         reviewerId,

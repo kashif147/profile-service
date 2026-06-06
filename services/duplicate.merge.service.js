@@ -1,4 +1,6 @@
+const mongoose = require("mongoose");
 const Profile = require("../models/profile.model.js");
+const PersonalDetails = require("../models/personal.details.model.js");
 const { AppError } = require("../errors/AppError.js");
 const { loadSubmission } = require("./submission.service.js");
 const {
@@ -11,6 +13,7 @@ const {
   additionalInformationKeys,
   recruitmentKeys,
 } = require("../helpers/profile.transform.js");
+const { findAuthorizedProfileMatch } = require("./duplicate.matching.js");
 
 const SECTION_FIELDS_FROM_SUBSCRIPTION = [
   "primarySection",
@@ -170,15 +173,86 @@ function buildMergeCompareRows(submission, profileDoc) {
   return rows;
 }
 
-async function getDuplicateMergeCompare(applicationId, profileId, tenantId) {
-  const [{ submission }, profile] = await Promise.all([
-    loadSubmission(applicationId),
-    Profile.findOne({ _id: profileId, tenantId }).lean(),
-  ]);
+function normalizeTenantId(tenantId) {
+  return String(tenantId || "").trim();
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function resolveProfileForDuplicateMerge(
+  applicationId,
+  profileId,
+  requestTenantId,
+) {
+  const idStr = String(profileId || "").trim();
+  if (!mongoose.Types.ObjectId.isValid(idStr)) {
+    throw AppError.badRequest("Invalid profileId");
+  }
+
+  const objectId = new mongoose.Types.ObjectId(idStr);
+  const normalizedRequestTenantId = normalizeTenantId(requestTenantId);
+
+  const personal = await PersonalDetails.findOne({ applicationId }).lean();
+  if (!personal) {
+    throw AppError.notFound("Application not found");
+  }
+
+  const applicationTenantId = normalizeTenantId(personal.tenantId);
+  if (
+    normalizedRequestTenantId &&
+    applicationTenantId &&
+    normalizedRequestTenantId !== applicationTenantId
+  ) {
+    throw AppError.notFound("Application not found");
+  }
+
+  const tenantId = applicationTenantId || normalizedRequestTenantId;
+  const matchRow = findAuthorizedProfileMatch(
+    personal.duplicateReview?.matchSummary,
+    idStr,
+  );
+
+  if (!matchRow) {
+    throw AppError.notFound(
+      "Profile is not an active duplicate match for this application. Refresh duplicate detection and try again.",
+    );
+  }
+
+  const findForTenant = (filter) =>
+    Profile.findOne({ ...filter, tenantId }).lean();
+
+  let profile = await findForTenant({ _id: objectId });
 
   if (!profile) {
-    throw AppError.notFound("Profile not found for merge comparison");
+    profile = await findForTenant({ userId: objectId });
   }
+
+  if (!profile && matchRow.membershipNumber) {
+    profile = await Profile.findOne({
+      tenantId,
+      membershipNumber: new RegExp(
+        `^${escapeRegex(matchRow.membershipNumber)}$`,
+        "i",
+      ),
+    }).lean();
+  }
+
+  if (!profile) {
+    throw AppError.notFound(
+      "Profile not found for merge comparison. Run duplicate detection again to refresh matches.",
+    );
+  }
+
+  return { personal, profile, matchRow };
+}
+
+async function getDuplicateMergeCompare(applicationId, profileId, tenantId) {
+  const [{ submission }, { profile }] = await Promise.all([
+    loadSubmission(applicationId),
+    resolveProfileForDuplicateMerge(applicationId, profileId, tenantId),
+  ]);
 
   const fields = buildMergeCompareRows(submission, profile);
 
@@ -297,6 +371,7 @@ function validateMergeFieldChoices(mergeFieldChoices) {
 module.exports = {
   MERGE_FIELD_DEFINITIONS,
   buildMergeCompareRows,
+  resolveProfileForDuplicateMerge,
   getDuplicateMergeCompare,
   buildEffectiveFromMergeChoices,
   validateMergeFieldChoices,

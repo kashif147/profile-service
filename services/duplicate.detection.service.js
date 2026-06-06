@@ -340,8 +340,11 @@ async function scoreApplicationCandidates(source, applicationIds) {
 
 async function scoreProfileCandidates(source, profileIds, tenantId) {
   const matches = [];
+  const normalizedTenantId = String(tenantId || "").trim();
   for (const profileId of profileIds) {
-    const profile = await Profile.findById(profileId).lean();
+    const profile = normalizedTenantId
+      ? await Profile.findOne({ _id: profileId, tenantId: normalizedTenantId }).lean()
+      : await Profile.findById(profileId).lean();
     if (!profile) continue;
 
     let membershipCategory = null;

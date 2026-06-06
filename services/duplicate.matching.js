@@ -245,6 +245,16 @@ function toMatchSummaryEntry(sourceType, record, matchResult) {
   };
 }
 
+function findAuthorizedProfileMatch(matchSummary, profileId) {
+  const idStr = String(profileId || "").trim();
+  return (matchSummary || []).find(
+    (match) =>
+      match.sourceType === "PROFILE" &&
+      !match.ignored &&
+      String(match.sourceId) === idStr,
+  );
+}
+
 module.exports = {
   FUZZY_WEIGHTS,
   EXACT_FIELD_LABELS,
@@ -260,4 +270,5 @@ module.exports = {
   calculateFuzzyScore,
   scorePair,
   toMatchSummaryEntry,
+  findAuthorizedProfileMatch,
 };

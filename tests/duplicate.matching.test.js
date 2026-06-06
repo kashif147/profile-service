@@ -4,6 +4,7 @@ const {
   classifyScore,
   scorePair,
   buildMatchableRecord,
+  findAuthorizedProfileMatch,
 } = require("../services/duplicate.matching.js");
 
 describe("duplicate.matching", () => {
@@ -104,5 +105,43 @@ describe("duplicate.matching", () => {
     expect(classifyScore(65)).toBe("Possible Match");
     expect(classifyScore(45)).toBe("Weak Match");
     expect(classifyScore(20)).toBe("Ignore");
+  });
+
+  test("findAuthorizedProfileMatch returns active profile match only", () => {
+    const matchSummary = [
+      {
+        sourceType: "PROFILE",
+        sourceId: "6a23d1347fdb29bfbca83066",
+        ignored: false,
+      },
+      {
+        sourceType: "APPLICATION",
+        sourceId: "ccd90dcc-f281-45e9-8383-f3bf94bfddcc",
+        ignored: false,
+      },
+      {
+        sourceType: "PROFILE",
+        sourceId: "aaaaaaaaaaaaaaaaaaaaaaaa",
+        ignored: true,
+      },
+    ];
+
+    expect(
+      findAuthorizedProfileMatch(matchSummary, "6a23d1347fdb29bfbca83066"),
+    ).toEqual(
+      expect.objectContaining({
+        sourceType: "PROFILE",
+        sourceId: "6a23d1347fdb29bfbca83066",
+      }),
+    );
+    expect(
+      findAuthorizedProfileMatch(
+        matchSummary,
+        "ccd90dcc-f281-45e9-8383-f3bf94bfddcc",
+      ),
+    ).toBeUndefined();
+    expect(
+      findAuthorizedProfileMatch(matchSummary, "aaaaaaaaaaaaaaaaaaaaaaaa"),
+    ).toBeUndefined();
   });
 });
