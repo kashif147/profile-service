@@ -31,6 +31,8 @@ exports.PAYMENT_TYPE = {
   DIRECT_DEBIT: "Direct Debit",
   CARD_PAYMENT: "Credit Card", // Matches portal-service
   SBO_PAYMENT: "Standing Order",
+  CHEQUE: "Cheque",
+  CASH: "Cash",
 };
 
 // Payment Frequency Enums
@@ -167,6 +169,32 @@ exports.CREDIT_NOTE_FILTER_FIELD_MAP = {
 
 exports.CREDIT_NOTE_TEMPLATE_FILTER_KEYS = Object.keys(
   exports.CREDIT_NOTE_FILTER_FIELD_MAP,
+);
+
+/** Membership listing report (templateType membershiplisting) — reporting-service listing API keys. */
+exports.MEMBERSHIP_LISTING_TEMPLATE_FILTER_FIELD_MAP = {
+  membershipCategories: "membershipCategories",
+  membershipStatuses: "membershipStatuses",
+  membershipMovements: "membershipMovements",
+  grades: "grades",
+  sections: "sections",
+  regions: "regions",
+  branches: "branches",
+  workLocations: "workLocations",
+  paymentTypes: "paymentTypes",
+  paymentFrequencies: "paymentFrequencies",
+  subscriptionYears: "subscriptionYears",
+  isCurrent: "isCurrent",
+  startDateRange: "startDateRange",
+  expiryDateRange: "expiryDateRange",
+  cancelledDateRange: "cancelledDateRange",
+  resignedDateRange: "resignedDateRange",
+  processedDateRange: "processedDateRange",
+  search: "search",
+};
+
+exports.MEMBERSHIP_LISTING_TEMPLATE_FILTER_KEYS = Object.keys(
+  exports.MEMBERSHIP_LISTING_TEMPLATE_FILTER_FIELD_MAP,
 );
 
 // All columns that can be returned in application list response (template columns). User sends camelCase. Empty array = all columns.

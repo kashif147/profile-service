@@ -42,6 +42,9 @@ function templateTypeMatchForList(type) {
   if (lower === "profile") {
     return { $in: ["profile", "Profile"] };
   }
+  if (lower === "membershiplisting") {
+    return { $in: ["membershiplisting", "MembershipListing", "membershipListing"] };
+  }
   return t;
 }
 
@@ -65,10 +68,11 @@ function clearSisterIsDefaultFlags(userId, templateType, excludeId, tenantId) {
 }
 
 async function findSystemDefaultTemplateDoc(type, tenantId) {
+  const resolvedType = (type == null || type === "" ? "application" : String(type)).trim();
   const base = {
     systemDefault: true,
     "meta.deleted": false,
-    templateType: type,
+    templateType: templateTypeMatchForList(resolvedType),
   };
   if (tenantId) {
     const scoped = await Template.findOne({ ...base, tenantId });
@@ -96,7 +100,7 @@ class TemplateService {
         pinned,
       } =
         templateData;
-      const type = templateType || "application";
+      const type = String(templateType || "application").trim().toLowerCase();
 
       if (isDefault) {
         await clearSisterIsDefaultFlags(userId, type, null, tenantId);
@@ -135,9 +139,10 @@ class TemplateService {
 
   async getUserTemplatesWithSystemDefault(userId, type = "application", tenantId = null) {
     try {
-      const typeFilter = { templateType: type };
+      const resolvedType = (type == null || type === "" ? "application" : String(type)).trim();
+      const typeFilter = { templateType: templateTypeMatchForList(resolvedType) };
 
-      const systemDefault = await findSystemDefaultTemplateDoc(type, tenantId);
+      const systemDefault = await findSystemDefaultTemplateDoc(resolvedType, tenantId);
 
       const uq = {
         userId,

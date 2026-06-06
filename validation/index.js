@@ -9,16 +9,22 @@ const {
   APPLICATION_RESPONSE_COLUMNS,
   ALLOWED_FILTER_KEYS,
   PROFILE_TEMPLATE_FILTER_KEYS,
+  MEMBERSHIP_LISTING_TEMPLATE_FILTER_KEYS,
 } = require("../constants/enums");
 
 const ALL_TEMPLATE_FILTER_KEYS = [
   ...new Set([
     ...ALLOWED_FILTER_KEYS,
     ...PROFILE_TEMPLATE_FILTER_KEYS,
+    ...MEMBERSHIP_LISTING_TEMPLATE_FILTER_KEYS,
   ]),
 ];
 const PROFILE_LIKE_TEMPLATE_TYPES = ["profile", "member", "members"];
-const OPEN_COLUMN_TEMPLATE_TYPES = [...PROFILE_LIKE_TEMPLATE_TYPES];
+const MEMBERSHIP_LISTING_TEMPLATE_TYPES = ["membershiplisting"];
+const OPEN_COLUMN_TEMPLATE_TYPES = [
+  ...PROFILE_LIKE_TEMPLATE_TYPES,
+  ...MEMBERSHIP_LISTING_TEMPLATE_TYPES,
+];
 
 module.exports.personal_details_create = Joi.object({
   personalInfo: Joi.object({
@@ -117,7 +123,11 @@ module.exports.professional_details_create = Joi.object({
     otherWorkLocation: Joi.string().optional().default(null),
     grade: Joi.string().optional().default(null),
     otherGrade: Joi.string().optional().default(null),
-    nmbiNumber: Joi.string().optional().default(null),
+    nmbiNumber: Joi.when("nursingAdaptationProgramme", {
+      is: false,
+      then: Joi.string().trim().required(),
+      otherwise: Joi.string().allow(null, "").optional().default(null),
+    }),
     nursingAdaptationProgramme: Joi.boolean().optional().default(false),
     nurseType: Joi.when("nursingAdaptationProgramme", {
       is: true,
@@ -145,7 +155,11 @@ module.exports.professional_details_update = Joi.object({
     otherWorkLocation: Joi.string().optional().default(null),
     grade: Joi.string().optional().default(null),
     otherGrade: Joi.string().optional().default(null),
-    nmbiNumber: Joi.string().optional().default(null),
+    nmbiNumber: Joi.when("nursingAdaptationProgramme", {
+      is: false,
+      then: Joi.string().trim().required(),
+      otherwise: Joi.string().allow(null, "").optional().default(null),
+    }),
     nursingAdaptationProgramme: Joi.boolean().optional().default(false),
     nurseType: Joi.when("nursingAdaptationProgramme", {
       is: true,
@@ -172,6 +186,13 @@ module.exports.subscription_details_create = Joi.object({
       .optional(),
     payrollNo: Joi.string().optional().default(null),
     membershipStatus: Joi.string().optional().default(null),
+    previousMembershipNo: Joi.string().optional().allow(null, "").default(null),
+    joinYouthForum: Joi.boolean().optional().allow(null).default(null),
+    youthForum: Joi.when("joinYouthForum", {
+      is: true,
+      then: Joi.string().trim().required(),
+      otherwise: Joi.string().allow(null, "").optional().default(null),
+    }),
     otherIrishTradeUnion: Joi.boolean().optional().default(false),
     otherIrishTradeUnionName: Joi.string().optional().default(null),
     otherScheme: Joi.boolean().optional().default(false),
@@ -203,6 +224,13 @@ module.exports.subscription_details_update = Joi.object({
       .optional(),
     payrollNo: Joi.string().optional().default(null),
     membershipStatus: Joi.string().optional().default(null),
+    previousMembershipNo: Joi.string().optional().allow(null, "").default(null),
+    joinYouthForum: Joi.boolean().optional().allow(null).default(null),
+    youthForum: Joi.when("joinYouthForum", {
+      is: true,
+      then: Joi.string().trim().required(),
+      otherwise: Joi.string().allow(null, "").optional().default(null),
+    }),
     otherIrishTradeUnion: Joi.boolean().optional().default(false),
     otherIrishTradeUnionName: Joi.string().optional().default(null),
     otherScheme: Joi.boolean().optional().default(false),
@@ -365,18 +393,25 @@ module.exports.filter_template_create = Joi.object({
   templateType: Joi.string().trim().optional().default("application"),
   /** Filters: camelCase keys. Each: { operator, values }. Keys depend on templateType. */
   filters: Joi.when("templateType", {
-    is: Joi.valid(...PROFILE_LIKE_TEMPLATE_TYPES),
+    is: Joi.valid(...MEMBERSHIP_LISTING_TEMPLATE_TYPES),
     then: Joi.object()
-      .pattern(
-        Joi.string().valid(...PROFILE_TEMPLATE_FILTER_KEYS),
-        filterEntrySchema,
-      )
+      .pattern(Joi.string().trim(), filterEntrySchema)
       .optional()
       .default({}),
-    otherwise: Joi.object()
-      .pattern(Joi.string().valid(...ALLOWED_FILTER_KEYS), filterEntrySchema)
-      .optional()
-      .default({}),
+    otherwise: Joi.when("templateType", {
+      is: Joi.valid(...PROFILE_LIKE_TEMPLATE_TYPES),
+      then: Joi.object()
+        .pattern(
+          Joi.string().valid(...PROFILE_TEMPLATE_FILTER_KEYS),
+          filterEntrySchema,
+        )
+        .optional()
+        .default({}),
+      otherwise: Joi.object()
+        .pattern(Joi.string().valid(...ALLOWED_FILTER_KEYS), filterEntrySchema)
+        .optional()
+        .default({}),
+    }),
   }),
   /** Columns: application templates use APPLICATION_RESPONSE_COLUMNS; profile allows any string. */
   columns: Joi.when("templateType", {
@@ -399,9 +434,15 @@ module.exports.filter_template_create = Joi.object({
 module.exports.filter_template_update = Joi.object({
   name: Joi.string().trim().allow("", null).optional(),
   templateType: Joi.string().trim().optional(),
-  filters: Joi.object()
-    .pattern(Joi.string().valid(...ALL_TEMPLATE_FILTER_KEYS), filterEntrySchema)
-    .optional(),
+  filters: Joi.when("templateType", {
+    is: Joi.valid(...MEMBERSHIP_LISTING_TEMPLATE_TYPES),
+    then: Joi.object()
+      .pattern(Joi.string().trim(), filterEntrySchema)
+      .optional(),
+    otherwise: Joi.object()
+      .pattern(Joi.string().valid(...ALL_TEMPLATE_FILTER_KEYS), filterEntrySchema)
+      .optional(),
+  }),
   columns: Joi.array().items(Joi.string().trim()).optional(),
   columnLabels: Joi.object()
     .pattern(Joi.string().trim(), Joi.string().trim())

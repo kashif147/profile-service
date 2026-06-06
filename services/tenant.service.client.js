@@ -71,4 +71,20 @@ function formatOrgAddress(org = {}) {
   return lines.join("\n");
 }
 
-module.exports = { fetchTenantContext, formatOrgAddress, formatBankAddress };
+function resolveTenantTradingName(organisationProfile = {}, tenant = {}) {
+  return String(
+    organisationProfile.tradingName ||
+      organisationProfile.legalName ||
+      tenant.name ||
+      tenant.tenantName ||
+      tenant.code ||
+      "",
+  ).trim();
+}
+
+module.exports = {
+  fetchTenantContext,
+  formatOrgAddress,
+  formatBankAddress,
+  resolveTenantTradingName,
+};

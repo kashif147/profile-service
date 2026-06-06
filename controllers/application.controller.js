@@ -11,6 +11,10 @@ const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
 const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
+const {
+  fetchTenantContext,
+  resolveTenantTradingName,
+} = require("../services/tenant.service.client.js");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
 
 /** True if the client sent at least one non-empty filter entry (not `{}`). */
@@ -286,7 +290,19 @@ exports.getApplicationById = async (req, res, next) => {
       }
     }
 
-    return res.success(applicationDetails);
+    let tradingName = "";
+    if (tenantId) {
+      const tenantCtx = await fetchTenantContext(tenantId, req);
+      tradingName = resolveTenantTradingName(
+        tenantCtx.organisationProfile || {},
+        { name: tenantCtx.tenantName },
+      );
+    }
+
+    return res.success({
+      ...applicationDetails,
+      tradingName,
+    });
   } catch (error) {
     console.error("ApplicationController [getApplicationById] Error:", error);
     if (error.message === "Application not found") {

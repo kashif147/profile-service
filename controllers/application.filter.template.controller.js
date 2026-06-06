@@ -179,14 +179,20 @@ exports.updateTemplate = async (req, res, next) => {
     }
 
     const { templateId } = req.params;
-    const validatedData =
-      await joischemas.filter_template_update.validateAsync(req.body);
 
     const existingTemplate = await applicationFilterTemplateService.getTemplateById(
       templateId,
       creatorId,
       tenantId || null
     );
+
+    const bodyForValidation = {
+      ...req.body,
+      templateType:
+        req.body.templateType ?? existingTemplate?.templateType ?? "application",
+    };
+    const validatedData =
+      await joischemas.filter_template_update.validateAsync(bodyForValidation);
     const isPreferenceOnly =
       existingTemplate?.systemDefault &&
       isSystemDefaultPreferenceOnlyUpdate(validatedData);
