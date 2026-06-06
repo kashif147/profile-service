@@ -26,6 +26,9 @@ const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/applic
 const {
   findOrCreateProfileByEmail,
 } = require("../services/profileLookup.service.js");
+const {
+  publishPostApprovalEvents,
+} = require("../services/publishPostApprovalEvents.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
   parseDateOnlyToUtcNoon,
@@ -282,111 +285,29 @@ async function approveApplication(req, res, next) {
       await overlay.save({ session });
     }
 
-    // Get updated profile to include crmUserId in events
     const updatedProfile = await Profile.findById(profile._id).session(session);
-
-    // Publish events using dedicated publisher
     const memberId = updatedProfile?.membershipNumber || null;
-    // Wrap in try-catch to prevent approval failure if publishing fails
-    try {
-      await ApplicationApprovalEventPublisher.publishApplicationApproved({
-        applicationId,
-        reviewerId,
-        profileId: String(profile._id),
-        applicationStatus: "APPROVED",
-        isExistingProfile: !!existingProfile,
-        crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
-        memberId,
-        userId: updatedProfile?.userId ? String(updatedProfile.userId) : null,
-        effective: {
-          personalInfo: effective.personalInfo,
-          contactInfo: effective.contactInfo,
-          professionalDetails: effective.professionalDetails,
-          subscriptionDetails: effective.subscriptionDetails, // Send full subscriptionDetails to preserve all fields (inmoRewards, valueAddedServices, etc.)
-        },
-        subscriptionAttributes: subAttrs(effective.subscriptionDetails),
-        tenantId,
-        userId: updatedProfile?.userId ? String(updatedProfile.userId) : null,
-        correlationId: crypto.randomUUID(),
-      });
-    } catch (publishError) {
-      console.error(
-        "[approveApplication] Failed to publish application approved event:",
-        publishError.message
-      );
-      // Continue with approval even if publishing fails
-    }
-
-    try {
-      await ApplicationApprovalEventPublisher.publishMemberCreatedRequested({
-        applicationId,
-        profileId: String(profile._id),
-        isExistingProfile: !!existingProfile,
-        crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
-        memberId,
-        effective,
-        subscriptionAttributes: subAttrs(effective.subscriptionDetails),
-        tenantId,
-        correlationId: crypto.randomUUID(),
-      });
-    } catch (publishError) {
-      console.error(
-        "[approveApplication] Failed to publish member created requested event:",
-        publishError.message
-      );
-      // Continue with approval even if publishing fails
-    }
-
-    // Publish subscription upsert request for subscription-service
     const sub = effective.subscriptionDetails || {};
-    // Use dateJoined from the current approval (subscription details), fallback to current date
-    // Always use the dateJoined from the approval, not from profile.firstJoinedDate
     const dateJoined = parseDateOnlyToUtcNoon(sub.dateJoined, true);
-
-    // Portal user id for subscription-service: prefer persisted Profile.userId, else linkedUserId from this transaction
-    const userIdForSubscription =
-      updatedProfile?.userId != null
-        ? String(updatedProfile.userId)
-        : linkedUserId != null
-          ? String(linkedUserId)
-          : null;
-    const userEmailForSubscription =
-      effective.contactInfo?.personalEmail ||
-      effective.contactInfo?.workEmail ||
-      null;
-
-    try {
-      await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested(
-        {
-          tenantId,
-          profileId: String(profile._id),
-          applicationId,
-          memberId,
-          membershipCategory:
-            sub.membershipCategory ??
-            effective.professionalDetails?.membershipCategory ??
-            null,
-          dateJoined: dateJoined,
-          submissionDate: sub.submissionDate ?? null,
-          applicationDate: sub.applicationDate ?? effective.applicationDate ?? null,
-          paymentType: sub.paymentType ?? null,
-          payrollNo: sub.payrollNo ?? null,
-          paymentFrequency: sub.paymentFrequency ?? null,
-          userId: userIdForSubscription,
-          userEmail: userEmailForSubscription,
-          reviewerId: reviewerId, // Pass reviewerId (CRM user ID) for meta fields
-          correlationId: crypto.randomUUID(),
-        }
-      );
-    } catch (publishError) {
-      console.error(
-        "[approveApplication] Failed to publish subscription upsert requested event:",
-        publishError.message
-      );
-      // Continue with approval even if publishing fails
-    }
+    const postApprovalPayload = {
+      applicationId,
+      reviewerId,
+      profileId: profile._id,
+      tenantId,
+      isExistingProfile: !!existingProfile,
+      updatedProfile,
+      linkedUserId,
+      effective: {
+        ...effective,
+        subscriptionAttributes: subAttrs(effective.subscriptionDetails),
+      },
+      memberId,
+      dateJoined,
+    };
 
     await session.commitTransaction();
+
+    await publishPostApprovalEvents(postApprovalPayload);
     return res.status(200).json({
       applicationId,
       profileId: String(profile._id),

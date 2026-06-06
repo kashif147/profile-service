@@ -24,9 +24,9 @@ const {
   generateMembershipNumber,
 } = require("../helpers/membership.number.generator.js");
 const {
-  publishProfileAudit,
-  publishProfileAfterUpdateOne,
-} = require("./profile.audit.publisher.js");
+  publishPostApprovalEvents,
+} = require("./publishPostApprovalEvents.js");
+const { publishProfileAudit } = require("./profile.audit.publisher.js");
 
 function deepClone(o) {
   return JSON.parse(JSON.stringify(o));
@@ -167,20 +167,11 @@ async function approveApplication({
         );
       }
 
-      const beforeLean = existingProfile.toObject({ depopulate: true });
       await Profile.updateOne(
         { _id: existingProfile._id },
         { $set: profileUpdate },
         { session }
       );
-      await publishProfileAfterUpdateOne({
-        tenantId,
-        profileId: existingProfile._id,
-        beforeLean,
-        session,
-        actorId: reviewerId,
-        source: "approval.service",
-      });
       profile = existingProfile;
     } else {
       // Create new profile (first-ever membership): set initial fields via upsert
@@ -375,80 +366,29 @@ async function approveApplication({
       reasonLeft: effective.subscriptionDetails?.reasonLeft ?? null,
     };
 
-    // Get the updated profile to include crmUserId and userId in events
     const updatedProfile = await Profile.findById(profile._id).session(session);
-
     const memberId = updatedProfile?.membershipNumber || null;
-
-    await ApplicationApprovalEventPublisher.publishApplicationApproved({
-      applicationId,
-      reviewerId,
-      profileId: String(profile._id),
-      applicationStatus: APPLICATION_STATUS.APPROVED,
-      isExistingProfile: !!existingProfile,
-      crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
-      memberId,
-      userId: updatedProfile?.userId ? String(updatedProfile.userId) : null,
-      effective,
-      subscriptionAttributes,
-      tenantId,
-      userId: updatedProfile?.userId ? String(updatedProfile.userId) : null,
-      correlationId: crypto.randomUUID(),
-    });
-
-    await ApplicationApprovalEventPublisher.publishMemberCreatedRequested({
-      applicationId,
-      profileId: String(profile._id),
-      isExistingProfile: !!existingProfile,
-      crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
-      memberId,
-      effective,
-      subscriptionAttributes,
-      tenantId,
-      correlationId: crypto.randomUUID(),
-    });
-
-    // Publish subscription upsert request for subscription-service
     const sub = effective.subscriptionDetails || {};
-    // Use dateJoined from the current approval (subscription details), fallback to current date
-    // Always use the dateJoined from the approval, not from profile.firstJoinedDate
     const dateJoined = sub.dateJoined ?? new Date();
-    
-    // Prefer Profile.userId after save; else portal User row; else PORTAL submission id
-    const userIdForSubscription =
-      updatedProfile?.userId != null
-        ? String(updatedProfile.userId)
-        : portalUserId != null
-          ? String(portalUserId)
-          : effective?.userType === "PORTAL" && effective?.userId != null
-            ? String(effective.userId)
-            : null;
-    const userEmailForSubscription = effective.contactInfo?.personalEmail 
-      || effective.contactInfo?.workEmail 
-      || null;
-    
-    await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested({
-      tenantId,
-      profileId: String(profile._id),
-      applicationId,
-      memberId,
-      membershipCategory:
-        sub.membershipCategory ??
-        effective.professionalDetails?.membershipCategory ??
-        null,
-      dateJoined: dateJoined,
-      submissionDate: sub.submissionDate ?? null,
-      applicationDate: sub.applicationDate ?? effective.applicationDate ?? null,
-      paymentType: sub.paymentType ?? null,
-      payrollNo: sub.payrollNo ?? null,
-      paymentFrequency: sub.paymentFrequency ?? null,
-      userId: userIdForSubscription,
-      userEmail: userEmailForSubscription,
-      reviewerId: reviewerId,
-      correlationId: crypto.randomUUID(),
-    });
 
     await session.commitTransaction();
+
+    await publishPostApprovalEvents({
+      applicationId,
+      reviewerId,
+      profileId: profile._id,
+      tenantId,
+      isExistingProfile: !!existingProfile,
+      updatedProfile,
+      linkedUserId: portalUserId,
+      effective: {
+        ...effective,
+        subscriptionAttributes,
+      },
+      memberId,
+      dateJoined,
+    });
+
     return { applicationId, effectiveHash, status: "approved" };
   } catch (e) {
     await session.abortTransaction();

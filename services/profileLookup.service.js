@@ -5,7 +5,6 @@ const {
   generateMembershipNumber,
 } = require("../helpers/membership.number.generator.js");
 const { parseDateOnlyToUtcNoon } = require("../helpers/parseDateOnly.js");
-const { publishProfileAfterUpdateOne } = require("./profile.audit.publisher.js");
 
 // Helper function to handle bypass user ObjectId conversion
 function getReviewerIdForDb(reviewerId) {
@@ -176,16 +175,8 @@ async function findOrCreateProfileByEmail({
       $set.normalizedEmail = normalizeEmail(primaryEmail);
     }
 
-    const beforeLean = profile.toObject({ depopulate: true });
     await Profile.updateOne({ _id: profile._id }, { $set }, { session });
-    await publishProfileAfterUpdateOne({
-      tenantId,
-      profileId: profile._id,
-      beforeLean,
-      session,
-      actorId: reviewerId,
-      source: "profileLookup.findOrCreate",
-    });
+    // profile.updated for reporting is published after commit via publishPostApprovalEvents
   }
   return { profile, portalUserId, linkedUserId };
 }

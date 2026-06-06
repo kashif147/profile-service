@@ -22,7 +22,6 @@ const {
   PAYMENT_FREQUENCY,
 } = require("../constants/enums.js");
 const { loadSubmission } = require("../services/submission.service.js");
-const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const {
   findOrCreateProfileByEmail,
   findPortalUserIdByTenantEmail,
@@ -30,7 +29,9 @@ const {
   pickPrimaryEmail,
   normalizeEmail,
 } = require("../services/profileLookup.service.js");
-const { flattenProfilePayload } = require("../helpers/profile.transform.js");
+const {
+  publishPostApprovalEvents,
+} = require("../services/publishPostApprovalEvents.js");
 const {
   generateMembershipNumber,
 } = require("../helpers/membership.number.generator.js");
@@ -362,59 +363,8 @@ async function approveSingleApplication({
       await overlay.save({ session });
     }
 
-    // Get updated profile to include crmUserId in events
     const updatedProfile = await Profile.findById(profile._id).session(session);
-
-    // Publish events (wrapped in try-catch to not fail approval if publishing fails)
     const memberId = updatedProfile?.membershipNumber || null;
-    try {
-      await ApplicationApprovalEventPublisher.publishApplicationApproved({
-        applicationId,
-        reviewerId,
-        profileId: String(profile._id),
-        applicationStatus: "APPROVED",
-        isExistingProfile: !!existingProfile,
-        crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
-        memberId,
-        userId: updatedProfile?.userId ? String(updatedProfile.userId) : null,
-        effective: {
-          personalInfo: effective.personalInfo,
-          contactInfo: effective.contactInfo,
-          professionalDetails: effective.professionalDetails,
-          subscriptionDetails: effective.subscriptionDetails,
-        },
-        subscriptionAttributes: subAttrs(effective.subscriptionDetails),
-        tenantId,
-        userId: updatedProfile?.userId ? String(updatedProfile.userId) : null,
-        correlationId: crypto.randomUUID(),
-      });
-    } catch (publishError) {
-      console.error(
-        `[bulkApproval] Failed to publish application approved event for ${applicationId}:`,
-        publishError.message
-      );
-    }
-
-    try {
-      await ApplicationApprovalEventPublisher.publishMemberCreatedRequested({
-        applicationId,
-        profileId: String(profile._id),
-        isExistingProfile: !!existingProfile,
-        crmUserId: updatedProfile?.crmUserId ? String(updatedProfile.crmUserId) : null,
-        memberId,
-        effective,
-        subscriptionAttributes: subAttrs(effective.subscriptionDetails),
-        tenantId,
-        correlationId: crypto.randomUUID(),
-      });
-    } catch (publishError) {
-      console.error(
-        `[bulkApproval] Failed to publish member created requested event for ${applicationId}:`,
-        publishError.message
-      );
-    }
-
-    // Publish subscription upsert request
     const sub = effective.subscriptionDetails || {};
     const dateJoinedForSub = parseDateOnlyToUtcNoon(sub.dateJoined, true);
     const processingDateSerialized =
@@ -423,53 +373,28 @@ async function approveSingleApplication({
           ? bulkDateJoined.toISOString().split("T")[0]
           : String(bulkDateJoined).split("T")[0]
         : undefined;
-    try {
-      const userIdForSubscription =
-        updatedProfile?.userId != null
-          ? String(updatedProfile.userId)
-          : linkedUserId != null
-            ? String(linkedUserId)
-            : null;
-      const userEmailForSubscription =
-        effective.contactInfo?.personalEmail ||
-        effective.contactInfo?.workEmail ||
-        null;
-
-      await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested(
-        {
-          tenantId,
-          profileId: String(profile._id),
-          applicationId,
-          memberId,
-          membershipCategory:
-            sub.membershipCategory ??
-            effective.professionalDetails?.membershipCategory ??
-            null,
-          dateJoined: dateJoinedForSub,
-          processingDate: processingDateSerialized,
-          submissionDate: sub.submissionDate ?? null,
-          applicationDate: sub.applicationDate ?? effective.applicationDate ?? null,
-          paymentType: sub.paymentType ?? null,
-          payrollNo: sub.payrollNo ?? null,
-          paymentFrequency: sub.paymentFrequency ?? null,
-          userId: userIdForSubscription,
-          userEmail: userEmailForSubscription,
-          reviewerId: reviewerId, // Pass reviewerId (CRM user ID) for meta fields
-          correlationId: crypto.randomUUID(),
-        }
-      );
-    } catch (publishError) {
-      console.error(
-        `[bulkApproval] Failed to publish subscription upsert requested event for ${applicationId}:`,
-        publishError.message
-      );
-    }
 
     return {
       applicationId,
       profileId: String(profile._id),
       status: "approved",
       success: true,
+      postApprovalPayload: {
+        applicationId,
+        reviewerId,
+        profileId: profile._id,
+        tenantId,
+        isExistingProfile: !!existingProfile,
+        updatedProfile,
+        linkedUserId,
+        effective: {
+          ...effective,
+          subscriptionAttributes: subAttrs(effective.subscriptionDetails),
+        },
+        memberId,
+        dateJoined: dateJoinedForSub,
+        processingDate: processingDateSerialized,
+      },
     };
   } catch (error) {
     return {
@@ -524,7 +449,15 @@ async function bulkApproveApplications(req, res, next) {
           });
 
           await appSession.commitTransaction();
-          results.push(result);
+          if (result.postApprovalPayload) {
+            await publishPostApprovalEvents(result.postApprovalPayload);
+          }
+          results.push({
+            applicationId: result.applicationId,
+            profileId: result.profileId,
+            status: result.status,
+            success: result.success,
+          });
         } catch (error) {
           await appSession.abortTransaction();
           results.push({

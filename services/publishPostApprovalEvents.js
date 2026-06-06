@@ -1,0 +1,134 @@
+const crypto = require("crypto");
+const Profile = require("../models/profile.model.js");
+const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
+const { publishProfileAudit } = require("./profile.audit.publisher.js");
+
+/**
+ * Publish approval side-effects after the Mongo transaction commits so
+ * downstream services (subscription → reporting snapshot) can read the profile.
+ */
+async function publishPostApprovalEvents({
+  applicationId,
+  reviewerId,
+  profileId,
+  tenantId,
+  isExistingProfile,
+  updatedProfile,
+  linkedUserId,
+  effective,
+  memberId,
+  dateJoined,
+  processingDate,
+  correlationId = crypto.randomUUID(),
+}) {
+  const sub = effective.subscriptionDetails || {};
+  const userIdForSubscription =
+    updatedProfile?.userId != null
+      ? String(updatedProfile.userId)
+      : linkedUserId != null
+        ? String(linkedUserId)
+        : null;
+  const userEmailForSubscription =
+    effective.contactInfo?.personalEmail ||
+    effective.contactInfo?.workEmail ||
+    null;
+
+  try {
+    await ApplicationApprovalEventPublisher.publishApplicationApproved({
+      applicationId,
+      reviewerId,
+      profileId: String(profileId),
+      applicationStatus: "APPROVED",
+      isExistingProfile: !!isExistingProfile,
+      crmUserId: updatedProfile?.crmUserId
+        ? String(updatedProfile.crmUserId)
+        : null,
+      memberId,
+      userId: updatedProfile?.userId ? String(updatedProfile.userId) : null,
+      effective: {
+        personalInfo: effective.personalInfo,
+        contactInfo: effective.contactInfo,
+        professionalDetails: effective.professionalDetails,
+        subscriptionDetails: effective.subscriptionDetails,
+      },
+      subscriptionAttributes: effective.subscriptionAttributes,
+      tenantId,
+      correlationId,
+    });
+  } catch (err) {
+    console.error(
+      "[publishPostApprovalEvents] application approved failed:",
+      err.message,
+    );
+  }
+
+  try {
+    await ApplicationApprovalEventPublisher.publishMemberCreatedRequested({
+      applicationId,
+      profileId: String(profileId),
+      isExistingProfile: !!isExistingProfile,
+      crmUserId: updatedProfile?.crmUserId
+        ? String(updatedProfile.crmUserId)
+        : null,
+      memberId,
+      effective,
+      subscriptionAttributes: effective.subscriptionAttributes,
+      tenantId,
+      correlationId: crypto.randomUUID(),
+    });
+  } catch (err) {
+    console.error(
+      "[publishPostApprovalEvents] member created requested failed:",
+      err.message,
+    );
+  }
+
+  try {
+    await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested({
+      tenantId,
+      profileId: String(profileId),
+      applicationId,
+      memberId,
+      membershipCategory:
+        sub.membershipCategory ??
+        effective.professionalDetails?.membershipCategory ??
+        null,
+      dateJoined,
+      processingDate: processingDate ?? null,
+      submissionDate: sub.submissionDate ?? null,
+      applicationDate: sub.applicationDate ?? effective.applicationDate ?? null,
+      paymentType: sub.paymentType ?? null,
+      payrollNo: sub.payrollNo ?? null,
+      paymentFrequency: sub.paymentFrequency ?? null,
+      userId: userIdForSubscription,
+      userEmail: userEmailForSubscription,
+      reviewerId,
+      correlationId: crypto.randomUUID(),
+    });
+  } catch (err) {
+    console.error(
+      "[publishPostApprovalEvents] subscription upsert failed:",
+      err.message,
+    );
+  }
+
+  try {
+    const freshProfile = await Profile.findById(profileId).lean();
+    if (freshProfile) {
+      await publishProfileAudit("profile.updated", {
+        tenantId,
+        profileId,
+        after: freshProfile,
+        actorId: reviewerId,
+        source: "publishPostApprovalEvents",
+      });
+    }
+  } catch (err) {
+    console.error(
+      "[publishPostApprovalEvents] profile.updated for reporting failed:",
+      err.message,
+    );
+  }
+}
+
+module.exports = { publishPostApprovalEvents };
