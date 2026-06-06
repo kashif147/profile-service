@@ -291,7 +291,7 @@ async function approveApplication(req, res, next) {
       reviewerId,
       profileId: profile._id,
       tenantId,
-      isExistingProfile: !!existingProfile,
+      isExistingProfile: !!isExistingProfile,
       updatedProfile,
       linkedUserId,
       effective: {

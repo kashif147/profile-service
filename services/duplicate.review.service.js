@@ -311,6 +311,7 @@ async function resolveProfileForApproval({
       applicationId,
       profileId,
       tenantId,
+      { requireAuthorizedMatch: false },
     );
     let profile = await Profile.findById(resolvedProfile._id).session(session);
     if (!profile) {

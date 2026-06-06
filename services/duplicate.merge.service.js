@@ -185,6 +185,7 @@ async function resolveProfileForDuplicateMerge(
   applicationId,
   profileId,
   requestTenantId,
+  { requireAuthorizedMatch = true } = {},
 ) {
   const idStr = String(profileId || "").trim();
   if (!mongoose.Types.ObjectId.isValid(idStr)) {
@@ -214,7 +215,13 @@ async function resolveProfileForDuplicateMerge(
     idStr,
   );
 
-  if (!matchRow) {
+  const matchRowForLookup =
+    matchRow ||
+    personal.duplicateReview?.matchSummary?.find(
+      (m) => m.sourceType === "PROFILE" && String(m.sourceId) === idStr,
+    );
+
+  if (requireAuthorizedMatch && !matchRow) {
     throw AppError.notFound(
       "Profile is not an active duplicate match for this application. Refresh duplicate detection and try again.",
     );
@@ -229,11 +236,11 @@ async function resolveProfileForDuplicateMerge(
     profile = await findForTenant({ userId: objectId });
   }
 
-  if (!profile && matchRow.membershipNumber) {
+  if (!profile && matchRowForLookup?.membershipNumber) {
     profile = await Profile.findOne({
       tenantId,
       membershipNumber: new RegExp(
-        `^${escapeRegex(matchRow.membershipNumber)}$`,
+        `^${escapeRegex(matchRowForLookup.membershipNumber)}$`,
         "i",
       ),
     }).lean();
@@ -245,7 +252,7 @@ async function resolveProfileForDuplicateMerge(
     );
   }
 
-  return { personal, profile, matchRow };
+  return { personal, profile, matchRow: matchRowForLookup };
 }
 
 async function getDuplicateMergeCompare(applicationId, profileId, tenantId) {
