@@ -5,14 +5,12 @@ const {
   generateMembershipNumber,
 } = require("../helpers/membership.number.generator.js");
 const { parseDateOnlyToUtcNoon } = require("../helpers/parseDateOnly.js");
+const { AppError } = require("../errors/AppError.js");
+const {
+  getReviewerIdForDb,
+  toObjectIdOrNull,
+} = require("../helpers/reviewerIdForDb.js");
 
-// Helper function to handle bypass user ObjectId conversion
-function getReviewerIdForDb(reviewerId) {
-  if (reviewerId === "bypass-user") {
-    return null; // Allow null for bypass users
-  }
-  return reviewerId;
-}
 function normalizeEmail(email) {
   return (email || "").trim().toLowerCase();
 }
@@ -66,10 +64,9 @@ async function findOrCreateProfileByEmail({
 }) {
   const contactInfo = effective?.contactInfo || {};
   const email = pickPrimaryEmail(contactInfo);
-  if (!email)
-    throw Object.assign(new Error("Primary email required to approve"), {
-      status: 400,
-    });
+  if (!email) {
+    throw AppError.badRequest("Primary email required to approve");
+  }
   const nEmail = normalizeEmail(email);
 
   // Get userId and userType from effective (from submission data)
@@ -129,7 +126,10 @@ async function findOrCreateProfileByEmail({
     };
 
     if (linkedUserId) {
-      doc.userId = linkedUserId;
+      const linkedUserObjectId = toObjectIdOrNull(linkedUserId);
+      if (linkedUserObjectId) {
+        doc.userId = linkedUserObjectId;
+      }
     }
 
     // Set crmUserId when reviewerId is provided (CRM user approving the profile)
@@ -154,7 +154,10 @@ async function findOrCreateProfileByEmail({
     };
 
     if (!profile.userId && linkedUserId) {
-      $set.userId = linkedUserId;
+      const linkedUserObjectId = toObjectIdOrNull(linkedUserId);
+      if (linkedUserObjectId) {
+        $set.userId = linkedUserObjectId;
+      }
     }
 
     // Set crmUserId when reviewerId is provided (CRM user approving the profile)

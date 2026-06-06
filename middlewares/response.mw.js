@@ -99,12 +99,39 @@ module.exports.errorHandler = (error, req, res, next) => {
     });
   }
 
+  if (error.name === "CastError" || error.name === "ValidationError") {
+    return res.status(400).json({
+      success: false,
+      error: {
+        message: error.message,
+        code: "BAD_REQUEST",
+        status: 400,
+      },
+      correlationId,
+    });
+  }
+
+  if (error.status >= 400 && error.status < 500 && error.message) {
+    return res.status(error.status).json({
+      success: false,
+      error: {
+        message: error.message,
+        code: error.code || "BAD_REQUEST",
+        status: error.status,
+      },
+      correlationId,
+    });
+  }
+
   // Default server error
   console.log(`ERROR: [${req.method}-${req.url}] ${error}`);
   res.status(500).json({
     success: false,
     error: {
-      message: "Internal Server Error",
+      message:
+        process.env.NODE_ENV === "production"
+          ? "Internal Server Error"
+          : error.message || "Internal Server Error",
       code: "INTERNAL_SERVER_ERROR",
       status: 500,
       stack: process.env.NODE_ENV === "development" ? error.stack : undefined,

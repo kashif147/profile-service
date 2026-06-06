@@ -19,10 +19,28 @@ const {
 } = require("./profileLookup.service.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
+  getReviewerIdForDb,
+  toObjectIdOrNull,
+} = require("../helpers/reviewerIdForDb.js");
+const {
   buildEffectiveFromMergeChoices,
   validateMergeFieldChoices,
   resolveProfileForDuplicateMerge,
 } = require("./duplicate.merge.service.js");
+
+function normalizeMergeFieldChoices(raw) {
+  if (!raw) return null;
+  if (raw instanceof Map) {
+    return Object.fromEntries(raw.entries());
+  }
+  if (typeof raw.toObject === "function") {
+    return raw.toObject();
+  }
+  if (typeof raw === "object") {
+    return raw;
+  }
+  return null;
+}
 
 const APPROVAL_ALLOWED_STATUSES = new Set([
   DUPLICATE_REVIEW_STATUS.NO_MATCH,
@@ -31,11 +49,6 @@ const APPROVAL_ALLOWED_STATUSES = new Set([
   DUPLICATE_REVIEW_STATUS.MARKED_NEW,
   DUPLICATE_REVIEW_STATUS.IGNORED,
 ]);
-
-function getReviewerIdForDb(reviewerId) {
-  if (reviewerId === "bypass-user") return null;
-  return reviewerId;
-}
 
 function activeMatchesFromSummary(matchSummary = []) {
   return (matchSummary || []).filter((m) => !m.ignored && m.score >= 40);
@@ -270,7 +283,10 @@ async function applyEffectiveToProfile({ profile, effective, reviewerId, session
   );
 
   if (!profile.userId && linkedUserId) {
-    $set.userId = linkedUserId;
+    const linkedUserObjectId = toObjectIdOrNull(linkedUserId);
+    if (linkedUserObjectId) {
+      $set.userId = linkedUserObjectId;
+    }
   }
   if (reviewerId) {
     $set.crmUserId = getReviewerIdForDb(reviewerId);
@@ -326,13 +342,14 @@ async function resolveProfileForApproval({
         session,
       });
     } else if (status === DUPLICATE_REVIEW_STATUS.MERGED) {
-      const rawMergeChoices = duplicateReview?.mergeFieldChoices;
-      const mergeFieldChoices =
-        rawMergeChoices?.toObject?.() ??
-        (rawMergeChoices instanceof Map
-          ? Object.fromEntries(rawMergeChoices.entries())
-          : rawMergeChoices);
-      if (!mergeFieldChoices || typeof mergeFieldChoices !== "object") {
+      const mergeFieldChoices = normalizeMergeFieldChoices(
+        duplicateReview?.mergeFieldChoices,
+      );
+      if (
+        !mergeFieldChoices ||
+        typeof mergeFieldChoices !== "object" ||
+        Object.keys(mergeFieldChoices).length === 0
+      ) {
         throw AppError.badRequest(
           "Merge review is missing field choices. Re-open merge review and select fields to keep.",
         );

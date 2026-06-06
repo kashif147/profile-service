@@ -4,14 +4,6 @@ const jsonPatch = require("fast-json-patch");
 const { applyPatch } = jsonPatch;
 const { AppError } = require("../errors/AppError");
 
-// Helper function to handle bypass user ObjectId conversion
-function getReviewerIdForDb(reviewerId) {
-  if (reviewerId === "bypass-user") {
-    return null; // Allow null for bypass users
-  }
-  return reviewerId;
-}
-
 const ReviewOverlay = require("../models/reviewOverlay.model.js");
 const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
@@ -34,6 +26,10 @@ const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
   parseDateOnlyToUtcNoon,
 } = require("../helpers/parseDateOnly.js");
+const {
+  getReviewerIdForDb,
+  toObjectIdOrNull,
+} = require("../helpers/reviewerIdForDb.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -109,19 +105,15 @@ function validatePatchPaths(patch) {
       )
   );
   if (bad) {
-    const err = new Error(`Patch path not allowed: ${bad.path}`);
-    err.status = 400;
-    throw err;
+    throw AppError.badRequest(`Patch path not allowed: ${bad.path}`);
   }
   const blocked = patch?.find((op) =>
     op.path.startsWith("/professionalDetails/membershipCategory")
   );
   if (blocked) {
-    const err = new Error(
-      "membershipCategory must be modified under subscriptionDetails"
+    throw AppError.badRequest(
+      "membershipCategory must be modified under subscriptionDetails",
     );
-    err.status = 400;
-    throw err;
   }
 }
 
@@ -233,7 +225,10 @@ async function approveApplication(req, res, next) {
         "approvalDetails.approvedAt": new Date(),
       };
       if (linkedUserId) {
-        personalSet.userId = linkedUserId;
+        const linkedUserObjectId = toObjectIdOrNull(linkedUserId);
+        if (linkedUserObjectId) {
+          personalSet.userId = linkedUserObjectId;
+        }
       }
       await PersonalDetails.updateOne(
         { applicationId: applicationId },
@@ -245,7 +240,10 @@ async function approveApplication(req, res, next) {
     if (effective.professionalDetails) {
       const profSet = { professionalDetails: effective.professionalDetails };
       if (linkedUserId) {
-        profSet.userId = linkedUserId;
+        const linkedUserObjectId = toObjectIdOrNull(linkedUserId);
+        if (linkedUserObjectId) {
+          profSet.userId = linkedUserObjectId;
+        }
       }
       await ProfessionalDetails.updateOne(
         { applicationId: applicationId },
@@ -263,7 +261,10 @@ async function approveApplication(req, res, next) {
 
       const subSet = { subscriptionDetails: subscriptionDetailsToSave };
       if (linkedUserId) {
-        subSet.userId = linkedUserId;
+        const linkedUserObjectId = toObjectIdOrNull(linkedUserId);
+        if (linkedUserObjectId) {
+          subSet.userId = linkedUserObjectId;
+        }
       }
       await SubscriptionDetails.findOneAndUpdate(
         { applicationId: applicationId },
