@@ -106,9 +106,9 @@ class SubscriptionDetailsService {
       createData.subscriptionDetails = enforcePaymentFrequencyRule(
         createData.subscriptionDetails
       );
-      await assertSalaryDeductionAllowedForWorkLocation(
+      assertSalaryDeductionAllowedForWorkLocation(
         createData.subscriptionDetails,
-        professionalDetails?.professionalDetails?.workLocation
+        professionalDetails?.professionalDetails,
       );
       createData.subscriptionDetails = normalizeSubscriptionDetailsDates(
         createData.subscriptionDetails
@@ -375,9 +375,9 @@ class SubscriptionDetailsService {
         safeUpdateData.subscriptionDetails = enforcePaymentFrequencyRule(
           mergedSubscriptionDetails,
         );
-        await assertSalaryDeductionAllowedForWorkLocation(
+        assertSalaryDeductionAllowedForWorkLocation(
           safeUpdateData.subscriptionDetails,
-          professionalDetails?.professionalDetails?.workLocation,
+          professionalDetails?.professionalDetails,
         );
         safeUpdateData.subscriptionDetails = normalizeSubscriptionDetailsDates(
           safeUpdateData.subscriptionDetails

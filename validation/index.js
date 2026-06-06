@@ -120,6 +120,7 @@ module.exports.professional_details_create = Joi.object({
   professionalDetails: Joi.object({
     membershipCategory: Joi.any().strip(),
     workLocation: Joi.string().optional().default(null),
+    processSalaryDeduction: Joi.boolean().optional().default(false),
     otherWorkLocation: Joi.string().optional().default(null),
     grade: Joi.string().optional().default(null),
     otherGrade: Joi.string().optional().default(null),
@@ -152,6 +153,7 @@ module.exports.professional_details_update = Joi.object({
   professionalDetails: Joi.object({
     membershipCategory: Joi.any().strip(),
     workLocation: Joi.string().optional().default(null),
+    processSalaryDeduction: Joi.boolean().optional().default(false),
     otherWorkLocation: Joi.string().optional().default(null),
     grade: Joi.string().optional().default(null),
     otherGrade: Joi.string().optional().default(null),
