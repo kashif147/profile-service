@@ -28,6 +28,11 @@ const {
   resolveProfileForDuplicateMerge,
   fetchLiveSubscriptionForProfile,
 } = require("./duplicate.merge.service.js");
+const {
+  APPROVAL_ALLOWED_STATUSES,
+  DUPLICATE_REVIEW_REQUIRED_MESSAGE,
+  isDuplicateReviewBlockingApproval,
+} = require("./duplicate.review.helpers.js");
 
 function normalizeMergeFieldChoices(raw) {
   if (!raw) return null;
@@ -43,13 +48,6 @@ function normalizeMergeFieldChoices(raw) {
   return null;
 }
 
-const APPROVAL_ALLOWED_STATUSES = new Set([
-  DUPLICATE_REVIEW_STATUS.NO_MATCH,
-  DUPLICATE_REVIEW_STATUS.LINKED,
-  DUPLICATE_REVIEW_STATUS.MERGED,
-  DUPLICATE_REVIEW_STATUS.MARKED_NEW,
-  DUPLICATE_REVIEW_STATUS.IGNORED,
-]);
 
 function activeMatchesFromSummary(matchSummary = []) {
   return (matchSummary || []).filter((m) => !m.ignored && m.score >= 40);
@@ -239,17 +237,14 @@ async function ensureDuplicateReviewAllowsApproval(applicationId, tenantId) {
     status = personal.duplicateReview?.status || DUPLICATE_REVIEW_STATUS.NOT_CHECKED;
   }
 
-  if (!APPROVAL_ALLOWED_STATUSES.has(status)) {
-    throw AppError.unprocessableEntity(
-      "Duplicate review is required before approval. Open Duplicate Profile Review and choose Link, Merge, Create New Profile, or Ignore Match.",
-      {
-        code: "DUPLICATE_REVIEW_REQUIRED",
-        duplicateReviewStatus: status,
-        matchCount: activeMatchesFromSummary(
-          personal.duplicateReview?.matchSummary,
-        ).length,
-      },
-    );
+  if (isDuplicateReviewBlockingApproval(status)) {
+    throw AppError.unprocessableEntity(DUPLICATE_REVIEW_REQUIRED_MESSAGE, {
+      code: "DUPLICATE_REVIEW_REQUIRED",
+      duplicateReviewStatus: status,
+      matchCount: activeMatchesFromSummary(
+        personal.duplicateReview?.matchSummary,
+      ).length,
+    });
   }
 
   return personal;
@@ -407,5 +402,7 @@ module.exports = {
   ensureDuplicateReviewAllowsApproval,
   resolveProfileForApproval,
   activeMatchesFromSummary,
+  isDuplicateReviewBlockingApproval,
   APPROVAL_ALLOWED_STATUSES,
+  DUPLICATE_REVIEW_REQUIRED_MESSAGE,
 };
