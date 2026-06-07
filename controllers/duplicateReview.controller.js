@@ -95,6 +95,7 @@ async function getDuplicateMergeCompareHandler(req, res, next) {
       applicationId,
       profileId,
       tenantId,
+      req,
     );
     return res.success(result);
   } catch (error) {

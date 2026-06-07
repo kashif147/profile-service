@@ -5,7 +5,6 @@ const { AppError } = require("../errors/AppError.js");
 const { loadSubmission } = require("./submission.service.js");
 const {
   rehydrateProfile,
-  personalInfoKeys,
   contactInfoKeys,
   professionalDetailsKeys,
   preferencesKeys,
@@ -17,6 +16,8 @@ const { findAuthorizedProfileMatch } = require("./duplicate.matching.js");
 const {
   fetchCurrentSubscriptionByProfileId,
 } = require("./subscription.service.client.js");
+const { fetchMemberFinanceSummary } = require("./account.service.client.js");
+const { PAYMENT_TYPE } = require("../constants/enums.js");
 
 const SECTION_FIELDS_FROM_SUBSCRIPTION = [
   "primarySection",
@@ -25,13 +26,24 @@ const SECTION_FIELDS_FROM_SUBSCRIPTION = [
   "otherSecondarySection",
 ];
 
+const MERGE_PERSONAL_INFO_KEYS = [
+  "title",
+  "forename",
+  "surname",
+  "gender",
+  "dateOfBirth",
+  "age",
+  "countryPrimaryQualification",
+  "deceased",
+  "deceasedDate",
+];
+
 const SUBSCRIPTION_COMPARE_KEYS = [
   "membershipCategory",
   "paymentType",
   "paymentFrequency",
   "payrollNo",
   "membershipMovement",
-  "dateJoined",
   "submissionDate",
   "membershipStatus",
   "subscriptionStatus",
@@ -50,6 +62,17 @@ const SUBSCRIPTION_COMPARE_KEYS = [
   "confirmedRecruiterProfileId",
 ];
 
+const MERGE_SECTION_LABELS = {
+  personal: "Personal",
+  professional: "Professional",
+  subscription: "Subscription",
+};
+
+const FIELD_LABEL_OVERRIDES = {
+  "professionalDetails.startDate": "Employment Start Date",
+  "subscriptionDetails.startDate": "Start Date",
+};
+
 const LIVE_SUBSCRIPTION_FIELD_KEYS = new Set([
   "membershipCategory",
   "paymentType",
@@ -62,12 +85,11 @@ const LIVE_SUBSCRIPTION_FIELD_KEYS = new Set([
   "subscriptionYear",
 ]);
 
-const SECTION_LABELS = {
-  personalInfo: "Personal",
-  contactInfo: "Contact",
-  professionalDetails: "Professional",
-  subscriptionDetails: "Subscription",
-};
+function mergeSectionGroupFor(section) {
+  if (section === "personalInfo" || section === "contactInfo") return "personal";
+  if (section === "professionalDetails") return "professional";
+  return "subscription";
+}
 
 function humanizeFieldKey(key) {
   return String(key)
@@ -152,7 +174,26 @@ function getLiveSubscriptionValue(liveSubscription, key) {
   return liveSubscription[key] ?? null;
 }
 
-function getProfileValueForPath(profileSections, section, key, liveSubscription = null) {
+function getProfileValueForPath(
+  profileSections,
+  section,
+  key,
+  liveSubscription = null,
+  profileFallbacks = {},
+) {
+  if (section === "subscriptionDetails" && key === "membershipCategory") {
+    const liveValue = getLiveSubscriptionValue(liveSubscription, key);
+    if (liveValue != null && liveValue !== "") {
+      return liveValue;
+    }
+    if (
+      profileFallbacks.membershipCategory != null &&
+      profileFallbacks.membershipCategory !== ""
+    ) {
+      return profileFallbacks.membershipCategory;
+    }
+  }
+
   if (section === "subscriptionDetails" && LIVE_SUBSCRIPTION_FIELD_KEYS.has(key)) {
     const liveValue = getLiveSubscriptionValue(liveSubscription, key);
     if (liveValue != null && liveValue !== "") {
@@ -192,18 +233,21 @@ function buildMergeFieldDefinitions() {
   const fields = [];
 
   const addSection = (section, keys) => {
+    const sectionGroup = mergeSectionGroupFor(section);
     for (const key of keys) {
+      const path = `${section}.${key}`;
       fields.push({
-        path: `${section}.${key}`,
+        path,
         section,
-        sectionLabel: SECTION_LABELS[section] || section,
-        label: humanizeFieldKey(key),
+        sectionGroup,
+        sectionLabel: MERGE_SECTION_LABELS[sectionGroup] || section,
+        label: FIELD_LABEL_OVERRIDES[path] || humanizeFieldKey(key),
         key,
       });
     }
   };
 
-  addSection("personalInfo", personalInfoKeys);
+  addSection("personalInfo", MERGE_PERSONAL_INFO_KEYS);
   addSection("contactInfo", contactInfoKeys);
   addSection("professionalDetails", professionalDetailsKeys);
   addSection("subscriptionDetails", SUBSCRIPTION_COMPARE_KEYS);
@@ -212,6 +256,138 @@ function buildMergeFieldDefinitions() {
 }
 
 const MERGE_FIELD_DEFINITIONS = buildMergeFieldDefinitions();
+
+function isOnlinePaymentType(paymentType) {
+  const raw = String(paymentType || "").trim();
+  if (!raw) return false;
+  const normalized = raw.toLowerCase();
+  return (
+    raw === PAYMENT_TYPE.CARD_PAYMENT ||
+    normalized === "credit card" ||
+    normalized.includes("card")
+  );
+}
+
+function isOnlineApplicationPayment(submission, paymentDetails = null) {
+  if (isOnlinePaymentType(submission?.subscriptionDetails?.paymentType)) {
+    return true;
+  }
+  const details = paymentDetails || submission?.paymentDetails;
+  return Boolean(
+    details?.paymentIntentId &&
+      String(details?.status || "").toLowerCase() === "succeeded",
+  );
+}
+
+function formatEuroFromCents(amount) {
+  if (amount == null || amount === "") return null;
+  const num = Number(amount);
+  if (!Number.isFinite(num)) return null;
+  const eur = num / 100;
+  return `€${eur.toLocaleString("en-IE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatMemberLedgerBalance(net) {
+  const num = Number(net) || 0;
+  const isCents = Number.isInteger(num);
+  const eur = isCents ? Math.abs(num) / 100 : Math.abs(num);
+  const indicator = num > 0 ? " Dr" : num < 0 ? " Cr" : "";
+  return `€${eur.toLocaleString("en-IE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}${indicator}`;
+}
+
+function buildPaymentDisplayField({
+  path,
+  label,
+  applicationValue = null,
+  profileValue = null,
+  applicationOnly = false,
+  profileOnly = false,
+}) {
+  return {
+    path,
+    section: "subscriptionDetails",
+    sectionGroup: "subscription",
+    sectionLabel: MERGE_SECTION_LABELS.subscription,
+    label,
+    applicationValue,
+    profileValue,
+    profileValueFromSubscription: profileOnly,
+    hasConflict: false,
+    displayOnly: true,
+    applicationOnly,
+    profileOnly,
+    defaultSource: applicationOnly ? "APPLICATION" : "PROFILE",
+  };
+}
+
+function appendPaymentDisplayFields(rows, submission, memberFinanceSummary) {
+  const paymentDetails = submission?.paymentDetails || null;
+
+  if (isOnlineApplicationPayment(submission, paymentDetails)) {
+    const paymentDateRaw =
+      paymentDetails?.updatedAt || paymentDetails?.createdAt || null;
+    const paymentDate = paymentDateRaw
+      ? formatCompareValue(paymentDateRaw, "startDate")
+      : null;
+    const paymentAmount =
+      paymentDetails?.amount != null
+        ? formatEuroFromCents(paymentDetails.amount)
+        : null;
+
+    if (paymentDate) {
+      rows.push(
+        buildPaymentDisplayField({
+          path: "paymentInfo.paymentDate",
+          label: "Payment Date",
+          applicationValue: paymentDate,
+          applicationOnly: true,
+        }),
+      );
+    }
+    if (paymentAmount) {
+      rows.push(
+        buildPaymentDisplayField({
+          path: "paymentInfo.paymentAmount",
+          label: "Payment Amount",
+          applicationValue: paymentAmount,
+          applicationOnly: true,
+        }),
+      );
+    }
+  }
+
+  if (memberFinanceSummary) {
+    const lastPaymentDateRaw = memberFinanceSummary?.lastPayment?.date || null;
+    const lastPaymentDate = lastPaymentDateRaw
+      ? formatCompareValue(lastPaymentDateRaw, "startDate")
+      : null;
+
+    rows.push(
+      buildPaymentDisplayField({
+        path: "paymentInfo.lastPaymentDate",
+        label: "Last Payment Date",
+        profileValue: lastPaymentDate,
+        profileOnly: true,
+      }),
+    );
+    rows.push(
+      buildPaymentDisplayField({
+        path: "paymentInfo.balance",
+        label: "Balance",
+        profileValue: formatMemberLedgerBalance(memberFinanceSummary.net ?? 0),
+        profileOnly: true,
+      }),
+    );
+  }
+
+  return rows;
+}
 
 function summarizeActiveSubscription(liveSubscription) {
   if (!liveSubscription) return null;
@@ -232,7 +408,13 @@ function summarizeActiveSubscription(liveSubscription) {
   };
 }
 
-function buildMergeCompareRows(submission, profileDoc, liveSubscription = null) {
+function buildMergeCompareRows(
+  submission,
+  profileDoc,
+  liveSubscription = null,
+  profileFallbacks = {},
+  memberFinanceSummary = null,
+) {
   const profileSections = rehydrateProfile(profileDoc);
   const rows = [];
 
@@ -247,6 +429,7 @@ function buildMergeCompareRows(submission, profileDoc, liveSubscription = null) 
       field.section,
       field.key,
       liveSubscription,
+      profileFallbacks,
     );
 
     const formattedApplication = formatCompareValue(
@@ -267,6 +450,7 @@ function buildMergeCompareRows(submission, profileDoc, liveSubscription = null) 
     rows.push({
       path: field.path,
       section: field.section,
+      sectionGroup: field.sectionGroup,
       sectionLabel: field.sectionLabel,
       label: field.label,
       applicationValue: formattedApplication,
@@ -282,7 +466,7 @@ function buildMergeCompareRows(submission, profileDoc, liveSubscription = null) 
     });
   }
 
-  return rows;
+  return appendPaymentDisplayFields(rows, submission, memberFinanceSummary);
 }
 
 function normalizeTenantId(tenantId) {
@@ -381,27 +565,47 @@ async function resolveProfileForDuplicateMerge(
   return { personal, profile, matchRow: matchRowForLookup };
 }
 
-async function fetchLiveSubscriptionForProfile(profile, tenantId) {
+async function fetchLiveSubscriptionForProfile(profile, tenantId, req = null) {
   if (!profile?._id) return null;
   return fetchCurrentSubscriptionByProfileId(
     String(profile._id),
     tenantId,
-    null,
+    req,
     profile.currentSubscriptionId,
   );
 }
 
-async function getDuplicateMergeCompare(applicationId, profileId, tenantId) {
-  const [{ submission }, { profile }] = await Promise.all([
+async function getDuplicateMergeCompare(
+  applicationId,
+  profileId,
+  tenantId,
+  req = null,
+) {
+  const [{ submission }, { profile, matchRow }] = await Promise.all([
     loadSubmission(applicationId),
     resolveProfileForDuplicateMerge(applicationId, profileId, tenantId),
   ]);
 
-  const liveSubscription = await fetchLiveSubscriptionForProfile(
+  const [liveSubscription, memberFinanceSummary] = await Promise.all([
+    fetchLiveSubscriptionForProfile(profile, tenantId, req),
+    profile?.membershipNumber
+      ? fetchMemberFinanceSummary(profile.membershipNumber, tenantId, req)
+      : Promise.resolve(null),
+  ]);
+
+  const profileFallbacks = {
+    membershipCategory:
+      liveSubscription?.membershipCategory ??
+      matchRow?.membershipCategory ??
+      null,
+  };
+  const fields = buildMergeCompareRows(
+    submission,
     profile,
-    tenantId,
+    liveSubscription,
+    profileFallbacks,
+    memberFinanceSummary,
   );
-  const fields = buildMergeCompareRows(submission, profile, liveSubscription);
 
   return {
     applicationId,
@@ -506,6 +710,9 @@ function buildEffectiveFromMergeChoices(
       field.section,
       field.key,
       liveSubscription,
+      {
+        membershipCategory: liveSubscription?.membershipCategory ?? null,
+      },
     );
 
     const source =
@@ -554,6 +761,9 @@ function buildEffectiveFromMergeChoices(
       field.section,
       field.key,
       liveSubscription,
+      {
+        membershipCategory: liveSubscription?.membershipCategory ?? null,
+      },
     );
     applySubscriptionChoiceToEffective(
       mergedEffective,

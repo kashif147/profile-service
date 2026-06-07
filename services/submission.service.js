@@ -52,6 +52,7 @@ async function loadSubmission(applicationId) {
       contactInfo: personalDetails?.contactInfo || {},
       professionalDetails: professionalDetailsPayload,
       subscriptionDetails: subscriptionDetailsPayload,
+      paymentDetails: subscriptionDetails?.paymentDetails || null,
       userId: personalDetails?.userId || null,
       userType: personalDetails?.meta?.userType || null,
     };
