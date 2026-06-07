@@ -181,6 +181,9 @@ async function recordDuplicateDecision({
     status = DUPLICATE_REVIEW_STATUS.MARKED_NEW;
     matchedProfileId = null;
     matchedApplicationId = null;
+    for (let i = 0; i < matchSummary.length; i += 1) {
+      matchSummary[i] = { ...matchSummary[i], ignored: true };
+    }
   } else if (action === DUPLICATE_REVIEW_ACTION.LINK) {
     if (sourceType !== "PROFILE" || !sourceId) {
       throw AppError.badRequest("Link action requires a profile match");

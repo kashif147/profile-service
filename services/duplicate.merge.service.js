@@ -76,18 +76,62 @@ function humanizeFieldKey(key) {
     .trim();
 }
 
-function formatCompareValue(value) {
+const DATE_COMPARE_FIELD_KEYS = new Set([
+  "dateOfBirth",
+  "dateJoined",
+  "submissionDate",
+  "startDate",
+  "endDate",
+  "retiredDate",
+  "graduationDate",
+  "deceasedDate",
+]);
+
+function formatDateDmy(value) {
   if (value == null || value === "") return null;
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    const day = String(value.getUTCDate()).padStart(2, "0");
+    const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const year = value.getUTCFullYear();
+    return `${day}/${month}/${year}`;
+  }
+  const raw = String(value).trim();
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+  }
+  const dmyMatch = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (dmyMatch) return raw;
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    const day = String(parsed.getUTCDate()).padStart(2, "0");
+    const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+    const year = parsed.getUTCFullYear();
+    return `${day}/${month}/${year}`;
+  }
+  return raw;
+}
+
+function formatCompareValue(value, fieldKey = null) {
+  if (value == null || value === "") return null;
   if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (fieldKey && DATE_COMPARE_FIELD_KEYS.has(fieldKey)) {
+    return formatDateDmy(value);
+  }
+  if (value instanceof Date) return formatDateDmy(value);
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return formatDateDmy(value);
+  }
   return String(value);
 }
 
-function valuesEqual(a, b) {
-  const left = formatCompareValue(a);
-  const right = formatCompareValue(b);
+function valuesEqual(a, b, fieldKey = null) {
+  const left = formatCompareValue(a, fieldKey);
+  const right = formatCompareValue(b, fieldKey);
   if (left == null && right == null) return true;
-  return left === right;
+  if (left == null || right == null) return false;
+  return String(left).trim().toLowerCase() === String(right).trim().toLowerCase();
 }
 
 function getApplicationValue(submission, section, key) {
@@ -205,8 +249,11 @@ function buildMergeCompareRows(submission, profileDoc, liveSubscription = null) 
       liveSubscription,
     );
 
-    const formattedApplication = formatCompareValue(applicationValue);
-    const formattedProfile = formatCompareValue(profileValue);
+    const formattedApplication = formatCompareValue(
+      applicationValue,
+      field.key,
+    );
+    const formattedProfile = formatCompareValue(profileValue, field.key);
 
     if (formattedApplication == null && formattedProfile == null) {
       continue;
@@ -225,7 +272,7 @@ function buildMergeCompareRows(submission, profileDoc, liveSubscription = null) 
       applicationValue: formattedApplication,
       profileValue: formattedProfile,
       profileValueFromSubscription,
-      hasConflict: !valuesEqual(applicationValue, profileValue),
+      hasConflict: !valuesEqual(applicationValue, profileValue, field.key),
       defaultSource:
         formattedApplication != null && formattedProfile == null
           ? "APPLICATION"
