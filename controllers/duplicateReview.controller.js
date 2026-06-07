@@ -17,7 +17,12 @@ async function detectDuplicatesForApplication(req, res, next) {
       return next(AppError.badRequest("Tenant context is required"));
     }
 
-    const result = await runDuplicateDetection(applicationId, tenantId);
+    const reviewerId = req.user?.id || req.userId;
+    const result = await runDuplicateDetection(
+      applicationId,
+      tenantId,
+      reviewerId,
+    );
     return res.success({
       applicationId,
       ...result,

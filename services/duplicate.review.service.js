@@ -33,6 +33,10 @@ const {
   DUPLICATE_REVIEW_REQUIRED_MESSAGE,
   isDuplicateReviewBlockingApproval,
 } = require("./duplicate.review.helpers.js");
+const {
+  publishDuplicateReviewDecidedAudit,
+  publishDuplicateDetectionRunAudit,
+} = require("./duplicate.review.audit.publisher.js");
 
 function normalizeMergeFieldChoices(raw) {
   if (!raw) return null;
@@ -80,11 +84,21 @@ function resolveApplicationTenantId(personal, requestTenantId) {
   return applicationTenantId || normalizedRequestTenantId;
 }
 
-async function runDuplicateDetection(applicationId, tenantId) {
+async function runDuplicateDetection(applicationId, tenantId, actorId = null) {
   const personal = await getPersonalDetailsForReview(applicationId);
   const effectiveTenantId = resolveApplicationTenantId(personal, tenantId);
   const result = await detectDuplicates(applicationId, effectiveTenantId);
   const updatedPersonal = await getPersonalDetailsForReview(applicationId);
+
+  await publishDuplicateDetectionRunAudit({
+    tenantId: effectiveTenantId,
+    applicationId,
+    actorId,
+    matchSummary: updatedPersonal.duplicateReview?.matchSummary || [],
+    hasPotentialDuplicate: result.hasPotentialDuplicate,
+    duplicateReviewStatus: updatedPersonal.duplicateReview?.status || null,
+  });
+
   return {
     ...result,
     duplicateReview: updatedPersonal.duplicateReview,
@@ -139,6 +153,13 @@ async function recordDuplicateDecision({
   if (!personal) {
     throw AppError.notFound("Application not found");
   }
+
+  const effectiveTenantId = resolveApplicationTenantId(personal, tenantId);
+  const beforeReview = personal.duplicateReview?.toObject?.()
+    ? personal.duplicateReview.toObject()
+    : personal.duplicateReview
+      ? { ...personal.duplicateReview }
+      : null;
 
   const now = new Date();
   const matchSummary = [...(personal.duplicateReview?.matchSummary || [])];
@@ -223,6 +244,26 @@ async function recordDuplicateDecision({
   };
 
   await personal.save();
+
+  const afterReview = personal.duplicateReview?.toObject?.()
+    ? personal.duplicateReview.toObject()
+    : { ...personal.duplicateReview };
+
+  await publishDuplicateReviewDecidedAudit({
+    tenantId: effectiveTenantId,
+    applicationId,
+    actorId: reviewerId,
+    action,
+    sourceType,
+    sourceId,
+    decisionReason,
+    mergeFieldChoices:
+      action === DUPLICATE_REVIEW_ACTION.MERGE ? mergeFieldChoices : null,
+    matchScore: auditEntry.matchScore,
+    matchedFields: auditEntry.matchedFields,
+    beforeReview,
+    afterReview,
+  });
 
   return {
     duplicateReview: personal.duplicateReview,
