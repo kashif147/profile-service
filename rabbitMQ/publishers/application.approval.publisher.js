@@ -233,6 +233,7 @@ class ApplicationApprovalEventPublisher {
     reviewerId, // CRM user ID for meta.createdBy and meta.updatedBy
     correlationId,
     isCurrent, // optional override for subscription-service upsert (historical / non-current row)
+    deactivatePreviousSubscriptionStatus, // e.g. Cancelled when tagging application to existing profile
   }) {
     try {
       console.log(
@@ -312,6 +313,10 @@ class ApplicationApprovalEventPublisher {
       }
       if (isCurrent !== undefined) {
         messageBody.isCurrent = isCurrent;
+      }
+      if (deactivatePreviousSubscriptionStatus) {
+        messageBody.deactivatePreviousSubscriptionStatus =
+          deactivatePreviousSubscriptionStatus;
       }
 
       const result = await publisher.publish(

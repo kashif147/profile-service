@@ -23,7 +23,10 @@ const {
   BulkApprovalBody,
   DuplicateReviewDecisionBody,
 } = require("../validation/applications.validators.js");
-const { ApplicationParams } = require("../validation/params.validators.js");
+const {
+  ApplicationParams,
+  DuplicateMergeCompareParams,
+} = require("../validation/params.validators.js");
 const router = Router();
 
 router.post(
@@ -79,7 +82,7 @@ router.post(
 router.get(
   "/:applicationId/duplicate-merge-compare/:profileId",
   ensureAuthenticated,
-  validate({ params: ApplicationParams }),
+  validate({ params: DuplicateMergeCompareParams }),
   getDuplicateMergeCompareHandler
 );
 

@@ -14,6 +14,9 @@ const {
   recruitmentKeys,
 } = require("../helpers/profile.transform.js");
 const { findAuthorizedProfileMatch } = require("./duplicate.matching.js");
+const {
+  fetchCurrentSubscriptionByProfileId,
+} = require("./subscription.service.client.js");
 
 const SECTION_FIELDS_FROM_SUBSCRIPTION = [
   "primarySection",
@@ -31,6 +34,10 @@ const SUBSCRIPTION_COMPARE_KEYS = [
   "dateJoined",
   "submissionDate",
   "membershipStatus",
+  "subscriptionStatus",
+  "startDate",
+  "endDate",
+  "subscriptionYear",
   "valueAddedServices",
   "inmoRewards",
   "exclusiveDiscountsAndOffers",
@@ -42,6 +49,18 @@ const SUBSCRIPTION_COMPARE_KEYS = [
   "recuritedByMembershipNo",
   "confirmedRecruiterProfileId",
 ];
+
+const LIVE_SUBSCRIPTION_FIELD_KEYS = new Set([
+  "membershipCategory",
+  "paymentType",
+  "paymentFrequency",
+  "payrollNo",
+  "membershipMovement",
+  "subscriptionStatus",
+  "startDate",
+  "endDate",
+  "subscriptionYear",
+]);
 
 const SECTION_LABELS = {
   personalInfo: "Personal",
@@ -72,10 +91,30 @@ function valuesEqual(a, b) {
 }
 
 function getApplicationValue(submission, section, key) {
+  if (section === "subscriptionDetails" && key === "startDate") {
+    return submission?.subscriptionDetails?.dateJoined ?? null;
+  }
+  if (section === "subscriptionDetails" && key === "subscriptionYear") {
+    const dateJoined = submission?.subscriptionDetails?.dateJoined;
+    if (!dateJoined) return null;
+    const year = new Date(dateJoined).getUTCFullYear();
+    return Number.isNaN(year) ? null : year;
+  }
   return submission?.[section]?.[key];
 }
 
-function getProfileValueForPath(profileSections, section, key) {
+function getLiveSubscriptionValue(liveSubscription, key) {
+  if (!liveSubscription) return null;
+  return liveSubscription[key] ?? null;
+}
+
+function getProfileValueForPath(profileSections, section, key, liveSubscription = null) {
+  if (section === "subscriptionDetails" && LIVE_SUBSCRIPTION_FIELD_KEYS.has(key)) {
+    const liveValue = getLiveSubscriptionValue(liveSubscription, key);
+    if (liveValue != null && liveValue !== "") {
+      return liveValue;
+    }
+  }
   if (section === "personalInfo" || section === "contactInfo") {
     return profileSections[section]?.[key];
   }
@@ -130,7 +169,26 @@ function buildMergeFieldDefinitions() {
 
 const MERGE_FIELD_DEFINITIONS = buildMergeFieldDefinitions();
 
-function buildMergeCompareRows(submission, profileDoc) {
+function summarizeActiveSubscription(liveSubscription) {
+  if (!liveSubscription) return null;
+  return {
+    subscriptionId: liveSubscription._id
+      ? String(liveSubscription._id)
+      : null,
+    isCurrent: liveSubscription.isCurrent ?? null,
+    subscriptionStatus: liveSubscription.subscriptionStatus ?? null,
+    membershipCategory: liveSubscription.membershipCategory ?? null,
+    paymentType: liveSubscription.paymentType ?? null,
+    paymentFrequency: liveSubscription.paymentFrequency ?? null,
+    payrollNo: liveSubscription.payrollNo ?? null,
+    startDate: formatCompareValue(liveSubscription.startDate),
+    endDate: formatCompareValue(liveSubscription.endDate),
+    subscriptionYear: liveSubscription.subscriptionYear ?? null,
+    membershipMovement: liveSubscription.membershipMovement ?? null,
+  };
+}
+
+function buildMergeCompareRows(submission, profileDoc, liveSubscription = null) {
   const profileSections = rehydrateProfile(profileDoc);
   const rows = [];
 
@@ -144,6 +202,7 @@ function buildMergeCompareRows(submission, profileDoc) {
       profileSections,
       field.section,
       field.key,
+      liveSubscription,
     );
 
     const formattedApplication = formatCompareValue(applicationValue);
@@ -153,6 +212,11 @@ function buildMergeCompareRows(submission, profileDoc) {
       continue;
     }
 
+    const profileValueFromSubscription =
+      field.section === "subscriptionDetails" &&
+      LIVE_SUBSCRIPTION_FIELD_KEYS.has(field.key) &&
+      liveSubscription != null;
+
     rows.push({
       path: field.path,
       section: field.section,
@@ -160,6 +224,7 @@ function buildMergeCompareRows(submission, profileDoc) {
       label: field.label,
       applicationValue: formattedApplication,
       profileValue: formattedProfile,
+      profileValueFromSubscription,
       hasConflict: !valuesEqual(applicationValue, profileValue),
       defaultSource:
         formattedApplication != null && formattedProfile == null
@@ -188,11 +253,10 @@ async function resolveProfileForDuplicateMerge(
   { requireAuthorizedMatch = true } = {},
 ) {
   const idStr = String(profileId || "").trim();
-  if (!mongoose.Types.ObjectId.isValid(idStr)) {
-    throw AppError.badRequest("Invalid profileId");
+  if (!idStr) {
+    throw AppError.badRequest("profileId is required");
   }
 
-  const objectId = new mongoose.Types.ObjectId(idStr);
   const normalizedRequestTenantId = normalizeTenantId(requestTenantId);
 
   const personal = await PersonalDetails.findOne({ applicationId }).lean();
@@ -218,10 +282,14 @@ async function resolveProfileForDuplicateMerge(
   const matchRowForLookup =
     matchRow ||
     personal.duplicateReview?.matchSummary?.find(
-      (m) => m.sourceType === "PROFILE" && String(m.sourceId) === idStr,
+      (m) =>
+        m.sourceType === "PROFILE" &&
+        (String(m.sourceId) === idStr ||
+          (m.membershipNumber &&
+            String(m.membershipNumber).toLowerCase() === idStr.toLowerCase())),
     );
 
-  if (requireAuthorizedMatch && !matchRow) {
+  if (requireAuthorizedMatch && !matchRow && !matchRowForLookup) {
     throw AppError.notFound(
       "Profile is not an active duplicate match for this application. Refresh duplicate detection and try again.",
     );
@@ -230,10 +298,14 @@ async function resolveProfileForDuplicateMerge(
   const findForTenant = (filter) =>
     Profile.findOne({ ...filter, tenantId }).lean();
 
-  let profile = await findForTenant({ _id: objectId });
+  let profile = null;
 
-  if (!profile) {
-    profile = await findForTenant({ userId: objectId });
+  if (mongoose.Types.ObjectId.isValid(idStr)) {
+    const objectId = new mongoose.Types.ObjectId(idStr);
+    profile = await findForTenant({ _id: objectId });
+    if (!profile) {
+      profile = await findForTenant({ userId: objectId });
+    }
   }
 
   if (!profile && matchRowForLookup?.membershipNumber) {
@@ -246,6 +318,13 @@ async function resolveProfileForDuplicateMerge(
     }).lean();
   }
 
+  if (!profile && !mongoose.Types.ObjectId.isValid(idStr)) {
+    profile = await Profile.findOne({
+      tenantId,
+      membershipNumber: new RegExp(`^${escapeRegex(idStr)}$`, "i"),
+    }).lean();
+  }
+
   if (!profile) {
     throw AppError.notFound(
       "Profile not found for merge comparison. Run duplicate detection again to refresh matches.",
@@ -255,17 +334,31 @@ async function resolveProfileForDuplicateMerge(
   return { personal, profile, matchRow: matchRowForLookup };
 }
 
+async function fetchLiveSubscriptionForProfile(profile, tenantId) {
+  if (!profile?._id) return null;
+  return fetchCurrentSubscriptionByProfileId(
+    String(profile._id),
+    tenantId,
+    null,
+    profile.currentSubscriptionId,
+  );
+}
+
 async function getDuplicateMergeCompare(applicationId, profileId, tenantId) {
   const [{ submission }, { profile }] = await Promise.all([
     loadSubmission(applicationId),
     resolveProfileForDuplicateMerge(applicationId, profileId, tenantId),
   ]);
 
-  const fields = buildMergeCompareRows(submission, profile);
+  const liveSubscription = await fetchLiveSubscriptionForProfile(
+    profile,
+    tenantId,
+  );
+  const fields = buildMergeCompareRows(submission, profile, liveSubscription);
 
   return {
     applicationId,
-    profileId: String(profileId),
+    profileId: String(profile._id),
     profileMembershipNumber: profile.membershipNumber || null,
     profileName:
       profile.personalInfo?.fullName ||
@@ -277,6 +370,35 @@ async function getDuplicateMergeCompare(applicationId, profileId, tenantId) {
       [submission.personalInfo?.forename, submission.personalInfo?.surname]
         .filter(Boolean)
         .join(" ") || null,
+    applicationSummary: {
+      name:
+        [submission.personalInfo?.forename, submission.personalInfo?.surname]
+          .filter(Boolean)
+          .join(" ") || null,
+      email:
+        submission.contactInfo?.personalEmail ||
+        submission.contactInfo?.workEmail ||
+        null,
+      mobile: submission.contactInfo?.mobileNumber || null,
+      membershipCategory:
+        submission.subscriptionDetails?.membershipCategory || null,
+      paymentType: submission.subscriptionDetails?.paymentType || null,
+    },
+    profileSummary: {
+      name:
+        profile.personalInfo?.fullName ||
+        [profile.personalInfo?.forename, profile.personalInfo?.surname]
+          .filter(Boolean)
+          .join(" ") ||
+        null,
+      email:
+        profile.contactInfo?.personalEmail ||
+        profile.contactInfo?.workEmail ||
+        null,
+      mobile: profile.contactInfo?.mobileNumber || null,
+      membershipNumber: profile.membershipNumber || null,
+    },
+    activeSubscription: summarizeActiveSubscription(liveSubscription),
     fields,
   };
 }
@@ -287,7 +409,30 @@ function setNestedValue(target, section, key, value) {
   target[section][key] = value;
 }
 
-function buildEffectiveFromMergeChoices(effective, profileDoc, mergeFieldChoices = {}) {
+function applySubscriptionChoiceToEffective(effective, key, value) {
+  if (value === undefined) return;
+  if (key === "startDate") {
+    effective.subscriptionDetails = {
+      ...(effective.subscriptionDetails || {}),
+      dateJoined: value,
+    };
+    return;
+  }
+  if (key === "subscriptionYear") {
+    return;
+  }
+  effective.subscriptionDetails = {
+    ...(effective.subscriptionDetails || {}),
+    [key]: value,
+  };
+}
+
+function buildEffectiveFromMergeChoices(
+  effective,
+  profileDoc,
+  mergeFieldChoices = {},
+  liveSubscription = null,
+) {
   const profileSections = rehydrateProfile(profileDoc);
   const merged = {
     personalInfo: {},
@@ -313,6 +458,7 @@ function buildEffectiveFromMergeChoices(effective, profileDoc, mergeFieldChoices
       profileSections,
       field.section,
       field.key,
+      liveSubscription,
     );
 
     const source =
@@ -338,7 +484,7 @@ function buildEffectiveFromMergeChoices(effective, profileDoc, mergeFieldChoices
     }
   }
 
-  return {
+  const mergedEffective = {
     ...effective,
     personalInfo: { ...effective.personalInfo, ...merged.personalInfo },
     contactInfo: { ...effective.contactInfo, ...merged.contactInfo },
@@ -351,6 +497,25 @@ function buildEffectiveFromMergeChoices(effective, profileDoc, mergeFieldChoices
       ...merged.subscriptionDetails,
     },
   };
+
+  for (const field of MERGE_FIELD_DEFINITIONS) {
+    if (field.section !== "subscriptionDetails") continue;
+    const choice = mergeFieldChoices[field.path];
+    if (choice !== "PROFILE") continue;
+    const profileValue = getProfileValueForPath(
+      profileSections,
+      field.section,
+      field.key,
+      liveSubscription,
+    );
+    applySubscriptionChoiceToEffective(
+      mergedEffective,
+      field.key,
+      profileValue,
+    );
+  }
+
+  return mergedEffective;
 }
 
 function validateMergeFieldChoices(mergeFieldChoices) {
@@ -379,6 +544,7 @@ module.exports = {
   MERGE_FIELD_DEFINITIONS,
   buildMergeCompareRows,
   resolveProfileForDuplicateMerge,
+  fetchLiveSubscriptionForProfile,
   getDuplicateMergeCompare,
   buildEffectiveFromMergeChoices,
   validateMergeFieldChoices,

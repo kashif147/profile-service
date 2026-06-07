@@ -4,4 +4,8 @@ const ApplicationParams = z.object({
   applicationId: z.string().min(1),
 });
 
-module.exports = { ApplicationParams };
+const DuplicateMergeCompareParams = ApplicationParams.extend({
+  profileId: z.string().min(1),
+});
+
+module.exports = { ApplicationParams, DuplicateMergeCompareParams };

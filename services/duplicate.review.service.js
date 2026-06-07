@@ -26,6 +26,7 @@ const {
   buildEffectiveFromMergeChoices,
   validateMergeFieldChoices,
   resolveProfileForDuplicateMerge,
+  fetchLiveSubscriptionForProfile,
 } = require("./duplicate.merge.service.js");
 
 function normalizeMergeFieldChoices(raw) {
@@ -355,10 +356,15 @@ async function resolveProfileForApproval({
         );
       }
 
+      const liveSubscription = await fetchLiveSubscriptionForProfile(
+        profile,
+        tenantId,
+      );
       const mergedEffective = buildEffectiveFromMergeChoices(
         effective,
         profile,
         mergeFieldChoices,
+        liveSubscription,
       );
 
       profile = await applyEffectiveToProfile({
