@@ -17,8 +17,6 @@ const {
   fetchCurrentSubscriptionByProfileId,
 } = require("./subscription.service.client.js");
 const { fetchMemberFinanceSummary } = require("./account.service.client.js");
-const { PAYMENT_TYPE } = require("../constants/enums.js");
-
 const SECTION_FIELDS_FROM_SUBSCRIPTION = [
   "primarySection",
   "otherPrimarySection",
@@ -38,29 +36,31 @@ const MERGE_PERSONAL_INFO_KEYS = [
   "deceasedDate",
 ];
 
-const SUBSCRIPTION_COMPARE_KEYS = [
-  "membershipCategory",
-  "paymentType",
-  "paymentFrequency",
-  "payrollNo",
-  "membershipMovement",
-  "submissionDate",
-  "membershipStatus",
-  "subscriptionStatus",
-  "startDate",
-  "endDate",
-  "subscriptionYear",
+const MERGE_PROFESSIONAL_DETAILS_KEYS = professionalDetailsKeys.filter(
+  (key) => key !== "startDate",
+);
+
+const MERGE_PROFESSIONAL_TAIL_KEYS = [
   "valueAddedServices",
   "inmoRewards",
   "exclusiveDiscountsAndOffers",
   "incomeProtectionScheme",
   "otherIrishTradeUnion",
-  "otherIrishTradeUnionName",
   "otherScheme",
-  "recuritedBy",
-  "recuritedByMembershipNo",
-  "confirmedRecruiterProfileId",
 ];
+
+const SUBSCRIPTION_COMPARE_KEYS = [
+  "membershipNo",
+  "subscriptionYear",
+  "subscriptionStatus",
+  "membershipCategory",
+  "startDate",
+  "endDate",
+  "paymentType",
+  "paymentFrequency",
+];
+
+const DISPLAY_ONLY_COMPARE_KEYS = new Set(["membershipNo"]);
 
 const MERGE_SECTION_LABELS = {
   personal: "Personal",
@@ -69,8 +69,11 @@ const MERGE_SECTION_LABELS = {
 };
 
 const FIELD_LABEL_OVERRIDES = {
-  "professionalDetails.startDate": "Employment Start Date",
+  "subscriptionDetails.membershipNo": "Membership No",
   "subscriptionDetails.startDate": "Start Date",
+  "subscriptionDetails.endDate": "End Date",
+  "subscriptionDetails.paymentType": "Payment Method",
+  "subscriptionDetails.otherIrishTradeUnion": "Other Irish Trade Union",
 };
 
 const LIVE_SUBSCRIPTION_FIELD_KEYS = new Set([
@@ -78,7 +81,6 @@ const LIVE_SUBSCRIPTION_FIELD_KEYS = new Set([
   "paymentType",
   "paymentFrequency",
   "payrollNo",
-  "membershipMovement",
   "subscriptionStatus",
   "startDate",
   "endDate",
@@ -161,12 +163,50 @@ function getApplicationValue(submission, section, key) {
     return submission?.subscriptionDetails?.dateJoined ?? null;
   }
   if (section === "subscriptionDetails" && key === "subscriptionYear") {
+    const storedYear = submission?.subscriptionDetails?.subscriptionYear;
+    if (storedYear != null && storedYear !== "") {
+      return storedYear;
+    }
     const dateJoined = submission?.subscriptionDetails?.dateJoined;
     if (!dateJoined) return null;
     const year = new Date(dateJoined).getUTCFullYear();
     return Number.isNaN(year) ? null : year;
   }
+  if (section === "professionalDetails" && key === "payrollNo") {
+    return (
+      submission?.professionalDetails?.payrollNo ??
+      submission?.subscriptionDetails?.payrollNo ??
+      null
+    );
+  }
   return submission?.[section]?.[key];
+}
+
+/** Compare-view only: membership number row uses different sources per side. */
+function getApplicationCompareValue(submission, section, key) {
+  if (section === "subscriptionDetails" && key === "membershipNo") {
+    return submission?.subscriptionDetails?.previousMembershipNo ?? null;
+  }
+  return getApplicationValue(submission, section, key);
+}
+
+function getProfileCompareValue(
+  profileSections,
+  section,
+  key,
+  liveSubscription,
+  profileFallbacks,
+) {
+  if (section === "subscriptionDetails" && key === "membershipNo") {
+    return profileFallbacks.membershipNumber ?? null;
+  }
+  return getProfileValueForPath(
+    profileSections,
+    section,
+    key,
+    liveSubscription,
+    profileFallbacks,
+  );
 }
 
 function getLiveSubscriptionValue(liveSubscription, key) {
@@ -204,6 +244,13 @@ function getProfileValueForPath(
     return profileSections[section]?.[key];
   }
   if (section === "professionalDetails") {
+    if (key === "payrollNo") {
+      const professionalPayroll = profileSections.professionalDetails?.payrollNo;
+      if (professionalPayroll != null && professionalPayroll !== "") {
+        return professionalPayroll;
+      }
+      return getLiveSubscriptionValue(liveSubscription, "payrollNo");
+    }
     return profileSections.professionalDetails?.[key];
   }
   if (section === "subscriptionDetails") {
@@ -232,8 +279,8 @@ function getProfileValueForPath(
 function buildMergeFieldDefinitions() {
   const fields = [];
 
-  const addSection = (section, keys) => {
-    const sectionGroup = mergeSectionGroupFor(section);
+  const addSection = (section, keys, displaySectionGroup = null) => {
+    const sectionGroup = displaySectionGroup || mergeSectionGroupFor(section);
     for (const key of keys) {
       const path = `${section}.${key}`;
       fields.push({
@@ -243,41 +290,25 @@ function buildMergeFieldDefinitions() {
         sectionLabel: MERGE_SECTION_LABELS[sectionGroup] || section,
         label: FIELD_LABEL_OVERRIDES[path] || humanizeFieldKey(key),
         key,
+        viewOnlyLayout: displaySectionGroup != null,
       });
     }
   };
 
   addSection("personalInfo", MERGE_PERSONAL_INFO_KEYS);
   addSection("contactInfo", contactInfoKeys);
-  addSection("professionalDetails", professionalDetailsKeys);
+  addSection("professionalDetails", MERGE_PROFESSIONAL_DETAILS_KEYS);
   addSection("subscriptionDetails", SUBSCRIPTION_COMPARE_KEYS);
+  // Shown under Professional in the compare view; paths remain subscriptionDetails.*
+  addSection("subscriptionDetails", MERGE_PROFESSIONAL_TAIL_KEYS, "professional");
 
   return fields;
 }
 
-const MERGE_FIELD_DEFINITIONS = buildMergeFieldDefinitions();
-
-function isOnlinePaymentType(paymentType) {
-  const raw = String(paymentType || "").trim();
-  if (!raw) return false;
-  const normalized = raw.toLowerCase();
-  return (
-    raw === PAYMENT_TYPE.CARD_PAYMENT ||
-    normalized === "credit card" ||
-    normalized.includes("card")
-  );
-}
-
-function isOnlineApplicationPayment(submission, paymentDetails = null) {
-  if (isOnlinePaymentType(submission?.subscriptionDetails?.paymentType)) {
-    return true;
-  }
-  const details = paymentDetails || submission?.paymentDetails;
-  return Boolean(
-    details?.paymentIntentId &&
-      String(details?.status || "").toLowerCase() === "succeeded",
-  );
-}
+const MERGE_COMPARE_FIELD_DEFINITIONS = buildMergeFieldDefinitions();
+const MERGE_FIELD_DEFINITIONS = MERGE_COMPARE_FIELD_DEFINITIONS.filter(
+  (field) => !DISPLAY_ONLY_COMPARE_KEYS.has(field.key),
+);
 
 function formatEuroFromCents(amount) {
   if (amount == null || amount === "") return null;
@@ -326,65 +357,44 @@ function buildPaymentDisplayField({
   };
 }
 
-function appendPaymentDisplayFields(rows, submission, memberFinanceSummary) {
-  const paymentDetails = submission?.paymentDetails || null;
-
-  if (isOnlineApplicationPayment(submission, paymentDetails)) {
-    const paymentDateRaw =
-      paymentDetails?.updatedAt || paymentDetails?.createdAt || null;
-    const paymentDate = paymentDateRaw
-      ? formatCompareValue(paymentDateRaw, "startDate")
-      : null;
-    const paymentAmount =
-      paymentDetails?.amount != null
-        ? formatEuroFromCents(paymentDetails.amount)
-        : null;
-
-    if (paymentDate) {
-      rows.push(
-        buildPaymentDisplayField({
-          path: "paymentInfo.paymentDate",
-          label: "Payment Date",
-          applicationValue: paymentDate,
-          applicationOnly: true,
-        }),
-      );
-    }
-    if (paymentAmount) {
-      rows.push(
-        buildPaymentDisplayField({
-          path: "paymentInfo.paymentAmount",
-          label: "Payment Amount",
-          applicationValue: paymentAmount,
-          applicationOnly: true,
-        }),
-      );
-    }
+function appendPaymentDisplayFields(rows, memberFinanceSummary) {
+  if (!memberFinanceSummary) {
+    return rows;
   }
 
-  if (memberFinanceSummary) {
-    const lastPaymentDateRaw = memberFinanceSummary?.lastPayment?.date || null;
-    const lastPaymentDate = lastPaymentDateRaw
-      ? formatCompareValue(lastPaymentDateRaw, "startDate")
+  const lastPaymentDateRaw = memberFinanceSummary?.lastPayment?.date || null;
+  const lastPaymentDate = lastPaymentDateRaw
+    ? formatCompareValue(lastPaymentDateRaw, "startDate")
+    : null;
+  const lastPaymentAmount =
+    memberFinanceSummary?.lastPayment?.amount != null
+      ? formatEuroFromCents(memberFinanceSummary.lastPayment.amount)
       : null;
 
-    rows.push(
-      buildPaymentDisplayField({
-        path: "paymentInfo.lastPaymentDate",
-        label: "Last Payment Date",
-        profileValue: lastPaymentDate,
-        profileOnly: true,
-      }),
-    );
-    rows.push(
-      buildPaymentDisplayField({
-        path: "paymentInfo.balance",
-        label: "Balance",
-        profileValue: formatMemberLedgerBalance(memberFinanceSummary.net ?? 0),
-        profileOnly: true,
-      }),
-    );
-  }
+  rows.push(
+    buildPaymentDisplayField({
+      path: "paymentInfo.lastPaymentAmount",
+      label: "Last Payment Amount",
+      profileValue: lastPaymentAmount,
+      profileOnly: true,
+    }),
+  );
+  rows.push(
+    buildPaymentDisplayField({
+      path: "paymentInfo.lastPaymentDate",
+      label: "Last Payment Date",
+      profileValue: lastPaymentDate,
+      profileOnly: true,
+    }),
+  );
+  rows.push(
+    buildPaymentDisplayField({
+      path: "paymentInfo.balance",
+      label: "Balance",
+      profileValue: formatMemberLedgerBalance(memberFinanceSummary.net ?? 0),
+      profileOnly: true,
+    }),
+  );
 
   return rows;
 }
@@ -418,13 +428,13 @@ function buildMergeCompareRows(
   const profileSections = rehydrateProfile(profileDoc);
   const rows = [];
 
-  for (const field of MERGE_FIELD_DEFINITIONS) {
-    const applicationValue = getApplicationValue(
+  for (const field of MERGE_COMPARE_FIELD_DEFINITIONS) {
+    const applicationValue = getApplicationCompareValue(
       submission,
       field.section,
       field.key,
     );
-    const profileValue = getProfileValueForPath(
+    const profileValue = getProfileCompareValue(
       profileSections,
       field.section,
       field.key,
@@ -442,6 +452,7 @@ function buildMergeCompareRows(
       continue;
     }
 
+    const isDisplayOnly = DISPLAY_ONLY_COMPARE_KEYS.has(field.key);
     const profileValueFromSubscription =
       field.section === "subscriptionDetails" &&
       LIVE_SUBSCRIPTION_FIELD_KEYS.has(field.key) &&
@@ -456,7 +467,12 @@ function buildMergeCompareRows(
       applicationValue: formattedApplication,
       profileValue: formattedProfile,
       profileValueFromSubscription,
-      hasConflict: !valuesEqual(applicationValue, profileValue, field.key),
+      displayOnly: isDisplayOnly,
+      applicationColumnHint:
+        field.key === "membershipNo" ? "Previous Membership No" : null,
+      hasConflict: isDisplayOnly
+        ? false
+        : !valuesEqual(applicationValue, profileValue, field.key),
       defaultSource:
         formattedApplication != null && formattedProfile == null
           ? "APPLICATION"
@@ -466,7 +482,7 @@ function buildMergeCompareRows(
     });
   }
 
-  return appendPaymentDisplayFields(rows, submission, memberFinanceSummary);
+  return appendPaymentDisplayFields(rows, memberFinanceSummary);
 }
 
 function normalizeTenantId(tenantId) {
@@ -594,6 +610,7 @@ async function getDuplicateMergeCompare(
   ]);
 
   const profileFallbacks = {
+    membershipNumber: profile.membershipNumber ?? null,
     membershipCategory:
       liveSubscription?.membershipCategory ??
       matchRow?.membershipCategory ??
@@ -799,6 +816,7 @@ function validateMergeFieldChoices(mergeFieldChoices) {
 
 module.exports = {
   MERGE_FIELD_DEFINITIONS,
+  MERGE_COMPARE_FIELD_DEFINITIONS,
   buildMergeCompareRows,
   resolveProfileForDuplicateMerge,
   fetchLiveSubscriptionForProfile,
