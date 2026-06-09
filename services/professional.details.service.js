@@ -102,7 +102,7 @@ class ProfessionalDetailsService {
       }
 
       const professionalDetails =
-        await professionalDetailsHandler.getApplicationById(
+        await professionalDetailsHandler.getByApplicationId(
           applicationId,
           tenantId
         );

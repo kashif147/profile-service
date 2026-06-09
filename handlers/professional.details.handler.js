@@ -373,9 +373,8 @@ exports.getApplicationById = (applicationId, tenantId) =>
         }
         record = await ProfessionalDetails.findOne(legacyQuery);
       }
-      
-      if (!record) return reject(new Error("Professional details not found"));
-      resolve(record);
+
+      resolve(record || null);
     } catch (error) {
       console.error(
         "ProfessionalDetailsHandler [getApplicationById] Error:",
