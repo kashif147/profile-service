@@ -1,6 +1,8 @@
 const SubscriptionDetails = require("../models/subscription.model");
 const personalDetails = require("../models/personal.details.model");
 
+const SUBSCRIPTION_SORT = { updatedAt: -1, createdAt: -1 };
+
 function buildMongoSetUpdate(updateData) {
   const $set = {};
   for (const [key, value] of Object.entries(updateData || {})) {
@@ -10,6 +12,35 @@ function buildMongoSetUpdate(updateData) {
   }
   return $set;
 }
+
+async function findSubscriptionRecord(applicationId, tenantId) {
+  if (tenantId) {
+    const withTenant = await SubscriptionDetails.findOne({
+      applicationId,
+      tenantId,
+    }).sort(SUBSCRIPTION_SORT);
+    if (withTenant) return withTenant;
+  }
+
+  let record = await SubscriptionDetails.findOne({ applicationId }).sort(
+    SUBSCRIPTION_SORT
+  );
+  if (record) return record;
+
+  if (tenantId) {
+    record = await SubscriptionDetails.findOne({
+      ApplicationId: applicationId,
+      tenantId,
+    }).sort(SUBSCRIPTION_SORT);
+    if (record) return record;
+  }
+
+  return SubscriptionDetails.findOne({ ApplicationId: applicationId }).sort(
+    SUBSCRIPTION_SORT
+  );
+}
+
+exports.findSubscriptionRecord = findSubscriptionRecord;
 
 exports.create = (data) =>
   new Promise(async (resolve, reject) => {
@@ -25,11 +56,7 @@ exports.create = (data) =>
 exports.getByApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const query = { applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
-      const record = await SubscriptionDetails.findOne(query);
+      const record = await findSubscriptionRecord(applicationId, tenantId);
       resolve(record);
     } catch (error) {
       console.error(
@@ -43,13 +70,19 @@ exports.getByApplicationId = (applicationId, tenantId) =>
 exports.updateByApplicationId = (applicationId, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const query = { applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
+      const existing = await findSubscriptionRecord(applicationId, tenantId);
+      if (!existing) {
+        return reject(new Error("Subscription details not found"));
       }
+
+      const $set = buildMongoSetUpdate(updateData);
+      if (tenantId && !existing.tenantId) {
+        $set.tenantId = tenantId;
+      }
+
       const record = await SubscriptionDetails.findOneAndUpdate(
-        query,
-        { $set: buildMongoSetUpdate(updateData) },
+        { _id: existing._id },
+        { $set },
         {
           new: true,
           runValidators: true,
@@ -449,21 +482,7 @@ exports.checkifSoftDeleted = (userId, tenantId) =>
 exports.getApplicationById = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      // Try lowercase first, then uppercase for backward compatibility
-      const query = { applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
-      let record = await SubscriptionDetails.findOne(query);
-      
-      if (!record) {
-        const legacyQuery = { ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
-        record = await SubscriptionDetails.findOne(legacyQuery);
-      }
-      
+      const record = await findSubscriptionRecord(applicationId, tenantId);
       resolve(record);
     } catch (error) {
       console.error(

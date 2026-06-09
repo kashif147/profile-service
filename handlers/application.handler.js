@@ -14,6 +14,12 @@ const {
   stampPersonalInfoFullName,
   enrichApplicationRowPersonalFullName,
 } = require("../helpers/personal.info.fullName.js");
+const {
+  findSubscriptionRecord,
+} = require("./subscription.details.handler.js");
+const {
+  subscriptionDetailsToPlain,
+} = require("../helpers/membershipCategory.helper.js");
 
 function formatDateOnly(value) {
   if (!value) return null;
@@ -23,6 +29,27 @@ function formatDateOnly(value) {
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function buildSubscriptionPayload(subscriptionDetails, membershipCategory) {
+  if (!subscriptionDetails) {
+    return membershipCategory !== null ? { membershipCategory } : null;
+  }
+  return subscriptionDetailsToPlain(subscriptionDetails.subscriptionDetails);
+}
+
+function buildProfessionalPayload(professionalDetails, membershipCategory) {
+  if (!professionalDetails) {
+    return membershipCategory !== null ? { membershipCategory } : null;
+  }
+  const profPlain = subscriptionDetailsToPlain(
+    professionalDetails.professionalDetails
+  );
+  delete profPlain.membershipCategory;
+  return {
+    ...profPlain,
+    ...(membershipCategory != null ? { membershipCategory } : {}),
+  };
 }
 
 /** System default filters applied for template-based application listing (admin/system default). */
@@ -250,37 +277,34 @@ exports.updateApplicationStatus = (
 exports.getApplicationWithDetails = (applicationId) =>
   new Promise(async (resolve, reject) => {
     try {
-      const [personalDetails, professionalDetails, subscriptionDetails] =
-        await Promise.all([
-          PersonalDetails.findOne({ applicationId: applicationId }),
-          ProfessionalDetails.findOne({ applicationId: applicationId }),
-          SubscriptionDetails.findOne({ applicationId: applicationId }),
-        ]);
+      const personalDetails = await PersonalDetails.findOne({
+        applicationId: applicationId,
+      });
 
       if (!personalDetails) {
         reject(new Error("Application not found"));
         return;
       }
 
+      const tenantId = personalDetails.tenantId || null;
+
+      const [professionalDetails, subscriptionDetails] = await Promise.all([
+        ProfessionalDetails.findOne({ applicationId: applicationId }),
+        findSubscriptionRecord(applicationId, tenantId),
+      ]);
+
       const membershipCategory =
         subscriptionDetails?.subscriptionDetails?.membershipCategory ?? null;
 
-      const professionalPayload = professionalDetails
-        ? {
-            ...professionalDetails.professionalDetails,
-            membershipCategory,
-          }
-        : membershipCategory !== null
-          ? { membershipCategory }
-          : null;
+      const professionalPayload = buildProfessionalPayload(
+        professionalDetails,
+        membershipCategory
+      );
 
-      const subscriptionPayload = subscriptionDetails
-        ? {
-            ...subscriptionDetails.subscriptionDetails,
-          }
-        : membershipCategory !== null
-          ? { membershipCategory }
-          : null;
+      const subscriptionPayload = buildSubscriptionPayload(
+        subscriptionDetails,
+        membershipCategory
+      );
 
       const applicationDetails = {
         applicationId: personalDetails.applicationId,
@@ -345,31 +369,25 @@ exports.getAllApplicationsWithDetails = (
                 ProfessionalDetails.findOne({
                   applicationId: application.applicationId,
                 }),
-                SubscriptionDetails.findOne({
-                  applicationId: application.applicationId,
-                }),
+                findSubscriptionRecord(
+                  application.applicationId,
+                  application.tenantId
+                ),
               ]);
 
             const membershipCategory =
               subscriptionDetails?.subscriptionDetails?.membershipCategory ??
               null;
 
-            const professionalPayload = professionalDetails
-              ? {
-                  ...professionalDetails.professionalDetails,
-                  membershipCategory,
-                }
-              : membershipCategory !== null
-                ? { membershipCategory }
-                : null;
+            const professionalPayload = buildProfessionalPayload(
+              professionalDetails,
+              membershipCategory
+            );
 
-            const subscriptionPayload = subscriptionDetails
-              ? {
-                  ...subscriptionDetails.subscriptionDetails,
-                }
-              : membershipCategory !== null
-                ? { membershipCategory }
-                : null;
+            const subscriptionPayload = buildSubscriptionPayload(
+              subscriptionDetails,
+              membershipCategory
+            );
 
             const row = {
               applicationId: application.applicationId,
@@ -650,31 +668,25 @@ exports.getApplicationsWithTemplateFilters = (
                 ProfessionalDetails.findOne({
                   applicationId: application.applicationId,
                 }),
-                SubscriptionDetails.findOne({
-                  applicationId: application.applicationId,
-                }),
+                findSubscriptionRecord(
+                  application.applicationId,
+                  application.tenantId
+                ),
               ]);
 
             const membershipCategory =
               subscriptionDetails?.subscriptionDetails?.membershipCategory ??
               null;
 
-            const professionalPayload = professionalDetails
-              ? {
-                  ...professionalDetails.professionalDetails,
-                  membershipCategory,
-                }
-              : membershipCategory !== null
-                ? { membershipCategory }
-                : null;
+            const professionalPayload = buildProfessionalPayload(
+              professionalDetails,
+              membershipCategory
+            );
 
-            const subscriptionPayload = subscriptionDetails
-              ? {
-                  ...subscriptionDetails.subscriptionDetails,
-                }
-              : membershipCategory !== null
-                ? { membershipCategory }
-                : null;
+            const subscriptionPayload = buildSubscriptionPayload(
+              subscriptionDetails,
+              membershipCategory
+            );
 
             const fullApplication = {
               applicationId: application.applicationId,
