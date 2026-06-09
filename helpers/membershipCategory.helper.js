@@ -37,7 +37,7 @@ function enrichProfessionalWithSubscriptionMembershipCategory(
     professionalDoc?.professionalDetails?.membershipCategory
   );
 
-  const membershipCategory = professionalCategory || subscriptionCategory;
+  const membershipCategory = subscriptionCategory || professionalCategory;
   if (!membershipCategory) return professionalDoc;
 
   return {
@@ -77,10 +77,39 @@ async function syncMembershipCategoryToSubscription({
   );
 }
 
+/**
+ * Joi update schemas apply .default(null) to omitted keys. Only merge subscription
+ * fields the client actually sent so we do not wipe stored values (e.g. membershipCategory).
+ */
+function pickRequestedSubscriptionDetails(validatedData, rawBody) {
+  if (!validatedData?.subscriptionDetails) return validatedData;
+
+  const requestedKeys = Object.keys(rawBody?.subscriptionDetails || {});
+  if (requestedKeys.length === 0) return validatedData;
+
+  const partial = {};
+  for (const key of requestedKeys) {
+    if (
+      Object.prototype.hasOwnProperty.call(
+        validatedData.subscriptionDetails,
+        key
+      )
+    ) {
+      partial[key] = validatedData.subscriptionDetails[key];
+    }
+  }
+
+  return {
+    ...validatedData,
+    subscriptionDetails: partial,
+  };
+}
+
 module.exports = {
   normalizeMembershipCategory,
   extractMembershipCategoryFromRequestBody,
   attachMembershipCategoryToProfessionalData,
   enrichProfessionalWithSubscriptionMembershipCategory,
   syncMembershipCategoryToSubscription,
+  pickRequestedSubscriptionDetails,
 };

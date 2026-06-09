@@ -279,9 +279,6 @@ exports.getApplicationWithDetails = (applicationId) =>
       const subscriptionPayload = subscriptionDetails
         ? {
             ...subscriptionDetails.subscriptionDetails,
-            membershipCategory:
-              subscriptionDetails.subscriptionDetails?.membershipCategory ??
-              membershipCategory,
           }
         : membershipCategory !== null
           ? { membershipCategory }
@@ -372,9 +369,6 @@ exports.getAllApplicationsWithDetails = (
             const subscriptionPayload = subscriptionDetails
               ? {
                   ...subscriptionDetails.subscriptionDetails,
-                  membershipCategory:
-                    subscriptionDetails.subscriptionDetails
-                      ?.membershipCategory ?? membershipCategory,
                 }
               : membershipCategory !== null
                 ? { membershipCategory }
@@ -681,9 +675,6 @@ exports.getApplicationsWithTemplateFilters = (
             const subscriptionPayload = subscriptionDetails
               ? {
                   ...subscriptionDetails.subscriptionDetails,
-                  membershipCategory:
-                    subscriptionDetails.subscriptionDetails
-                      ?.membershipCategory ?? membershipCategory,
                 }
               : membershipCategory !== null
                 ? { membershipCategory }
