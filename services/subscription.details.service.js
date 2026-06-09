@@ -8,9 +8,6 @@ const bizLogger = require("../config/bizLogger.js");
 const {
   normalizeSubscriptionDetailsDates,
 } = require("../helpers/parseDateOnly.js");
-const {
-  normalizeMembershipCategory,
-} = require("../helpers/membershipCategory.helper.js");
 
 /**
  * Subscription Details Service Layer
@@ -385,14 +382,6 @@ class SubscriptionDetailsService {
         safeUpdateData.subscriptionDetails = normalizeSubscriptionDetailsDates(
           safeUpdateData.subscriptionDetails
         );
-
-        const categoryUpdate = normalizeMembershipCategory(
-          safeUpdateData.subscriptionDetails.membershipCategory
-        );
-        if (categoryUpdate) {
-          safeUpdateData["subscriptionDetails.membershipCategory"] =
-            categoryUpdate;
-        }
       }
 
       const updatePayload = {
