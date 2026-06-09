@@ -1,6 +1,16 @@
 const SubscriptionDetails = require("../models/subscription.model");
 const personalDetails = require("../models/personal.details.model");
 
+function buildMongoSetUpdate(updateData) {
+  const $set = {};
+  for (const [key, value] of Object.entries(updateData || {})) {
+    if (value !== undefined) {
+      $set[key] = value;
+    }
+  }
+  return $set;
+}
+
 exports.create = (data) =>
   new Promise(async (resolve, reject) => {
     try {
@@ -39,7 +49,7 @@ exports.updateByApplicationId = (applicationId, updateData, tenantId) =>
       }
       const record = await SubscriptionDetails.findOneAndUpdate(
         query,
-        updateData,
+        { $set: buildMongoSetUpdate(updateData) },
         {
           new: true,
           runValidators: true,
@@ -152,7 +162,7 @@ exports.updateByUserId = (userId, updateData, tenantId) =>
       }
       const record = await SubscriptionDetails.findOneAndUpdate(
         query,
-        updateData,
+        { $set: buildMongoSetUpdate(updateData) },
         {
           new: true,
           runValidators: true,
@@ -507,7 +517,7 @@ exports.updateByUserIdAndApplicationId = (
       }
       let record = await SubscriptionDetails.findOneAndUpdate(
         query,
-        updateData,
+        { $set: buildMongoSetUpdate(updateData) },
         {
           new: true,
           runValidators: true,
@@ -521,7 +531,7 @@ exports.updateByUserIdAndApplicationId = (
         }
         record = await SubscriptionDetails.findOneAndUpdate(
           legacyQuery,
-          updateData,
+          { $set: buildMongoSetUpdate(updateData) },
           {
             new: true,
             runValidators: true,

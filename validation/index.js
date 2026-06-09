@@ -210,7 +210,7 @@ module.exports.subscription_details_create = Joi.object({
     exclusiveDiscountsAndOffers: Joi.boolean().optional().default(false),
     valueAddedServices: Joi.boolean().optional().default(false),
     termsAndConditions: Joi.boolean().optional().default(true),
-    membershipCategory: Joi.string().optional().default(null),
+    membershipCategory: Joi.string().optional().allow(null, ""),
     dateJoined: Joi.date().iso().optional().default(null),
     submissionDate: Joi.date().iso().optional().allow(null),
     paymentFrequency: Joi.string()
@@ -248,7 +248,7 @@ module.exports.subscription_details_update = Joi.object({
     exclusiveDiscountsAndOffers: Joi.boolean().optional().default(false),
     valueAddedServices: Joi.boolean().optional().default(false),
     termsAndConditions: Joi.boolean().optional().default(true),
-    membershipCategory: Joi.string().optional().default(null),
+    membershipCategory: Joi.string().optional().allow(null, ""),
     dateJoined: Joi.date().iso().optional().default(null),
     submissionDate: Joi.date().iso().optional().allow(null),
     paymentFrequency: Joi.string()

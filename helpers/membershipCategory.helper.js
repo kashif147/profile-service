@@ -84,11 +84,13 @@ async function syncMembershipCategoryToSubscription({
 function pickRequestedSubscriptionDetails(validatedData, rawBody) {
   if (!validatedData?.subscriptionDetails) return validatedData;
 
-  const requestedKeys = Object.keys(rawBody?.subscriptionDetails || {});
+  const rawSub = rawBody?.subscriptionDetails || {};
+  const requestedKeys = Object.keys(rawSub);
   if (requestedKeys.length === 0) return validatedData;
 
   const partial = {};
   for (const key of requestedKeys) {
+    if (!Object.prototype.hasOwnProperty.call(rawSub, key)) continue;
     if (
       Object.prototype.hasOwnProperty.call(
         validatedData.subscriptionDetails,
@@ -105,6 +107,14 @@ function pickRequestedSubscriptionDetails(validatedData, rawBody) {
   };
 }
 
+function subscriptionDetailsToPlain(subDoc) {
+  if (!subDoc) return {};
+  if (typeof subDoc.toObject === "function") {
+    return subDoc.toObject();
+  }
+  return { ...subDoc };
+}
+
 module.exports = {
   normalizeMembershipCategory,
   extractMembershipCategoryFromRequestBody,
@@ -112,4 +122,5 @@ module.exports = {
   enrichProfessionalWithSubscriptionMembershipCategory,
   syncMembershipCategoryToSubscription,
   pickRequestedSubscriptionDetails,
+  subscriptionDetailsToPlain,
 };

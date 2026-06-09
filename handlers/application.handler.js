@@ -263,9 +263,7 @@ exports.getApplicationWithDetails = (applicationId) =>
       }
 
       const membershipCategory =
-        subscriptionDetails?.subscriptionDetails?.membershipCategory ??
-        professionalDetails?.professionalDetails?.membershipCategory ??
-        null;
+        subscriptionDetails?.subscriptionDetails?.membershipCategory ?? null;
 
       const professionalPayload = professionalDetails
         ? {
@@ -354,7 +352,6 @@ exports.getAllApplicationsWithDetails = (
 
             const membershipCategory =
               subscriptionDetails?.subscriptionDetails?.membershipCategory ??
-              professionalDetails?.professionalDetails?.membershipCategory ??
               null;
 
             const professionalPayload = professionalDetails
@@ -660,7 +657,6 @@ exports.getApplicationsWithTemplateFilters = (
 
             const membershipCategory =
               subscriptionDetails?.subscriptionDetails?.membershipCategory ??
-              professionalDetails?.professionalDetails?.membershipCategory ??
               null;
 
             const professionalPayload = professionalDetails

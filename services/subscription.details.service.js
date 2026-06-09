@@ -6,8 +6,8 @@ const { AppError } = require("../errors/AppError");
 const mongoose = require("mongoose");
 const bizLogger = require("../config/bizLogger.js");
 const {
-  normalizeSubscriptionDetailsDates,
-} = require("../helpers/parseDateOnly.js");
+  subscriptionDetailsToPlain,
+} = require("../helpers/membershipCategory.helper.js");
 
 /**
  * Subscription Details Service Layer
@@ -368,7 +368,7 @@ class SubscriptionDetailsService {
         ]);
 
         const mergedSubscriptionDetails = {
-          ...(existingDetails?.subscriptionDetails || {}),
+          ...subscriptionDetailsToPlain(existingDetails?.subscriptionDetails),
           ...safeUpdateData.subscriptionDetails,
         };
 
