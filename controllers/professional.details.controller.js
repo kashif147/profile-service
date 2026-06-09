@@ -2,8 +2,9 @@ const professionalDetailsService = require("../services/professional.details.ser
 const subscriptionDetailsHandler = require("../handlers/subscription.details.handler");
 const personalDetailsHandler = require("../handlers/personal.details.handler");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
-const joischemas = require("../validation/index.js");
-const { AppError } = require("../errors/AppError");
+const {
+  extractMembershipCategoryFromRequestBody,
+} = require("../helpers/membershipCategory.helper.js");
 
 // Function to update subscription details with professional details
 // const updateSubscriptionWithProfessionalDetails = async (userId, professionalDetails) => {
@@ -36,6 +37,7 @@ exports.createProfessionalDetails = async (req, res, next) => {
       extractUserAndCreatorContext(req);
     const validatedData =
       await joischemas.professional_details_create.validateAsync(req.body);
+    const membershipCategory = extractMembershipCategoryFromRequestBody(req.body);
 
     // Get application ID from URL parameters
     const applicationId = req.params.applicationId;
@@ -46,7 +48,8 @@ exports.createProfessionalDetails = async (req, res, next) => {
       applicationId,
       userId,
       userType,
-      tenantId
+      tenantId,
+      membershipCategory
     );
 
     return res.success(result);
@@ -117,18 +120,15 @@ exports.updateProfessionalDetails = async (req, res, next) => {
 
     const validatedData =
       await joischemas.professional_details_update.validateAsync(req.body);
-    const updatePayload = {
-      ...validatedData,
-      "meta.updatedBy": creatorId,
-      "meta.userType": userType,
-    };
+    const membershipCategory = extractMembershipCategoryFromRequestBody(req.body);
 
     const result = await professionalDetailsService.updateProfessionalDetails(
       applicationId,
-      updatePayload,
+      validatedData,
       userId,
       userType,
-      tenantId
+      tenantId,
+      membershipCategory
     );
 
     return res.success(result);

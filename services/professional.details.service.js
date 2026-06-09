@@ -1,6 +1,12 @@
 const professionalDetailsHandler = require("../handlers/professional.details.handler");
 const personalDetailsHandler = require("../handlers/personal.details.handler");
+const subscriptionDetailsHandler = require("../handlers/subscription.details.handler");
 const { AppError } = require("../errors/AppError");
+const {
+  attachMembershipCategoryToProfessionalData,
+  enrichProfessionalWithSubscriptionMembershipCategory,
+  syncMembershipCategoryToSubscription,
+} = require("../helpers/membershipCategory.helper.js");
 
 /**
  * Professional Details Service Layer
@@ -20,7 +26,8 @@ class ProfessionalDetailsService {
     applicationId,
     userId,
     userType,
-    tenantId
+    tenantId,
+    membershipCategory = null
   ) {
     try {
       if (!data) {
@@ -61,15 +68,29 @@ class ProfessionalDetailsService {
         }
       }
 
-      const createData = {
-        ...data,
-        applicationId: applicationId,
-        userId: userId,
-        tenantId,
-        meta: { createdBy: userId, userType: userType },
-      };
+      const createData = attachMembershipCategoryToProfessionalData(
+        {
+          ...data,
+          applicationId: applicationId,
+          userId: userId,
+          tenantId,
+          meta: { createdBy: userId, userType: userType },
+        },
+        membershipCategory
+      );
 
-      return await professionalDetailsHandler.create(createData);
+      const result = await professionalDetailsHandler.create(createData);
+
+      await syncMembershipCategoryToSubscription({
+        applicationId,
+        membershipCategory,
+        userId,
+        userType,
+        tenantId,
+        subscriptionDetailsHandler,
+      });
+
+      return result;
     } catch (error) {
       console.error(
         "ProfessionalDetailsService [createProfessionalDetails] Error:",
@@ -111,6 +132,17 @@ class ProfessionalDetailsService {
       if (!professionalDetails) {
         return null;
       }
+
+      const subscriptionDetails =
+        await subscriptionDetailsHandler.getByApplicationId(
+          applicationId,
+          tenantId
+        );
+
+      const enriched = enrichProfessionalWithSubscriptionMembershipCategory(
+        professionalDetails,
+        subscriptionDetails
+      );
       
       // Validate user permissions for PORTAL users
       if (userType !== "CRM") {
@@ -121,7 +153,7 @@ class ProfessionalDetailsService {
         }
       }
 
-      return professionalDetails;
+      return enriched;
     } catch (error) {
       console.error(
         "ProfessionalDetailsService [getProfessionalDetails] Error:",
@@ -144,7 +176,8 @@ class ProfessionalDetailsService {
     updateData,
     userId,
     userType,
-    tenantId
+    tenantId,
+    membershipCategory = null
   ) {
     try {
       if (!applicationId) {
@@ -155,11 +188,14 @@ class ProfessionalDetailsService {
         throw AppError.badRequest("Update data is required");
       }
 
-      const updatePayload = {
-        ...updateData,
-        "meta.updatedBy": userId,
-        "meta.userType": userType,
-      };
+      const updatePayload = attachMembershipCategoryToProfessionalData(
+        {
+          ...updateData,
+          "meta.updatedBy": userId,
+          "meta.userType": userType,
+        },
+        membershipCategory
+      );
 
       let result;
       if (userType === "CRM") {
@@ -178,7 +214,22 @@ class ProfessionalDetailsService {
           );
       }
 
-      return result;
+      await syncMembershipCategoryToSubscription({
+        applicationId,
+        membershipCategory,
+        userId,
+        userType,
+        tenantId,
+        subscriptionDetailsHandler,
+      });
+
+      return enrichProfessionalWithSubscriptionMembershipCategory(
+        result,
+        await subscriptionDetailsHandler.getByApplicationId(
+          applicationId,
+          tenantId
+        )
+      );
     } catch (error) {
       console.error(
         "ProfessionalDetailsService [updateProfessionalDetails] Error:",
@@ -237,7 +288,23 @@ class ProfessionalDetailsService {
         throw AppError.badRequest("User ID is required");
       }
 
-      return await professionalDetailsHandler.getByUserId(userId, tenantId);
+      const professionalDetails = await professionalDetailsHandler.getByUserId(
+        userId,
+        tenantId
+      );
+      if (!professionalDetails) return null;
+
+      const subscriptionDetails = professionalDetails.applicationId
+        ? await subscriptionDetailsHandler.getByApplicationId(
+            professionalDetails.applicationId,
+            tenantId
+          )
+        : null;
+
+      return enrichProfessionalWithSubscriptionMembershipCategory(
+        professionalDetails,
+        subscriptionDetails
+      );
     } catch (error) {
       console.error(
         "ProfessionalDetailsService [getMyProfessionalDetails] Error:",
