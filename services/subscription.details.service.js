@@ -392,11 +392,38 @@ class SubscriptionDetailsService {
 
       let result;
       if (userType === "CRM") {
-        result = await subscriptionDetailsHandler.updateByApplicationId(
-          applicationId,
-          updatePayload,
-          tenantId
-        );
+        const existingDetails =
+          await subscriptionDetailsHandler.getByApplicationId(
+            applicationId,
+            tenantId
+          );
+
+        if (!existingDetails) {
+          const personalDetails = await personalDetailsHandler.getApplicationById(
+            applicationId,
+            tenantId
+          );
+          if (!personalDetails) {
+            throw AppError.notFound("Application not found");
+          }
+
+          result = await subscriptionDetailsHandler.create({
+            applicationId,
+            userId: personalDetails.userId ?? userId,
+            tenantId: tenantId || personalDetails.tenantId,
+            subscriptionDetails: safeUpdateData.subscriptionDetails || {},
+            meta: {
+              createdBy: userId,
+              userType,
+            },
+          });
+        } else {
+          result = await subscriptionDetailsHandler.updateByApplicationId(
+            applicationId,
+            updatePayload,
+            tenantId
+          );
+        }
       } else {
         result =
           await subscriptionDetailsHandler.updateByUserIdAndApplicationId(
