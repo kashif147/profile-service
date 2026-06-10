@@ -10,6 +10,15 @@ function isRejectedStatus(value) {
   return (value || "").toLowerCase() === APPLICATION_STATUS.REJECTED;
 }
 
+function isResubmissionStatus(value) {
+  const normalized = (value || "").toLowerCase();
+  return (
+    normalized === APPLICATION_STATUS.SUBMITTED ||
+    normalized === APPLICATION_STATUS.IN_PROGRESS ||
+    ["paid", "succeeded", "completed"].includes(normalized)
+  );
+}
+
 /** Prefer non-null incoming userId; never overwrite an existing link with null on sync. */
 function resolveUserIdForSync(incomingUserId, existingUserId) {
   if (incomingUserId != null && incomingUserId !== "") {
@@ -62,12 +71,24 @@ class ProfileApplicationCreateListener {
       const existingPersonal = await PersonalDetails.findOne({
         applicationId,
       }).lean();
-      if (isRejectedStatus(existingPersonal?.applicationStatus)) {
+      const existingIsRejected = isRejectedStatus(
+        existingPersonal?.applicationStatus
+      );
+      const incomingIsResubmission = isResubmissionStatus(incomingAppStatus);
+
+      if (existingIsRejected && !incomingIsResubmission) {
         console.log(
           "⏭️ [PROFILE_CREATE_LISTENER] Skipping: application already rejected in profile-service (stale portal sync)",
-          { applicationId }
+          { applicationId, incomingAppStatus }
         );
         return;
+      }
+
+      if (existingIsRejected && incomingIsResubmission) {
+        console.log(
+          "🔄 [PROFILE_CREATE_LISTENER] Re-application sync — updating rejected application in profile-service",
+          { applicationId, incomingAppStatus }
+        );
       }
 
       console.log("🔍 [PROFILE_CREATE_LISTENER] Event data structure:", {
@@ -104,18 +125,37 @@ class ProfileApplicationCreateListener {
           { applicationId, tenantId }
         );
       }
+      const resolvedApplicationStatus =
+        personalDetails.applicationStatus || status || APPLICATION_STATUS.IN_PROGRESS;
+      const personalUpdate = {
+        applicationId: applicationId,
+        tenantId:
+          tenantId || personalDetails.tenantId || existingPersonal?.tenantId,
+        userId: resolvedPersonalUserId,
+        personalInfo: personalDetails.personalInfo,
+        contactInfo: personalDetails.contactInfo,
+        applicationStatus: resolvedApplicationStatus,
+        meta: {
+          ...(existingPersonal?.meta || {}),
+          ...(personalDetails.meta || {}),
+          isActive: true,
+        },
+      };
+
+      if (existingIsRejected && incomingIsResubmission) {
+        personalUpdate.approvalDetails = {
+          approvedBy: null,
+          approvedAt: null,
+          rejectionReason: null,
+          comments: null,
+        };
+      } else if (personalDetails.approvalDetails) {
+        personalUpdate.approvalDetails = personalDetails.approvalDetails;
+      }
+
       const newPersonalDetails = await PersonalDetails.findOneAndUpdate(
         { applicationId: applicationId },
-        {
-          applicationId: applicationId,
-          tenantId: tenantId || personalDetails.tenantId || existingPersonal?.tenantId,
-          userId: resolvedPersonalUserId,
-          personalInfo: personalDetails.personalInfo,
-          contactInfo: personalDetails.contactInfo,
-          applicationStatus: personalDetails.applicationStatus || status,
-          approvalDetails: personalDetails.approvalDetails,
-          meta: personalDetails.meta,
-        },
+        personalUpdate,
         { upsert: true, new: true, runValidators: true }
       );
 
