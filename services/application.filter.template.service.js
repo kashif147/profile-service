@@ -96,6 +96,7 @@ class TemplateService {
         filters,
         columns,
         columnLabels,
+        visibleFilters,
         isDefault,
         pinned,
       } =
@@ -114,6 +115,7 @@ class TemplateService {
         filters: filters || {},
         columns: columns || [],
         columnLabels: columnLabels || {},
+        visibleFilters: Array.isArray(visibleFilters) ? visibleFilters : [],
         isDefault: isDefault || false,
         pinned: pinned || false,
       });
@@ -226,6 +228,7 @@ class TemplateService {
         filters,
         columns,
         columnLabels,
+        visibleFilters,
         isDefault,
         pinned,
       } =
@@ -290,6 +293,11 @@ class TemplateService {
       }
       if (columnLabels !== undefined) {
         template.columnLabels = columnLabels;
+      }
+      if (visibleFilters !== undefined) {
+        template.visibleFilters = Array.isArray(visibleFilters)
+          ? visibleFilters
+          : [];
       }
       if (isDefault !== undefined) {
         template.isDefault = isDefault;

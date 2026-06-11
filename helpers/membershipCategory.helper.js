@@ -14,6 +14,16 @@ function extractMembershipCategoryFromRequestBody(body) {
   return normalizeMembershipCategory(body?.professionalDetails?.membershipCategory);
 }
 
+function extractLegacyProfessionalFieldsFromSubscriptionBody(body) {
+  const sub = body?.subscriptionDetails || {};
+  const legacy = {};
+  for (const key of LEGACY_PROFESSIONAL_FIELDS_FROM_SUBSCRIPTION) {
+    if (!Object.prototype.hasOwnProperty.call(sub, key)) continue;
+    legacy[key] = sub[key];
+  }
+  return Object.keys(legacy).length > 0 ? legacy : null;
+}
+
 function attachMembershipCategoryToProfessionalData(data, membershipCategory) {
   if (!membershipCategory) return data;
   const next = { ...data };
@@ -177,9 +187,41 @@ function subscriptionDetailsToPlain(subDoc) {
   return { ...subDoc };
 }
 
+async function syncLegacyProfessionalFieldsFromSubscriptionBody({
+  applicationId,
+  body,
+  userId,
+  userType,
+  professionalDetailsHandler,
+  subscriptionDetailsHandler,
+}) {
+  const legacyFields = extractLegacyProfessionalFieldsFromSubscriptionBody(body);
+  if (!legacyFields || !applicationId) return;
+
+  const existing = await professionalDetailsHandler.getByApplicationId(
+    applicationId,
+  );
+  if (!existing) return;
+
+  const update = {
+    "meta.updatedBy": userId,
+    "meta.userType": userType,
+  };
+  for (const [key, value] of Object.entries(legacyFields)) {
+    update[`professionalDetails.${key}`] = value;
+  }
+
+  await professionalDetailsHandler.updateByApplicationId(applicationId, update);
+  await subscriptionDetailsHandler.unsetLegacyProfessionalFieldsByApplicationId(
+    applicationId,
+  );
+}
+
 module.exports = {
   normalizeMembershipCategory,
   extractMembershipCategoryFromRequestBody,
+  extractLegacyProfessionalFieldsFromSubscriptionBody,
+  syncLegacyProfessionalFieldsFromSubscriptionBody,
   attachMembershipCategoryToProfessionalData,
   LEGACY_PROFESSIONAL_FIELDS_FROM_SUBSCRIPTION,
   mergeLegacyProfessionalFieldsFromSubscription,

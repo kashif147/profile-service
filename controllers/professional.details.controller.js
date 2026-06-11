@@ -2,6 +2,7 @@ const professionalDetailsService = require("../services/professional.details.ser
 const subscriptionDetailsHandler = require("../handlers/subscription.details.handler");
 const personalDetailsHandler = require("../handlers/personal.details.handler");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
+const joischemas = require("../validation/index.js");
 const {
   extractMembershipCategoryFromRequestBody,
 } = require("../helpers/membershipCategory.helper.js");

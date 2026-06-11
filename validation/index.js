@@ -197,6 +197,9 @@ module.exports.professional_details_update = Joi.object({
 
 module.exports.subscription_details_create = Joi.object({
   subscriptionDetails: Joi.object({
+    previousMembershipNo: Joi.any().strip(),
+    joinYouthForum: Joi.any().strip(),
+    youthForum: Joi.any().strip(),
     paymentType: Joi.string()
       .valid(...Object.values(PAYMENT_TYPE))
       .optional(),
@@ -229,6 +232,9 @@ module.exports.subscription_details_create = Joi.object({
 
 module.exports.subscription_details_update = Joi.object({
   subscriptionDetails: Joi.object({
+    previousMembershipNo: Joi.any().strip(),
+    joinYouthForum: Joi.any().strip(),
+    youthForum: Joi.any().strip(),
     paymentType: Joi.string()
       .valid(...Object.values(PAYMENT_TYPE))
       .optional(),
@@ -430,6 +436,8 @@ module.exports.filter_template_create = Joi.object({
     .pattern(Joi.string().trim(), Joi.string().trim())
     .optional()
     .default({}),
+  /** Toolbar chip order persisted with the view (filter labels). */
+  visibleFilters: Joi.array().items(Joi.string().trim()).optional().default([]),
   isDefault: Joi.boolean().optional().default(false),
   pinned: Joi.boolean().optional().default(false),
 });
@@ -451,6 +459,7 @@ module.exports.filter_template_update = Joi.object({
   columnLabels: Joi.object()
     .pattern(Joi.string().trim(), Joi.string().trim())
     .optional(),
+  visibleFilters: Joi.array().items(Joi.string().trim()).optional(),
   isDefault: Joi.boolean().optional(),
   pinned: Joi.boolean().optional(),
 }).min(0);

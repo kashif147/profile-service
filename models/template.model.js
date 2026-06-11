@@ -40,6 +40,11 @@ const TemplateSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    /** Toolbar filter chip labels in display order (Save View / update template). */
+    visibleFilters: {
+      type: [String],
+      default: [],
+    },
     /**
      * User’s chosen default (landing) view for this templateType — at most one per user+type+tenant
      * after saves. This is the only field that should drive “default view” in the product.

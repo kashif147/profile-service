@@ -38,6 +38,19 @@ function canEditSystemDefaultTemplate(req) {
   );
 }
 
+/** Map client payload; drop soft-delete meta — visible toolbar layout uses visibleFilters. */
+function normalizeTemplateRequestBody(body = {}) {
+  const normalized = { ...body };
+  if (
+    normalized.visibleFilters == null &&
+    Array.isArray(normalized.meta?.visibleToolbarFilters)
+  ) {
+    normalized.visibleFilters = normalized.meta.visibleToolbarFilters;
+  }
+  delete normalized.meta;
+  return normalized;
+}
+
 function isSystemDefaultPreferenceOnlyUpdate(payload = {}) {
   const keys = Object.keys(payload || {}).filter(
     (key) => payload[key] !== undefined,
@@ -61,7 +74,9 @@ exports.createTemplate = async (req, res, next) => {
     }
 
     const validatedData =
-      await joischemas.filter_template_create.validateAsync(req.body);
+      await joischemas.filter_template_create.validateAsync(
+        normalizeTemplateRequestBody(req.body),
+      );
 
     const template = await applicationFilterTemplateService.createTemplate(
       creatorId,
@@ -187,7 +202,7 @@ exports.updateTemplate = async (req, res, next) => {
     );
 
     const bodyForValidation = {
-      ...req.body,
+      ...normalizeTemplateRequestBody(req.body),
       templateType:
         req.body.templateType ?? existingTemplate?.templateType ?? "application",
     };
