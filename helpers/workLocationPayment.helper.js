@@ -14,9 +14,9 @@ function isSalaryDeductionPaymentType(paymentType) {
 }
 
 /**
- * Salary deduction eligibility is stored on professional details when the
- * work location is saved (frontend copies lookup configuration). No user-service
- * API or cross-database lookup reads.
+ * Salary deduction eligibility is stored on subscription details when payment
+ * is saved (frontend copies lookup configuration from the selected work
+ * location). No user-service API or cross-database lookup reads.
  */
 function assertSalaryDeductionAllowedForWorkLocation(
   subscriptionDetails,
@@ -30,7 +30,7 @@ function assertSalaryDeductionAllowedForWorkLocation(
   }
 
   const workLocation = String(professionalDetails?.workLocation || "").trim();
-  const allows = !!professionalDetails?.processSalaryDeduction;
+  const allows = !!subscriptionDetails?.processSalaryDeduction;
 
   if (!allows) {
     throw AppError.badRequest(

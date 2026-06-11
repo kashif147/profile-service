@@ -42,6 +42,35 @@ async function findSubscriptionRecord(applicationId, tenantId) {
 
 exports.findSubscriptionRecord = findSubscriptionRecord;
 
+exports.unsetLegacyProfessionalFieldsByApplicationId = (
+  applicationId,
+  tenantId,
+) =>
+  new Promise(async (resolve, reject) => {
+    try {
+      const existing = await findSubscriptionRecord(applicationId, tenantId);
+      if (!existing) return resolve(false);
+
+      await SubscriptionDetails.collection.updateOne(
+        { _id: existing._id },
+        {
+          $unset: {
+            "subscriptionDetails.previousMembershipNo": "",
+            "subscriptionDetails.joinYouthForum": "",
+            "subscriptionDetails.youthForum": "",
+          },
+        },
+      );
+      resolve(true);
+    } catch (error) {
+      console.error(
+        "SubscriptionDetailsHandler [unsetLegacyProfessionalFieldsByApplicationId] Error:",
+        error,
+      );
+      reject(error);
+    }
+  });
+
 exports.create = (data) =>
   new Promise(async (resolve, reject) => {
     try {

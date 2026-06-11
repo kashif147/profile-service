@@ -3,6 +3,10 @@ const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
 const { AppError } = require("../errors/AppError.js");
+const {
+  mergeLegacyProfessionalFieldsFromSubscription,
+  readLegacyProfessionalFieldsFromSubscriptionRecord,
+} = require("../helpers/membershipCategory.helper.js");
 
 async function loadSubmission(applicationId) {
   try {
@@ -32,7 +36,14 @@ async function loadSubmission(applicationId) {
     // Combine into submission format
     const rawProfessionalDetails =
       professionalDetails?.professionalDetails || {};
-    const professionalDetailsPayload = { ...rawProfessionalDetails };
+    const legacyProfessionalFields =
+      await readLegacyProfessionalFieldsFromSubscriptionRecord(
+        subscriptionDetails,
+      );
+    let professionalDetailsPayload = mergeLegacyProfessionalFieldsFromSubscription(
+      { ...rawProfessionalDetails },
+      legacyProfessionalFields,
+    );
     delete professionalDetailsPayload.membershipCategory;
 
     const subscriptionDetailsPayload = {

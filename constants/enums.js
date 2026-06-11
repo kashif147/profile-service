@@ -130,6 +130,10 @@ exports.FILTER_FIELD_MAP = {
     source: "subscriptionDetails",
     path: "subscriptionDetails.paymentType",
   },
+  processSalaryDeduction: {
+    source: "subscriptionDetails",
+    path: "subscriptionDetails.processSalaryDeduction",
+  },
   payrollNo: {
     source: "subscriptionDetails",
     path: "subscriptionDetails.payrollNo",

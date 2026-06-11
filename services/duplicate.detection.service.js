@@ -137,16 +137,27 @@ async function findExactApplicationCandidates(source, excludeApplicationId) {
   }
 
   if (source.previousMembershipNo) {
-    const prevMatches = await SubscriptionDetails.find({
-      applicationId: { $ne: excludeApplicationId },
-      "subscriptionDetails.previousMembershipNo": new RegExp(
-        `^${escapeRegex(source.previousMembershipNo)}$`,
-        "i",
-      ),
-    })
-      .select("applicationId")
-      .lean();
-    prevMatches.forEach((row) => ids.add(row.applicationId));
+    const prevRegex = new RegExp(
+      `^${escapeRegex(source.previousMembershipNo)}$`,
+      "i",
+    );
+    const [professionalPrevMatches, subscriptionPrevMatches] =
+      await Promise.all([
+        ProfessionalDetails.find({
+          applicationId: { $ne: excludeApplicationId },
+          "professionalDetails.previousMembershipNo": prevRegex,
+        })
+          .select("applicationId")
+          .lean(),
+        SubscriptionDetails.find({
+          applicationId: { $ne: excludeApplicationId },
+          "subscriptionDetails.previousMembershipNo": prevRegex,
+        })
+          .select("applicationId")
+          .lean(),
+      ]);
+    professionalPrevMatches.forEach((row) => ids.add(row.applicationId));
+    subscriptionPrevMatches.forEach((row) => ids.add(row.applicationId));
   }
 
   return filterNonApprovedApplicationIds([...ids]);

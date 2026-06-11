@@ -5,8 +5,21 @@ const { AppError } = require("../errors/AppError");
 const {
   attachMembershipCategoryToProfessionalData,
   enrichProfessionalWithSubscriptionMembershipCategory,
+  professionalPayloadIncludesMigratedFields,
   syncMembershipCategoryToSubscription,
 } = require("../helpers/membershipCategory.helper.js");
+
+async function clearLegacyProfessionalFieldsFromSubscription(
+  applicationId,
+  tenantId,
+  professionalPayload = {},
+) {
+  if (!professionalPayloadIncludesMigratedFields(professionalPayload)) return;
+  await subscriptionDetailsHandler.unsetLegacyProfessionalFieldsByApplicationId(
+    applicationId,
+    tenantId,
+  );
+}
 
 /**
  * Professional Details Service Layer
@@ -90,6 +103,12 @@ class ProfessionalDetailsService {
         subscriptionDetailsHandler,
       });
 
+      await clearLegacyProfessionalFieldsFromSubscription(
+        applicationId,
+        tenantId,
+        data?.professionalDetails,
+      );
+
       return result;
     } catch (error) {
       console.error(
@@ -139,9 +158,9 @@ class ProfessionalDetailsService {
           tenantId
         );
 
-      const enriched = enrichProfessionalWithSubscriptionMembershipCategory(
+      const enriched = await enrichProfessionalWithSubscriptionMembershipCategory(
         professionalDetails,
-        subscriptionDetails
+        subscriptionDetails,
       );
       
       // Validate user permissions for PORTAL users
@@ -223,12 +242,21 @@ class ProfessionalDetailsService {
         subscriptionDetailsHandler,
       });
 
-      return enrichProfessionalWithSubscriptionMembershipCategory(
-        result,
+      await clearLegacyProfessionalFieldsFromSubscription(
+        applicationId,
+        tenantId,
+        updateData?.professionalDetails,
+      );
+
+      const subscriptionDetails =
         await subscriptionDetailsHandler.getByApplicationId(
           applicationId,
-          tenantId
-        )
+          tenantId,
+        );
+
+      return await enrichProfessionalWithSubscriptionMembershipCategory(
+        result,
+        subscriptionDetails,
       );
     } catch (error) {
       console.error(
@@ -301,9 +329,9 @@ class ProfessionalDetailsService {
           )
         : null;
 
-      return enrichProfessionalWithSubscriptionMembershipCategory(
+      return await enrichProfessionalWithSubscriptionMembershipCategory(
         professionalDetails,
-        subscriptionDetails
+        subscriptionDetails,
       );
     } catch (error) {
       console.error(

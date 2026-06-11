@@ -19,7 +19,6 @@ const ProfessionalSchema = new mongoose.Schema(
       graduationDate: { type: Date, allowNull: true },
       discipline: { type: String, allowNull: true },
       workLocation: { type: String, allowNull: true },
-      processSalaryDeduction: { type: Boolean, default: false },
       otherWorkLocation: { type: String, allowNull: true },
       branch: { type: String, allowNull: true },
       region: { type: String, allowNull: true },
@@ -28,6 +27,9 @@ const ProfessionalSchema = new mongoose.Schema(
       nursingAdaptationProgramme: { type: Boolean, default: false },
       nmbiNumber: { type: String, allowNull: true },
       nurseType: { type: String, allowNull: true },
+      previousMembershipNo: { type: String, allowNull: true },
+      joinYouthForum: { type: Boolean, default: null },
+      youthForum: { type: String, allowNull: true },
     },
 
     meta: {

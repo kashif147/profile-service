@@ -185,7 +185,11 @@ function getApplicationValue(submission, section, key) {
 /** Compare-view only: membership number row uses different sources per side. */
 function getApplicationCompareValue(submission, section, key) {
   if (section === "subscriptionDetails" && key === "membershipNo") {
-    return submission?.subscriptionDetails?.previousMembershipNo ?? null;
+    return (
+      submission?.professionalDetails?.previousMembershipNo ??
+      submission?.subscriptionDetails?.previousMembershipNo ??
+      null
+    );
   }
   return getApplicationValue(submission, section, key);
 }

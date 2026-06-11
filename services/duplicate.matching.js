@@ -82,7 +82,8 @@ function buildMatchableRecord({
     mobile: normalizePhoneNumber(contactInfo.mobileNumber),
     nmbiNumber: normalizeIdentifier(professionalDetails.nmbiNumber),
     previousMembershipNo: normalizeIdentifier(
-      subscriptionDetails.previousMembershipNo,
+      professionalDetails.previousMembershipNo ??
+        subscriptionDetails.previousMembershipNo,
     ),
     payrollNo: normalizeIdentifier(
       subscriptionDetails.payrollNo || professionalDetails.payrollNo,

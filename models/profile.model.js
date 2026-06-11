@@ -93,6 +93,9 @@ const ProfileSchema = new mongoose.Schema(
       },
       nmbiNumber: { type: String, default: null },
       nurseType: { type: String, default: null },
+      previousMembershipNo: { type: String, default: null },
+      joinYouthForum: { type: Boolean, default: null },
+      youthForum: { type: String, default: null },
     },
     preferences: {
       consent: { type: Boolean, default: true },

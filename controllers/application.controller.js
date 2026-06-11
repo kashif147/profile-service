@@ -12,6 +12,10 @@ const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
 const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const {
+  mergeLegacyProfessionalFieldsFromSubscription,
+  readLegacyProfessionalFieldsFromSubscriptionRecord,
+} = require("../helpers/membershipCategory.helper.js");
+const {
   fetchTenantContext,
   resolveTenantTradingName,
 } = require("../services/tenant.service.client.js");
@@ -353,10 +357,15 @@ exports.approveApplication = async (req, res, next) => {
           mongoose.Types.ObjectId.isValid(String(personal.profileId))
             ? await Profile.findById(personal.profileId).lean()
             : null;
+        const legacyProfessionalFields =
+          await readLegacyProfessionalFieldsFromSubscriptionRecord(subscription);
         const effective = {
           personalInfo: personal?.personalInfo,
           contactInfo: personal?.contactInfo,
-          professionalDetails: professional?.professionalDetails,
+          professionalDetails: mergeLegacyProfessionalFieldsFromSubscription(
+            professional?.professionalDetails || {},
+            legacyProfessionalFields,
+          ),
           subscriptionDetails: subscription?.subscriptionDetails,
         };
         const sub = subscription?.subscriptionDetails || {};

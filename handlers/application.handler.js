@@ -18,6 +18,8 @@ const {
   findSubscriptionRecord,
 } = require("./subscription.details.handler.js");
 const {
+  mergeLegacyProfessionalFieldsFromSubscription,
+  readLegacyProfessionalFieldsFromSubscriptionRecord,
   subscriptionDetailsToPlain,
 } = require("../helpers/membershipCategory.helper.js");
 
@@ -38,16 +40,27 @@ function buildSubscriptionPayload(subscriptionDetails, membershipCategory) {
   return subscriptionDetailsToPlain(subscriptionDetails.subscriptionDetails);
 }
 
-function buildProfessionalPayload(professionalDetails, membershipCategory) {
+async function buildProfessionalPayload(
+  professionalDetails,
+  membershipCategory,
+  subscriptionDetails,
+) {
   if (!professionalDetails) {
     return membershipCategory !== null ? { membershipCategory } : null;
   }
   const profPlain = subscriptionDetailsToPlain(
-    professionalDetails.professionalDetails
+    professionalDetails.professionalDetails,
   );
   delete profPlain.membershipCategory;
+  const legacyFields = await readLegacyProfessionalFieldsFromSubscriptionRecord(
+    subscriptionDetails,
+  );
+  const mergedProfessional = mergeLegacyProfessionalFieldsFromSubscription(
+    profPlain,
+    legacyFields,
+  );
   return {
-    ...profPlain,
+    ...mergedProfessional,
     ...(membershipCategory != null ? { membershipCategory } : {}),
   };
 }
@@ -296,9 +309,10 @@ exports.getApplicationWithDetails = (applicationId) =>
       const membershipCategory =
         subscriptionDetails?.subscriptionDetails?.membershipCategory ?? null;
 
-      const professionalPayload = buildProfessionalPayload(
+      const professionalPayload = await buildProfessionalPayload(
         professionalDetails,
-        membershipCategory
+        membershipCategory,
+        subscriptionDetails,
       );
 
       const subscriptionPayload = buildSubscriptionPayload(
@@ -379,9 +393,10 @@ exports.getAllApplicationsWithDetails = (
               subscriptionDetails?.subscriptionDetails?.membershipCategory ??
               null;
 
-            const professionalPayload = buildProfessionalPayload(
+            const professionalPayload = await buildProfessionalPayload(
               professionalDetails,
-              membershipCategory
+              membershipCategory,
+              subscriptionDetails,
             );
 
             const subscriptionPayload = buildSubscriptionPayload(
@@ -678,9 +693,10 @@ exports.getApplicationsWithTemplateFilters = (
               subscriptionDetails?.subscriptionDetails?.membershipCategory ??
               null;
 
-            const professionalPayload = buildProfessionalPayload(
+            const professionalPayload = await buildProfessionalPayload(
               professionalDetails,
-              membershipCategory
+              membershipCategory,
+              subscriptionDetails,
             );
 
             const subscriptionPayload = buildSubscriptionPayload(

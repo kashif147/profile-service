@@ -52,6 +52,9 @@ const professionalDetailsKeys = [
   "nursingAdaptationProgramme",
   "nmbiNumber",
   "nurseType",
+  "previousMembershipNo",
+  "joinYouthForum",
+  "youthForum",
 ];
 
 const preferencesKeys = [
@@ -105,6 +108,13 @@ const SECTION_FIELDS_FROM_SUBSCRIPTION = [
   "otherSecondarySection",
 ];
 
+/** Legacy subscription storage; prefer professionalDetails when both exist. */
+const LEGACY_FIELDS_FROM_SUBSCRIPTION = [
+  "previousMembershipNo",
+  "joinYouthForum",
+  "youthForum",
+];
+
 function mergeProfessionalSectionsFromSubscription(
   professionalDetails,
   subscriptionDetails,
@@ -114,6 +124,16 @@ function mergeProfessionalSectionsFromSubscription(
   for (const key of SECTION_FIELDS_FROM_SUBSCRIPTION) {
     const v = sub[key];
     if (v != null && v !== "") {
+      merged[key] = v;
+    }
+  }
+  for (const key of LEGACY_FIELDS_FROM_SUBSCRIPTION) {
+    const prof = merged[key];
+    if (prof != null && prof !== "") continue;
+    const v = sub[key];
+    if (v != null && v !== "") {
+      merged[key] = v;
+    } else if (typeof v === "boolean" && prof == null) {
       merged[key] = v;
     }
   }
