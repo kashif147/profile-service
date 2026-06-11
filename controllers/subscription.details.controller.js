@@ -55,7 +55,8 @@ exports.createSubscriptionDetails = async (req, res, next) => {
       applicationId,
       userId,
       userType,
-      tenantId
+      tenantId,
+      req
     );
 
     return res.success(result);
@@ -142,7 +143,8 @@ exports.updateSubscriptionDetails = async (req, res, next) => {
       updatePayload,
       userId,
       userType,
-      tenantId
+      tenantId,
+      req
     );
 
     return res.success(result);

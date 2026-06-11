@@ -29,7 +29,6 @@ const SubscriptionSchema = new mongoose.Schema(
         enum: Object.values(PAYMENT_FREQUENCY),
         default: PAYMENT_FREQUENCY.MONTHLY,
       },
-      processSalaryDeduction: { type: Boolean, default: false },
       membershipStatus: { type: String, allowNull: true },
       inmoRewards: { type: Boolean, default: false },
       incomeProtectionScheme: { type: Boolean, default: false },

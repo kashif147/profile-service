@@ -30,7 +30,8 @@ class SubscriptionDetailsService {
     applicationId,
     userId,
     userType,
-    tenantId
+    tenantId,
+    req = null
   ) {
     try {
       if (!data) {
@@ -109,9 +110,10 @@ class SubscriptionDetailsService {
       createData.subscriptionDetails = enforcePaymentFrequencyRule(
         createData.subscriptionDetails
       );
-      assertSalaryDeductionAllowedForWorkLocation(
+      await assertSalaryDeductionAllowedForWorkLocation(
         createData.subscriptionDetails,
         professionalDetails?.professionalDetails,
+        { req, tenantId }
       );
       createData.subscriptionDetails = normalizeSubscriptionDetailsDates(
         createData.subscriptionDetails
@@ -323,7 +325,8 @@ class SubscriptionDetailsService {
     updateData,
     userId,
     userType,
-    tenantId
+    tenantId,
+    req = null
   ) {
     try {
       if (!applicationId) {
@@ -378,9 +381,10 @@ class SubscriptionDetailsService {
         safeUpdateData.subscriptionDetails = enforcePaymentFrequencyRule(
           mergedSubscriptionDetails,
         );
-        assertSalaryDeductionAllowedForWorkLocation(
+        await assertSalaryDeductionAllowedForWorkLocation(
           safeUpdateData.subscriptionDetails,
           professionalDetails?.professionalDetails,
+          { req, tenantId }
         );
         safeUpdateData.subscriptionDetails = normalizeSubscriptionDetailsDates(
           safeUpdateData.subscriptionDetails

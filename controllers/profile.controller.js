@@ -629,7 +629,36 @@ async function updateProfile(req, res, next) {
       };
     }
 
+    const existingProfessionalDetails = profile.professionalDetails?.toObject
+      ? profile.professionalDetails.toObject()
+      : profile.professionalDetails || {};
+    const effectiveProfessionalDetails = updates.professionalDetails
+      ? { ...existingProfessionalDetails, ...updates.professionalDetails }
+      : existingProfessionalDetails;
+
+    if (updates.professionalDetails) {
+      updates.professionalDetails = effectiveProfessionalDetails;
+    }
+
     applyDerivedFields(updates);
+
+    const currentSubscription = await fetchCurrentSubscriptionByProfileId(
+      profileId,
+      tenantId,
+      req,
+      profile.currentSubscriptionId?.toString?.() ??
+        profile.currentSubscriptionId,
+    );
+    if (currentSubscription?.paymentType) {
+      const {
+        assertSalaryDeductionAllowedForWorkLocation,
+      } = require("../helpers/workLocationPayment.helper.js");
+      await assertSalaryDeductionAllowedForWorkLocation(
+        { paymentType: currentSubscription.paymentType },
+        effectiveProfessionalDetails,
+        { req, tenantId },
+      );
+    }
 
     const { creatorId } = extractUserAndCreatorContext(req);
     profile.$locals.__auditActorId = creatorId;
@@ -644,6 +673,9 @@ async function updateProfile(req, res, next) {
     enrichPersonalInfoFullNameOnDocument(populatedProfile);
     return res.success(populatedProfile);
   } catch (error) {
+    if (error.name === "AppError") {
+      return next(error);
+    }
     if (error.name === "ValidationError") {
       return next(AppError.badRequest(error.message));
     }
