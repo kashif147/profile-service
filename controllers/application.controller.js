@@ -120,6 +120,74 @@ async function resolveProfileIdsForPortalUser(userId, tenantId, email) {
   };
 }
 
+function normalizePersonalDetailsRecord(personalDetails) {
+  if (!personalDetails) {
+    return null;
+  }
+  if (typeof personalDetails.toObject === "function") {
+    return personalDetails.toObject({ depopulate: true });
+  }
+  return personalDetails;
+}
+
+function personalDetailsMatchesEmail(personalDetails, email) {
+  if (!email || !personalDetails?.contactInfo) {
+    return false;
+  }
+  const normalized = email.trim().toLowerCase();
+  const personalEmail = personalDetails.contactInfo.personalEmail
+    ?.trim()
+    ?.toLowerCase();
+  const workEmail = personalDetails.contactInfo.workEmail?.trim()?.toLowerCase();
+  return personalEmail === normalized || workEmail === normalized;
+}
+
+function portalUserOwnsPersonalDetails(
+  personalDetails,
+  { userId, tenantId, profileIds = [], email = null, lookupEmail = null },
+) {
+  const personal = normalizePersonalDetailsRecord(personalDetails);
+  if (!personal || !tenantId) {
+    return false;
+  }
+
+  const personalTenantId = personal.tenantId
+    ? String(personal.tenantId)
+    : null;
+  if (personalTenantId && personalTenantId !== String(tenantId)) {
+    return false;
+  }
+
+  if (userId && personal.userId) {
+    const personalUserId = String(personal.userId);
+    if (personalUserId === String(userId)) {
+      return true;
+    }
+    if (
+      mongoose.Types.ObjectId.isValid(String(userId)) &&
+      mongoose.Types.ObjectId.isValid(personalUserId) &&
+      new mongoose.Types.ObjectId(String(userId)).equals(personalUserId)
+    ) {
+      return true;
+    }
+  }
+
+  if (personal.profileId && profileIds.length > 0) {
+    const appProfileId = String(personal.profileId);
+    if (profileIds.some((id) => String(id) === appProfileId)) {
+      return true;
+    }
+  }
+
+  for (const addr of [email, lookupEmail]) {
+    if (addr && personalDetailsMatchesEmail(personal, addr)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // Original GET API - unchanged
 exports.getAllApplications = async (req, res, next) => {
   try {
@@ -318,7 +386,7 @@ exports.getApplicationById = async (req, res, next) => {
     }
 
     if (userType === "PORTAL") {
-      if (!userId || !tenantId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      if (!userId || !tenantId) {
         return next(
           AppError.forbidden(
             "Access denied. You can only view your own applications.",
@@ -326,29 +394,23 @@ exports.getApplicationById = async (req, res, next) => {
         );
       }
 
-      const personalDetails = applicationDetails.personalDetails || {};
-      const personalUserId = personalDetails.userId
-        ? String(personalDetails.userId)
-        : null;
-      const personalTenantId = personalDetails.tenantId
-        ? String(personalDetails.tenantId)
-        : null;
+      const portalEmail = extractPortalEmail(req);
+      const { profileIds, lookupEmail } = await resolveProfileIdsForPortalUser(
+        userId,
+        tenantId,
+        portalEmail,
+      );
 
-      let ownsApplication =
-        personalUserId === String(userId) &&
-        personalTenantId === String(tenantId);
-
-      if (!ownsApplication) {
-        const profileId = personalDetails.profileId;
-        if (profileId && mongoose.Types.ObjectId.isValid(String(profileId))) {
-          const ownsProfile = await Profile.exists({
-            _id: new mongoose.Types.ObjectId(String(profileId)),
-            tenantId: String(tenantId),
-            userId: buildPortalUserIdMatcher(String(userId)),
-          });
-          ownsApplication = !!ownsProfile;
-        }
-      }
+      const ownsApplication = portalUserOwnsPersonalDetails(
+        applicationDetails.personalDetails,
+        {
+          userId,
+          tenantId,
+          profileIds,
+          email: portalEmail,
+          lookupEmail,
+        },
+      );
 
       if (!ownsApplication) {
         return next(
