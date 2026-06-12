@@ -194,6 +194,43 @@ class ApplicationService {
       throw error;
     }
   }
+
+  /**
+   * Portal user application history — active and inactive (meta.isActive true/false).
+   * @param {string} userId - Portal user ID
+   * @param {string} tenantId - Tenant ID
+   * @param {string|null} profileId - Linked profile ID when present
+   * @param {Array} [statusFilters] - Optional application status filters
+   * @returns {Promise<Array>} Array of applications with summary details
+   */
+  async getApplicationsForPortalUser(
+    userId,
+    tenantId,
+    profileId,
+    statusFilters = [],
+  ) {
+    try {
+      if (!userId) {
+        throw AppError.badRequest("User ID is required");
+      }
+      if (!tenantId) {
+        throw AppError.badRequest("Tenant ID is required");
+      }
+
+      return await applicationHandler.getApplicationsForPortalUser(
+        userId,
+        tenantId,
+        profileId,
+        statusFilters,
+      );
+    } catch (error) {
+      console.error(
+        "ApplicationService [getApplicationsForPortalUser] Error:",
+        error,
+      );
+      throw error;
+    }
+  }
 }
 
 module.exports = new ApplicationService();

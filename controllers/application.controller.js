@@ -553,22 +553,16 @@ exports.getMyApplications = async (req, res, next) => {
       .select("_id")
       .lean();
 
-    if (!profile?._id) {
-      return res.success({
-        profileId: null,
-        count: 0,
-        applications: [],
-      });
-    }
-
     const statusFilters = parseStatusFilters(req.query.type);
-    const applications = await applicationService.getApplicationsByProfileId(
-      profile._id.toString(),
+    const applications = await applicationService.getApplicationsForPortalUser(
+      String(userId),
+      String(tenantId),
+      profile?._id ? profile._id.toString() : null,
       statusFilters,
     );
 
     return res.success({
-      profileId: profile._id.toString(),
+      profileId: profile?._id ? profile._id.toString() : null,
       count: applications.length,
       applications,
     });

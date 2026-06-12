@@ -122,103 +122,144 @@ exports.getApplicationById = (applicationId) =>
     }
   });
 
+function applyApplicationStatusFilters(query, statusFilters = []) {
+  if (statusFilters && statusFilters.length > 0) {
+    const normalized = statusFilters.map((s) =>
+      typeof s === "string" ? s.toLowerCase() : s,
+    );
+    query.applicationStatus = { $in: normalized };
+  }
+  return query;
+}
+
+async function fetchApplicationsForList(query) {
+  try {
+    return await PersonalDetails.find(query)
+      .populate({
+        path: "approvalDetails.approvedBy",
+        model: "User",
+        select: "userFullName userEmail",
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+  } catch (populateErr) {
+    console.warn(
+      "ApplicationHandler fetchApplicationsForList populate failed, returning without approvedBy details:",
+      populateErr?.message,
+    );
+    return PersonalDetails.find(query).sort({ createdAt: -1 }).lean();
+  }
+}
+
+async function enrichApplicationsForList(applications) {
+  return Promise.all(
+    applications.map(async (app) => {
+      const subscription = await SubscriptionDetails.findOne({
+        applicationId: app.applicationId,
+      }).lean();
+
+      const dateJoined = subscription?.subscriptionDetails?.dateJoined;
+      const approvedBy = app.approvalDetails?.approvedBy;
+      const approvedByPayload = !approvedBy
+        ? null
+        : approvedBy instanceof mongoose.Types.ObjectId
+          ? { id: approvedBy.toString() }
+          : approvedBy &&
+              typeof approvedBy === "object" &&
+              (approvedBy.userFullName !== undefined ||
+                approvedBy.userEmail !== undefined)
+            ? {
+                id: approvedBy._id != null ? String(approvedBy._id) : null,
+                name: approvedBy.userFullName,
+                email: approvedBy.userEmail,
+              }
+            : approvedBy && typeof approvedBy === "object"
+              ? {
+                  id: approvedBy._id != null ? String(approvedBy._id) : null,
+                }
+              : null;
+
+      return {
+        applicationId: app.applicationId,
+        membershipCategory:
+          subscription?.subscriptionDetails?.membershipCategory ?? null,
+        submissionDate:
+          app.createdAt != null
+            ? (app.createdAt.toISOString?.() ?? app.createdAt)
+            : null,
+        approvalDate:
+          app.approvalDetails?.approvedAt != null
+            ? (app.approvalDetails.approvedAt.toISOString?.() ??
+              app.approvalDetails.approvedAt)
+            : null,
+        joinDate: dateJoined != null ? formatDateOnly(dateJoined) : null,
+        approvedBy: approvedByPayload,
+        applicationStatus: app.applicationStatus,
+        personalDetails: {
+          meta: {
+            isActive:
+              typeof app.meta?.isActive === "boolean"
+                ? app.meta.isActive
+                : true,
+          },
+        },
+      };
+    }),
+  );
+}
+
 exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
   new Promise(async (resolve, reject) => {
     try {
-      const objectId = new mongoose.Types.ObjectId(profileId);
-
-      const query = {
-        profileId: objectId,
-        "meta.deleted": false,
-      };
-
-      if (statusFilters && statusFilters.length > 0) {
-        const normalized = statusFilters.map((s) =>
-          typeof s === "string" ? s.toLowerCase() : s,
-        );
-        query.applicationStatus = { $in: normalized };
-      }
-
-      let applications;
-      try {
-        applications = await PersonalDetails.find(query)
-          .populate({
-            path: "approvalDetails.approvedBy",
-            model: "User",
-            select: "userFullName userEmail",
-          })
-          .sort({ createdAt: -1 })
-          .lean();
-      } catch (populateErr) {
-        console.warn(
-          "ApplicationHandler [getApplicationsByProfileId] populate failed, returning without approvedBy details:",
-          populateErr?.message,
-        );
-        applications = await PersonalDetails.find(query)
-          .sort({ createdAt: -1 })
-          .lean();
-      }
-
-      const enrichedApplications = await Promise.all(
-        applications.map(async (app) => {
-          const subscription = await SubscriptionDetails.findOne({
-            applicationId: app.applicationId,
-          }).lean();
-
-          const dateJoined = subscription?.subscriptionDetails?.dateJoined;
-          const approvedBy = app.approvalDetails?.approvedBy;
-          const approvedByPayload = !approvedBy
-            ? null
-            : approvedBy instanceof mongoose.Types.ObjectId
-              ? { id: approvedBy.toString() }
-              : approvedBy &&
-                  typeof approvedBy === "object" &&
-                  (approvedBy.userFullName !== undefined ||
-                    approvedBy.userEmail !== undefined)
-                ? {
-                    id: approvedBy._id != null ? String(approvedBy._id) : null,
-                    name: approvedBy.userFullName,
-                    email: approvedBy.userEmail,
-                  }
-                : approvedBy && typeof approvedBy === "object"
-                  ? {
-                      id:
-                        approvedBy._id != null ? String(approvedBy._id) : null,
-                    }
-                  : null;
-
-          return {
-            applicationId: app.applicationId,
-            membershipCategory:
-              subscription?.subscriptionDetails?.membershipCategory ?? null,
-            submissionDate:
-              app.createdAt != null
-                ? (app.createdAt.toISOString?.() ?? app.createdAt)
-                : null,
-            approvalDate:
-              app.approvalDetails?.approvedAt != null
-                ? (app.approvalDetails.approvedAt.toISOString?.() ??
-                  app.approvalDetails.approvedAt)
-                : null,
-            joinDate:
-              dateJoined != null
-                ? formatDateOnly(dateJoined)
-                : null,
-            approvedBy: approvedByPayload,
-            applicationStatus: app.applicationStatus,
-            personalDetails: {
-              meta: {
-                isActive: app.meta?.isActive ?? true,
-              },
-            },
-          };
-        }),
+      const query = applyApplicationStatusFilters(
+        {
+          profileId: new mongoose.Types.ObjectId(profileId),
+          "meta.deleted": false,
+        },
+        statusFilters,
       );
 
-      resolve(enrichedApplications);
+      const applications = await fetchApplicationsForList(query);
+      resolve(await enrichApplicationsForList(applications));
     } catch (error) {
       console.error(
         "ApplicationHandler [getApplicationsByProfileId] Error:",
+        error,
+      );
+      reject(error);
+    }
+  });
+
+exports.getApplicationsForPortalUser = (
+  userId,
+  tenantId,
+  profileId,
+  statusFilters = [],
+) =>
+  new Promise(async (resolve, reject) => {
+    try {
+      const userObjectId = new mongoose.Types.ObjectId(String(userId));
+      const orClause = [{ userId: userObjectId }];
+      if (profileId && mongoose.Types.ObjectId.isValid(String(profileId))) {
+        orClause.push({
+          profileId: new mongoose.Types.ObjectId(String(profileId)),
+        });
+      }
+
+      const query = applyApplicationStatusFilters(
+        {
+          tenantId: String(tenantId),
+          $or: orClause,
+          "meta.deleted": false,
+        },
+        statusFilters,
+      );
+
+      const applications = await fetchApplicationsForList(query);
+      resolve(await enrichApplicationsForList(applications));
+    } catch (error) {
+      console.error(
+        "ApplicationHandler [getApplicationsForPortalUser] Error:",
         error,
       );
       reject(error);
