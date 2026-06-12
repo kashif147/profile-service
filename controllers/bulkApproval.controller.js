@@ -45,6 +45,7 @@ const {
 const {
   parseDateOnlyToUtcNoon,
 } = require("../helpers/parseDateOnly.js");
+const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
