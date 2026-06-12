@@ -65,10 +65,13 @@ async function buildProfessionalPayload(
   };
 }
 
+/** Match documents where meta.deleted is false or unset (legacy rows). */
+const NOT_DELETED_APPLICATION_FILTER = { "meta.deleted": { $ne: true } };
+
 /** System default filters applied for template-based application listing (admin/system default). */
 const SYSTEM_DEFAULT_APPLICATION_FILTERS = {
   /** Only non-deleted applications (max relevant results). */
-  "meta.deleted": false,
+  ...NOT_DELETED_APPLICATION_FILTER,
 };
 // membership number generation moved to Profile creation flow
 
@@ -130,6 +133,72 @@ function applyApplicationStatusFilters(query, statusFilters = []) {
     query.applicationStatus = { $in: normalized };
   }
   return query;
+}
+
+function buildUserObjectIdMatcher(userId) {
+  if (userId == null || !mongoose.Types.ObjectId.isValid(String(userId))) {
+    return null;
+  }
+  return new mongoose.Types.ObjectId(String(userId));
+}
+
+function buildContactEmailMatchClause(email) {
+  if (typeof email !== "string" || !email.trim()) {
+    return null;
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  const escaped = normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return {
+    $or: [
+      {
+        "contactInfo.personalEmail": new RegExp(`^${escaped}$`, "i"),
+      },
+      {
+        "contactInfo.workEmail": new RegExp(`^${escaped}$`, "i"),
+      },
+    ],
+  };
+}
+
+function buildPortalApplicationsQuery({
+  userId,
+  tenantId,
+  profileIds = [],
+  email = null,
+  statusFilters = [],
+}) {
+  const orClause = [];
+
+  const userObjectId = buildUserObjectIdMatcher(userId);
+  if (userObjectId) {
+    orClause.push({ userId: userObjectId });
+  }
+
+  const validProfileIds = (profileIds || [])
+    .filter((id) => id && mongoose.Types.ObjectId.isValid(String(id)))
+    .map((id) => new mongoose.Types.ObjectId(String(id)));
+
+  if (validProfileIds.length > 0) {
+    orClause.push({ profileId: { $in: validProfileIds } });
+  }
+
+  const emailClause = buildContactEmailMatchClause(email);
+  if (emailClause) {
+    orClause.push(emailClause);
+  }
+
+  if (orClause.length === 0) {
+    return null;
+  }
+
+  return applyApplicationStatusFilters(
+    {
+      tenantId: String(tenantId),
+      $or: orClause,
+      ...NOT_DELETED_APPLICATION_FILTER,
+    },
+    statusFilters,
+  );
 }
 
 async function fetchApplicationsForList(query) {
@@ -214,7 +283,7 @@ exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
       const query = applyApplicationStatusFilters(
         {
           profileId: new mongoose.Types.ObjectId(profileId),
-          "meta.deleted": false,
+          ...NOT_DELETED_APPLICATION_FILTER,
         },
         statusFilters,
       );
@@ -230,30 +299,27 @@ exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
     }
   });
 
-exports.getApplicationsForPortalUser = (
+exports.getApplicationsForPortalUser = ({
   userId,
   tenantId,
-  profileId,
+  profileIds = [],
+  email = null,
   statusFilters = [],
-) =>
+}) =>
   new Promise(async (resolve, reject) => {
     try {
-      const userObjectId = new mongoose.Types.ObjectId(String(userId));
-      const orClause = [{ userId: userObjectId }];
-      if (profileId && mongoose.Types.ObjectId.isValid(String(profileId))) {
-        orClause.push({
-          profileId: new mongoose.Types.ObjectId(String(profileId)),
-        });
-      }
-
-      const query = applyApplicationStatusFilters(
-        {
-          tenantId: String(tenantId),
-          $or: orClause,
-          "meta.deleted": false,
-        },
+      const query = buildPortalApplicationsQuery({
+        userId,
+        tenantId,
+        profileIds,
+        email,
         statusFilters,
-      );
+      });
+
+      if (!query) {
+        resolve([]);
+        return;
+      }
 
       const applications = await fetchApplicationsForList(query);
       resolve(await enrichApplicationsForList(applications));

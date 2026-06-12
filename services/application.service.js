@@ -197,32 +197,33 @@ class ApplicationService {
 
   /**
    * Portal user application history — active and inactive (meta.isActive true/false).
-   * @param {string} userId - Portal user ID
-   * @param {string} tenantId - Tenant ID
-   * @param {string|null} profileId - Linked profile ID when present
-   * @param {Array} [statusFilters] - Optional application status filters
+   * @param {Object} options
+   * @param {string} options.userId - Portal user ID
+   * @param {string} options.tenantId - Tenant ID
+   * @param {string[]} [options.profileIds] - Linked profile IDs
+   * @param {string|null} [options.email] - Portal user email for fallback matching
+   * @param {Array} [options.statusFilters] - Optional application status filters
    * @returns {Promise<Array>} Array of applications with summary details
    */
-  async getApplicationsForPortalUser(
+  async getApplicationsForPortalUser({
     userId,
     tenantId,
-    profileId,
+    profileIds = [],
+    email = null,
     statusFilters = [],
-  ) {
+  }) {
     try {
-      if (!userId) {
-        throw AppError.badRequest("User ID is required");
-      }
       if (!tenantId) {
         throw AppError.badRequest("Tenant ID is required");
       }
 
-      return await applicationHandler.getApplicationsForPortalUser(
+      return await applicationHandler.getApplicationsForPortalUser({
         userId,
         tenantId,
-        profileId,
+        profileIds,
+        email,
         statusFilters,
-      );
+      });
     } catch (error) {
       console.error(
         "ApplicationService [getApplicationsForPortalUser] Error:",

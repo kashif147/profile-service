@@ -55,6 +55,71 @@ function buildPortalUserIdMatcher(userId) {
   return new mongoose.Types.ObjectId(String(userId));
 }
 
+function extractPortalEmail(req) {
+  const email =
+    req.user?.email ||
+    req.headers["x-user-email"] ||
+    req.user?.preferred_username ||
+    req.user?.preferredEmail;
+  if (typeof email !== "string" || !email.trim()) {
+    return null;
+  }
+  return email.trim().toLowerCase();
+}
+
+async function resolveProfileIdsForPortalUser(userId, tenantId, email) {
+  const profileIds = new Set();
+  const tenant = String(tenantId);
+
+  if (userId && mongoose.Types.ObjectId.isValid(String(userId))) {
+    const byUserId = await Profile.find({
+      tenantId: tenant,
+      userId: buildPortalUserIdMatcher(String(userId)),
+    })
+      .select("_id")
+      .lean();
+
+    for (const profile of byUserId) {
+      profileIds.add(String(profile._id));
+    }
+  }
+
+  let lookupEmail =
+    typeof email === "string" && email.trim()
+      ? email.trim().toLowerCase()
+      : null;
+
+  if (!lookupEmail && userId) {
+    const User = require("../models/user.model.js");
+    const portalUser = await User.findOne({
+      tenantId: tenant,
+      userId: String(userId),
+      userType: "PORTAL",
+    })
+      .select("userEmail")
+      .lean();
+    lookupEmail = portalUser?.userEmail?.trim()?.toLowerCase() || null;
+  }
+
+  if (lookupEmail) {
+    const byEmail = await Profile.find({
+      tenantId: tenant,
+      normalizedEmail: lookupEmail,
+    })
+      .select("_id")
+      .lean();
+
+    for (const profile of byEmail) {
+      profileIds.add(String(profile._id));
+    }
+  }
+
+  return {
+    profileIds: [...profileIds],
+    lookupEmail,
+  };
+}
+
 // Original GET API - unchanged
 exports.getAllApplications = async (req, res, next) => {
   try {
@@ -537,32 +602,25 @@ exports.getMyApplications = async (req, res, next) => {
     if (!userId || !tenantId) {
       return next(AppError.forbidden("Access denied."));
     }
-    if (!mongoose.Types.ObjectId.isValid(String(userId))) {
-      return res.success({
-        profileId: null,
-        count: 0,
-        applications: [],
-      });
-    }
 
-    const profile = await Profile.findOne({
-      tenantId: String(tenantId),
-      userId: buildPortalUserIdMatcher(String(userId)),
-    })
-      .sort({ updatedAt: -1 })
-      .select("_id")
-      .lean();
-
-    const statusFilters = parseStatusFilters(req.query.type);
-    const applications = await applicationService.getApplicationsForPortalUser(
-      String(userId),
-      String(tenantId),
-      profile?._id ? profile._id.toString() : null,
-      statusFilters,
+    const portalEmail = extractPortalEmail(req);
+    const { profileIds, lookupEmail } = await resolveProfileIdsForPortalUser(
+      userId,
+      tenantId,
+      portalEmail,
     );
 
+    const statusFilters = parseStatusFilters(req.query.type);
+    const applications = await applicationService.getApplicationsForPortalUser({
+      userId: String(userId),
+      tenantId: String(tenantId),
+      profileIds,
+      email: portalEmail || lookupEmail,
+      statusFilters,
+    });
+
     return res.success({
-      profileId: profile?._id ? profile._id.toString() : null,
+      profileId: profileIds[0] || null,
       count: applications.length,
       applications,
     });
