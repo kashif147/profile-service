@@ -54,15 +54,9 @@ async function getProfileDuplicateMergeCompareHandler(req, res, next) {
       return next(AppError.badRequest("Tenant context is required"));
     }
 
-    const leftProfileId = masterProfileId;
-    const rightProfileId =
-      String(masterProfileId) === String(profileId)
-        ? targetProfileId
-        : profileId;
-
     const result = await getProfileDuplicateMergeCompare(
-      leftProfileId,
-      rightProfileId,
+      profileId,
+      targetProfileId,
       tenantId,
       req,
       { masterProfileId },
@@ -110,6 +104,7 @@ async function submitProfileDuplicateMerge(req, res, next) {
       mergeFieldChoices,
       reviewerId,
       req,
+      compareLeftProfileId: profileId,
     });
 
     return res.success(result);

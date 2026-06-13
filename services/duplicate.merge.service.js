@@ -71,7 +71,16 @@ const SUBSCRIPTION_COMPARE_KEYS = [
   "paymentFrequency",
 ];
 
-const DISPLAY_ONLY_COMPARE_KEYS = new Set(["membershipNo"]);
+/** Shown in compare grid for context but not selectable — derived or service-owned. */
+const DISPLAY_ONLY_COMPARE_KEYS = new Set([
+  "membershipNo",
+  "age",
+  "fullAddress",
+  "branch",
+  "region",
+  "subscriptionYear",
+  "endDate",
+]);
 
 const MERGE_SECTION_LABELS = {
   personal: "Personal",
@@ -1106,6 +1115,28 @@ async function applyMergedEffectiveToKeeperProfile({
   return Profile.findOne({ _id: profileId, tenantId }).session(session || null);
 }
 
+function remapMergeFieldChoicesFromCompareColumns(
+  mergeFieldChoices = {},
+  compareLeftProfileId,
+  masterProfileId,
+) {
+  if (String(compareLeftProfileId) === String(masterProfileId)) {
+    return mergeFieldChoices;
+  }
+
+  const remapped = {};
+  for (const [path, choice] of Object.entries(mergeFieldChoices)) {
+    if (choice === "APPLICATION") {
+      remapped[path] = "PROFILE";
+    } else if (choice === "PROFILE") {
+      remapped[path] = "APPLICATION";
+    } else {
+      remapped[path] = choice;
+    }
+  }
+  return remapped;
+}
+
 async function executeProfileDuplicateMerge({
   masterProfileId,
   absorbedProfileId,
@@ -1113,6 +1144,7 @@ async function executeProfileDuplicateMerge({
   mergeFieldChoices,
   reviewerId,
   req = null,
+  compareLeftProfileId = null,
 }) {
   if (String(masterProfileId) === String(absorbedProfileId)) {
     throw AppError.badRequest("Cannot merge a profile with itself");
@@ -1133,10 +1165,17 @@ async function executeProfileDuplicateMerge({
 
     const effective = profileToSubmissionShape(masterProfile, masterSubscription);
     validateMergeFieldChoices(mergeFieldChoices);
+    const normalizedChoices = compareLeftProfileId
+      ? remapMergeFieldChoicesFromCompareColumns(
+          mergeFieldChoices,
+          compareLeftProfileId,
+          masterProfileId,
+        )
+      : mergeFieldChoices;
     const mergedEffective = buildEffectiveFromMergeChoices(
       effective,
       absorbedProfile,
-      mergeFieldChoices,
+      normalizedChoices,
       absorbedSubscription,
     );
 
@@ -1196,6 +1235,7 @@ module.exports = {
   resolveMergedEffectiveForReview,
   applyMergedEffectiveToApplication,
   getProfileDuplicateMergeCompare,
+  remapMergeFieldChoicesFromCompareColumns,
   executeProfileDuplicateMerge,
   profileToSubmissionShape,
 };
