@@ -2,6 +2,7 @@ const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
+const { AppError } = require("../errors/AppError.js");
 const { APPLICATION_STATUS, DUPLICATE_REVIEW_STATUS } = require("../constants/enums.js");
 const {
   normalizeEmail,
@@ -417,6 +418,64 @@ async function findDuplicateMatches(applicationId, tenantId) {
   };
 }
 
+async function findProfileDuplicateMatches(sourceProfileId, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  const sourceProfile = normalizedTenantId
+    ? await Profile.findOne({ _id: sourceProfileId, tenantId: normalizedTenantId }).lean()
+    : await Profile.findById(sourceProfileId).lean();
+
+  if (!sourceProfile) {
+    throw AppError.notFound("Profile not found");
+  }
+
+  let membershipCategory = null;
+  if (normalizedTenantId) {
+    const subscription = await fetchCurrentSubscriptionByProfileId(
+      String(sourceProfile._id),
+      normalizedTenantId,
+      null,
+      sourceProfile.currentSubscriptionId,
+    );
+    membershipCategory = subscription?.membershipCategory ?? null;
+  }
+
+  const source = profileToRecord(sourceProfile, membershipCategory);
+  const sourceIdStr = String(sourceProfile._id);
+
+  const profileCandidateIds = new Set([
+    ...(await findExactProfileCandidates(source, normalizedTenantId)),
+    ...(await findFuzzyProfileCandidates(source, normalizedTenantId)),
+  ]);
+  profileCandidateIds.delete(sourceIdStr);
+
+  const profileMatches = await scoreProfileCandidates(
+    source,
+    [...profileCandidateIds],
+    normalizedTenantId,
+  );
+
+  const matchSummary = [...profileMatches].sort((a, b) => b.score - a.score);
+
+  return {
+    sourceProfileId: sourceIdStr,
+    sourceProfile: {
+      name: source.name,
+      email: source.email,
+      mobile: source.mobile,
+      membershipNumber: sourceProfile.membershipNumber || null,
+      membershipCategory: source.membershipCategory,
+    },
+    matchingProfiles: profileMatches,
+    matchSummary,
+    hasPotentialDuplicate: matchSummary.some((m) => !m.ignored && m.score >= 40),
+  };
+}
+
+async function detectProfileDuplicates(sourceProfileId, tenantId) {
+  const result = await findProfileDuplicateMatches(sourceProfileId, tenantId);
+  return result;
+}
+
 async function detectDuplicates(applicationId, tenantId) {
   try {
     const result = await findDuplicateMatches(applicationId, tenantId);
@@ -501,6 +560,8 @@ function queueDuplicateDetection(applicationId, tenantId) {
 
 module.exports = {
   detectDuplicates,
+  detectProfileDuplicates,
+  findProfileDuplicateMatches,
   queueDuplicateDetection,
   findDuplicateMatches,
   loadApplicationBundle,

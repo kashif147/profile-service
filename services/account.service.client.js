@@ -101,9 +101,47 @@ async function fetchMemberFinanceSummary(membershipNumber, tenantId, req = null)
   }
 }
 
+async function reassignFinanceForProfileMerge({
+  tenantId,
+  masterProfileId,
+  absorbedProfileId,
+  masterMembershipNumber,
+  absorbedMembershipNumber,
+  req = null,
+}) {
+  const base = ACCOUNT_SERVICE_URL.replace(/\/$/, "");
+  const url = `${base}/api/finance/internal/profile-merge`;
+
+  const response = await axios.post(
+    url,
+    {
+      masterProfileId,
+      absorbedProfileId,
+      masterMembershipNumber,
+      absorbedMembershipNumber,
+    },
+    {
+      headers: buildHeaders(req, tenantId || ""),
+      timeout: 30000,
+      validateStatus: (status) => status < 500,
+    },
+  );
+
+  if (response.status >= 400) {
+    const message =
+      response.data?.error?.message ||
+      response.data?.message ||
+      `Finance merge reassignment failed (${response.status})`;
+    throw new Error(message);
+  }
+
+  return response.data?.data || response.data || {};
+}
+
 module.exports = {
   fetchMemberFinanceSummary,
   getMemberIdLookupKeys,
   buildHeaders,
+  reassignFinanceForProfileMerge,
   ACCOUNT_SERVICE_URL,
 };

@@ -189,8 +189,46 @@ function mergeSubscriptionServiceData(
   return result;
 }
 
+async function reassignSubscriptionsForProfileMerge({
+  tenantId,
+  masterProfileId,
+  absorbedProfileId,
+  masterMembershipNumber = null,
+  absorbedMembershipNumber = null,
+  req = null,
+}) {
+  const base = SUBSCRIPTION_SERVICE_URL.replace(/\/$/, "");
+  const url = `${base}/api/v1/subscriptions/internal/profile-merge`;
+
+  const response = await axios.post(
+    url,
+    {
+      masterProfileId,
+      absorbedProfileId,
+      masterMembershipNumber,
+      absorbedMembershipNumber,
+    },
+    {
+      headers: buildHeaders(req, tenantId || ""),
+      timeout: 30000,
+      validateStatus: (status) => status < 500,
+    },
+  );
+
+  if (response.status >= 400) {
+    const message =
+      response.data?.error?.message ||
+      response.data?.message ||
+      `Subscription merge failed (${response.status})`;
+    throw new Error(message);
+  }
+
+  return response.data?.data || response.data || {};
+}
+
 module.exports = {
   fetchCurrentSubscriptionByProfileId,
   mergeSubscriptionServiceData,
+  reassignSubscriptionsForProfileMerge,
   SUBSCRIPTION_SERVICE_URL,
 };

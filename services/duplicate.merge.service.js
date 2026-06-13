@@ -16,9 +16,18 @@ const {
 } = require("../helpers/profile.transform.js");
 const { findAuthorizedProfileMatch } = require("./duplicate.matching.js");
 const {
+  pickPrimaryEmail,
+  normalizeEmail,
+} = require("./profileLookup.service.js");
+const { flattenProfilePayload } = require("../helpers/profile.transform.js");
+const {
   fetchCurrentSubscriptionByProfileId,
 } = require("./subscription.service.client.js");
 const { fetchMemberFinanceSummary } = require("./account.service.client.js");
+const {
+  consolidateProfileMergeHistory,
+  reassignProfileServiceReferences,
+} = require("./profile.merge.consolidation.service.js");
 const SECTION_FIELDS_FROM_SUBSCRIPTION = [
   "primarySection",
   "otherPrimarySection",
@@ -185,8 +194,16 @@ function getApplicationValue(submission, section, key) {
 }
 
 /** Compare-view only: membership number row uses different sources per side. */
-function getApplicationCompareValue(submission, section, key) {
+function getApplicationCompareValue(
+  submission,
+  section,
+  key,
+  leftProfileFallbacks = null,
+) {
   if (section === "subscriptionDetails" && key === "membershipNo") {
+    if (leftProfileFallbacks?.membershipNumber != null) {
+      return leftProfileFallbacks.membershipNumber;
+    }
     return (
       submission?.professionalDetails?.previousMembershipNo ??
       submission?.subscriptionDetails?.previousMembershipNo ??
@@ -194,6 +211,59 @@ function getApplicationCompareValue(submission, section, key) {
     );
   }
   return getApplicationValue(submission, section, key);
+}
+
+function profileToSubmissionShape(profile, liveSubscription = null) {
+  const sections = rehydrateProfile(profile);
+  const subscriptionDetails = {
+    membershipCategory: liveSubscription?.membershipCategory ?? null,
+    paymentType: liveSubscription?.paymentType ?? null,
+    paymentFrequency: liveSubscription?.paymentFrequency ?? null,
+    payrollNo:
+      liveSubscription?.payrollNo ??
+      sections.professionalDetails?.payrollNo ??
+      null,
+    subscriptionStatus: liveSubscription?.subscriptionStatus ?? null,
+    dateJoined: liveSubscription?.startDate ?? null,
+    startDate: liveSubscription?.startDate ?? null,
+    endDate: liveSubscription?.endDate ?? null,
+    subscriptionYear: liveSubscription?.subscriptionYear ?? null,
+  };
+
+  for (const key of MERGE_PROFESSIONAL_TAIL_KEYS) {
+    if (preferencesKeys.includes(key) && sections.preferences?.[key] != null) {
+      subscriptionDetails[key] = sections.preferences[key];
+    } else if (cornmarketKeys.includes(key) && sections.cornMarket?.[key] != null) {
+      subscriptionDetails[key] = sections.cornMarket[key];
+    } else if (
+      additionalInformationKeys.includes(key) &&
+      sections.additionalInformation?.[key] != null
+    ) {
+      subscriptionDetails[key] = sections.additionalInformation[key];
+    }
+  }
+
+  return {
+    personalInfo: sections.personalInfo || {},
+    contactInfo: sections.contactInfo || {},
+    professionalDetails: sections.professionalDetails || {},
+    subscriptionDetails,
+  };
+}
+
+async function loadProfileForTenant(profileId, tenantId) {
+  const idStr = String(profileId || "").trim();
+  if (!idStr || !mongoose.Types.ObjectId.isValid(idStr)) {
+    throw AppError.badRequest("profileId is required");
+  }
+  const profile = await Profile.findOne({
+    _id: new mongoose.Types.ObjectId(idStr),
+    tenantId,
+  }).lean();
+  if (!profile) {
+    throw AppError.notFound("Profile not found");
+  }
+  return profile;
 }
 
 function getProfileCompareValue(
@@ -430,7 +500,9 @@ function buildMergeCompareRows(
   liveSubscription = null,
   profileFallbacks = {},
   memberFinanceSummary = null,
+  options = {},
 ) {
+  const { leftProfileFallbacks = null } = options;
   const profileSections = rehydrateProfile(profileDoc);
   const rows = [];
 
@@ -439,6 +511,7 @@ function buildMergeCompareRows(
       submission,
       field.section,
       field.key,
+      leftProfileFallbacks,
     );
     const profileValue = getProfileCompareValue(
       profileSections,
@@ -893,6 +966,224 @@ async function applyMergedEffectiveToApplication({
   );
 }
 
+async function getProfileDuplicateMergeCompare(
+  leftProfileId,
+  rightProfileId,
+  tenantId,
+  req = null,
+  options = {},
+) {
+  const { masterProfileId = leftProfileId } = options;
+  if (String(leftProfileId) === String(rightProfileId)) {
+    throw AppError.badRequest("Cannot compare a profile with itself");
+  }
+
+  const [leftProfile, rightProfile] = await Promise.all([
+    loadProfileForTenant(leftProfileId, tenantId),
+    loadProfileForTenant(rightProfileId, tenantId),
+  ]);
+
+  const [leftSubscription, rightSubscription, rightFinanceSummary] =
+    await Promise.all([
+      fetchLiveSubscriptionForProfile(leftProfile, tenantId, req),
+      fetchLiveSubscriptionForProfile(rightProfile, tenantId, req),
+      rightProfile?.membershipNumber
+        ? fetchMemberFinanceSummary(
+            rightProfile.membershipNumber,
+            tenantId,
+            req,
+          )
+        : Promise.resolve(null),
+    ]);
+
+  const submission = profileToSubmissionShape(leftProfile, leftSubscription);
+  const leftProfileFallbacks = {
+    membershipNumber: leftProfile.membershipNumber ?? null,
+    membershipCategory: leftSubscription?.membershipCategory ?? null,
+  };
+  const rightProfileFallbacks = {
+    membershipNumber: rightProfile.membershipNumber ?? null,
+    membershipCategory:
+      rightSubscription?.membershipCategory ?? null,
+  };
+
+  const fields = buildMergeCompareRows(
+    submission,
+    rightProfile,
+    rightSubscription,
+    rightProfileFallbacks,
+    rightFinanceSummary,
+    { leftProfileFallbacks },
+  );
+
+  return {
+    leftProfileId: String(leftProfile._id),
+    rightProfileId: String(rightProfile._id),
+    masterProfileId: String(masterProfileId),
+    absorbedProfileId:
+      String(masterProfileId) === String(leftProfile._id)
+        ? String(rightProfile._id)
+        : String(leftProfile._id),
+    compareMode: "PROFILE",
+    leftProfileSummary: {
+      name:
+        leftProfile.personalInfo?.fullName ||
+        [leftProfile.personalInfo?.forename, leftProfile.personalInfo?.surname]
+          .filter(Boolean)
+          .join(" ") ||
+        null,
+      email:
+        leftProfile.contactInfo?.personalEmail ||
+        leftProfile.contactInfo?.workEmail ||
+        null,
+      mobile: leftProfile.contactInfo?.mobileNumber || null,
+      membershipNumber: leftProfile.membershipNumber || null,
+    },
+    rightProfileSummary: {
+      name:
+        rightProfile.personalInfo?.fullName ||
+        [rightProfile.personalInfo?.forename, rightProfile.personalInfo?.surname]
+          .filter(Boolean)
+          .join(" ") ||
+        null,
+      email:
+        rightProfile.contactInfo?.personalEmail ||
+        rightProfile.contactInfo?.workEmail ||
+        null,
+      mobile: rightProfile.contactInfo?.mobileNumber || null,
+      membershipNumber: rightProfile.membershipNumber || null,
+    },
+    sourceProfileId: String(leftProfile._id),
+    targetProfileId: String(rightProfile._id),
+    sourceProfileSummary: {
+      name:
+        leftProfile.personalInfo?.fullName ||
+        [leftProfile.personalInfo?.forename, leftProfile.personalInfo?.surname]
+          .filter(Boolean)
+          .join(" ") ||
+        null,
+      membershipNumber: leftProfile.membershipNumber || null,
+    },
+    targetProfileSummary: {
+      name:
+        rightProfile.personalInfo?.fullName ||
+        [rightProfile.personalInfo?.forename, rightProfile.personalInfo?.surname]
+          .filter(Boolean)
+          .join(" ") ||
+        null,
+      membershipNumber: rightProfile.membershipNumber || null,
+    },
+    activeSubscription: summarizeActiveSubscription(rightSubscription),
+    fields,
+  };
+}
+
+async function applyMergedEffectiveToKeeperProfile({
+  profileId,
+  tenantId,
+  effective,
+  reviewerId,
+  session = null,
+}) {
+  const flattened = flattenProfilePayload(effective);
+  const $set = {
+    personalInfo: flattened.personalInfo || {},
+    contactInfo: flattened.contactInfo || {},
+    professionalDetails: flattened.professionalDetails || {},
+    preferences: flattened.preferences || {},
+    cornMarket: flattened.cornMarket || {},
+    additionalInformation: flattened.additionalInformation || {},
+    recruitmentDetails: flattened.recruitmentDetails || {},
+  };
+
+  const primaryEmail = pickPrimaryEmail(flattened.contactInfo || {});
+  if (primaryEmail) {
+    $set.normalizedEmail = normalizeEmail(primaryEmail);
+  }
+
+  const writeOptions = session ? { session } : {};
+  await Profile.updateOne({ _id: profileId, tenantId }, { $set }, writeOptions);
+  return Profile.findOne({ _id: profileId, tenantId }).session(session || null);
+}
+
+async function executeProfileDuplicateMerge({
+  masterProfileId,
+  absorbedProfileId,
+  tenantId,
+  mergeFieldChoices,
+  reviewerId,
+  req = null,
+}) {
+  if (String(masterProfileId) === String(absorbedProfileId)) {
+    throw AppError.badRequest("Cannot merge a profile with itself");
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const [masterProfile, absorbedProfile] = await Promise.all([
+      loadProfileForTenant(masterProfileId, tenantId),
+      loadProfileForTenant(absorbedProfileId, tenantId),
+    ]);
+
+    const [masterSubscription, absorbedSubscription] = await Promise.all([
+      fetchLiveSubscriptionForProfile(masterProfile, tenantId, req),
+      fetchLiveSubscriptionForProfile(absorbedProfile, tenantId, req),
+    ]);
+
+    const effective = profileToSubmissionShape(masterProfile, masterSubscription);
+    validateMergeFieldChoices(mergeFieldChoices);
+    const mergedEffective = buildEffectiveFromMergeChoices(
+      effective,
+      absorbedProfile,
+      mergeFieldChoices,
+      absorbedSubscription,
+    );
+
+    const updatedProfile = await applyMergedEffectiveToKeeperProfile({
+      profileId: masterProfile._id,
+      tenantId,
+      effective: mergedEffective,
+      reviewerId,
+      session,
+    });
+
+    const localConsolidation = await reassignProfileServiceReferences({
+      tenantId,
+      masterProfileId: masterProfile._id,
+      absorbedProfileId: absorbedProfile._id,
+      session,
+    });
+
+    await session.commitTransaction();
+
+    const remoteConsolidation = await consolidateProfileMergeHistory({
+      tenantId,
+      masterProfile,
+      absorbedProfile,
+      req,
+      skipLocal: true,
+    });
+
+    return {
+      masterProfileId: String(masterProfile._id),
+      absorbedProfileId: String(absorbedProfile._id),
+      masterMembershipNumber: masterProfile.membershipNumber || null,
+      absorbedMembershipNumber: absorbedProfile.membershipNumber || null,
+      profile: updatedProfile,
+      consolidation: {
+        local: localConsolidation,
+        ...remoteConsolidation,
+      },
+    };
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+}
+
 module.exports = {
   MERGE_FIELD_DEFINITIONS,
   MERGE_COMPARE_FIELD_DEFINITIONS,
@@ -904,4 +1195,7 @@ module.exports = {
   validateMergeFieldChoices,
   resolveMergedEffectiveForReview,
   applyMergedEffectiveToApplication,
+  getProfileDuplicateMergeCompare,
+  executeProfileDuplicateMerge,
+  profileToSubmissionShape,
 };

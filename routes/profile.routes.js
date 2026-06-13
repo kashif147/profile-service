@@ -2,6 +2,12 @@ const express = require("express");
 const router = express.Router();
 const profileValidationController = require("../controllers/profile.validation.controller.js");
 const profileController = require("../controllers/profile.controller.js");
+const {
+  detectProfileDuplicatesHandler,
+  getProfileDuplicateMatches,
+  getProfileDuplicateMergeCompareHandler,
+  submitProfileDuplicateMerge,
+} = require("../controllers/profile.duplicateReview.controller.js");
 const aggregatedUserDetailsController = require("../controllers/aggregated.user.details.controller.js");
 const { authenticate } = require("../middlewares/auth");
 const { defaultPolicyMiddleware } = require("../middlewares/policy.middleware");
@@ -49,6 +55,24 @@ router.put(
 );
 router.get("/corn-market/new", profileController.getCornMarketNew);
 router.get("/corn-market/graduate", profileController.getCornMarketGraduate);
+
+router.post(
+  "/:profileId/detect-duplicates",
+  detectProfileDuplicatesHandler,
+);
+router.get(
+  "/:profileId/duplicate-matches",
+  getProfileDuplicateMatches,
+);
+router.get(
+  "/:profileId/duplicate-merge-compare/:targetProfileId",
+  getProfileDuplicateMergeCompareHandler,
+);
+router.post(
+  "/:profileId/duplicate-merge",
+  submitProfileDuplicateMerge,
+);
+
 router.get("/:profileId", profileController.getProfileById);
 router.put("/:profileId", profileController.updateProfile);
 router.delete("/:profileId", profileController.softDeleteProfile);

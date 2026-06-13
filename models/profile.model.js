@@ -139,6 +139,12 @@ const ProfileSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    mergedIntoProfileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Profile",
+      default: null,
+      index: true,
+    },
   },
   { timestamps: true, versionKey: "profileVersion" }
 );
