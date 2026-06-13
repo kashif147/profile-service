@@ -12,6 +12,154 @@ const {
   subscriptionDetailsToPlain,
 } = require("../helpers/membershipCategory.helper.js");
 
+const isObjectIdValue = (value) => {
+  if (!value) return false;
+  if (value instanceof mongoose.Types.ObjectId) return true;
+  if (typeof value === "string") {
+    return mongoose.Types.ObjectId.isValid(value) && value.length === 24;
+  }
+  return false;
+};
+
+async function resolveMembershipCategoryName(membershipCategoryId) {
+  if (membershipCategoryId == null || membershipCategoryId === "") return "";
+  if (!isObjectIdValue(membershipCategoryId)) {
+    return String(membershipCategoryId);
+  }
+
+  const categoryIdString = membershipCategoryId.toString();
+  try {
+    let Lookup;
+    try {
+      Lookup = mongoose.model("Lookup");
+    } catch (modelError) {
+      const lookupSchema = new mongoose.Schema(
+        {
+          code: { type: String, required: true },
+          lookupname: { type: String, required: true },
+          DisplayName: { type: String },
+          Parentlookupid: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Lookup",
+            default: null,
+          },
+          lookuptypeId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "LookupType",
+            required: true,
+          },
+          isdeleted: { type: Boolean, default: false },
+          isactive: { type: Boolean, default: true },
+          userid: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            required: true,
+          },
+        },
+        { timestamps: true },
+      );
+      Lookup = mongoose.model("Lookup", lookupSchema);
+    }
+
+    const lookup = await Lookup.findById(categoryIdString);
+    if (lookup?.lookupname) {
+      return lookup.lookupname;
+    }
+  } catch (lookupError) {
+    console.error(
+      `❌ [PROFILE_SUBSCRIPTION_SERVICE] Error fetching lookup for ID ${categoryIdString}:`,
+      lookupError.message,
+    );
+  }
+
+  return categoryIdString;
+}
+
+async function applySubmittedStatusAfterSubscriptionSave({
+  applicationId,
+  userId,
+  userType,
+  tenantId,
+  personalDetails,
+  membershipCategoryRaw,
+}) {
+  if (!personalDetails || !applicationId) return;
+
+  const currentStatus = String(
+    personalDetails.applicationStatus || APPLICATION_STATUS.IN_PROGRESS,
+  ).toLowerCase();
+
+  if (
+    currentStatus !== APPLICATION_STATUS.IN_PROGRESS &&
+    currentStatus !== ""
+  ) {
+    return;
+  }
+
+  const membershipCategoryName = await resolveMembershipCategoryName(
+    membershipCategoryRaw,
+  );
+  const isUndergraduateStudent =
+    membershipCategoryName &&
+    membershipCategoryName.toLowerCase() === "undergraduate student";
+
+  if (userType === "CRM") {
+    console.log(
+      "📝 [PROFILE_SUBSCRIPTION_SERVICE] CRM user - updating status to submitted (bypassing payment flow)",
+    );
+    await personalDetailsHandler.updateApplicationStatus(
+      applicationId,
+      APPLICATION_STATUS.SUBMITTED,
+      tenantId,
+    );
+    bizLogger.business("Application submitted after subscription details (CRM)", {
+      eventType: "ApplicationSubmitted",
+      applicationId,
+      tenantId: tenantId != null ? String(tenantId) : null,
+      profileId: personalDetails.profileId
+        ? String(personalDetails.profileId)
+        : null,
+      userId: userId != null ? String(userId) : null,
+    });
+    return;
+  }
+
+  if (userType === "PORTAL" && isUndergraduateStudent) {
+    console.log(
+      "📝 [PROFILE_SUBSCRIPTION_SERVICE] PORTAL user + Undergraduate Student - updating status to submitted (no payment required)",
+    );
+    await personalDetailsHandler.updateApplicationStatus(
+      applicationId,
+      APPLICATION_STATUS.SUBMITTED,
+      tenantId,
+    );
+    bizLogger.business(
+      "Application submitted after subscription details (portal undergraduate)",
+      {
+        eventType: "ApplicationSubmitted",
+        applicationId,
+        tenantId: tenantId != null ? String(tenantId) : null,
+        profileId: personalDetails.profileId
+          ? String(personalDetails.profileId)
+          : null,
+        userId: userId != null ? String(userId) : null,
+      },
+    );
+    return;
+  }
+
+  if (userType === "PORTAL" && !isUndergraduateStudent) {
+    console.log(
+      "ℹ️ [PROFILE_SUBSCRIPTION_SERVICE] PORTAL user + Non-Undergraduate Student - keeping status as in-progress until payment is received",
+    );
+    return;
+  }
+
+  console.warn(
+    `⚠️ [PROFILE_SUBSCRIPTION_SERVICE] Unexpected userType: ${userType}, keeping status unchanged`,
+  );
+}
+
 /**
  * Subscription Details Service Layer
  * Contains business logic for subscription details operations
@@ -58,8 +206,17 @@ class SubscriptionDetailsService {
           tenantId
         );
       if (existingDetails) {
-        throw AppError.conflict(
-          "Subscription details already exist for this application, please update existing details"
+        return this.updateSubscriptionDetails(
+          applicationId,
+          {
+            ...data,
+            "meta.updatedBy": userId,
+            "meta.userType": userType,
+          },
+          userId,
+          userType,
+          tenantId,
+          req
         );
       }
 
@@ -106,14 +263,24 @@ class SubscriptionDetailsService {
       const {
         assertSalaryDeductionAllowedForWorkLocation,
       } = require("../helpers/workLocationPayment.helper.js");
+      const {
+        applyNoFeeMembershipPaymentDefaults,
+      } = require("../helpers/noFeeMembershipPayment.helper.js");
 
+      createData.subscriptionDetails = applyNoFeeMembershipPaymentDefaults(
+        createData.subscriptionDetails,
+      );
       createData.subscriptionDetails = enforcePaymentFrequencyRule(
         createData.subscriptionDetails
       );
       await assertSalaryDeductionAllowedForWorkLocation(
         createData.subscriptionDetails,
         professionalDetails?.professionalDetails,
-        { req, tenantId }
+        {
+          req,
+          tenantId,
+          professionalDetailsOverride: req?.body?.professionalDetails,
+        }
       );
       createData.subscriptionDetails = normalizeSubscriptionDetailsDates(
         createData.subscriptionDetails
@@ -121,143 +288,16 @@ class SubscriptionDetailsService {
 
       const result = await subscriptionDetailsHandler.create(createData);
 
-      // Get membership category from subscription details or professional details
-      let membershipCategoryId =
-        result?.subscriptionDetails?.membershipCategory ||
-        professionalDetails?.professionalDetails?.membershipCategory;
-
-      // Helper function to check if a value is a MongoDB ObjectId
-      const isObjectId = (value) => {
-        if (!value) return false;
-        // Check if it's already a mongoose ObjectId instance
-        if (value instanceof mongoose.Types.ObjectId) return true;
-        // Check if it's a string that represents a valid ObjectId
-        if (typeof value === "string") {
-          return mongoose.Types.ObjectId.isValid(value) && value.length === 24;
-        }
-        return false;
-      };
-
-      // If membership category is an ObjectId, fetch the lookup name
-      let membershipCategoryName = membershipCategoryId;
-      if (isObjectId(membershipCategoryId)) {
-        try {
-          // Convert to string if it's an ObjectId instance
-          const categoryIdString = membershipCategoryId.toString();
-          
-          // Fetch lookup from database
-          // Try to get existing model or create schema if needed
-          let Lookup;
-          try {
-            Lookup = mongoose.model("Lookup");
-          } catch (modelError) {
-            // Model doesn't exist, create it
-            const lookupSchema = new mongoose.Schema(
-              {
-                code: { type: String, required: true },
-                lookupname: { type: String, required: true },
-                DisplayName: { type: String },
-                Parentlookupid: {
-                  type: mongoose.Schema.Types.ObjectId,
-                  ref: "Lookup",
-                  default: null,
-                },
-                lookuptypeId: {
-                  type: mongoose.Schema.Types.ObjectId,
-                  ref: "LookupType",
-                  required: true,
-                },
-                isdeleted: { type: Boolean, default: false },
-                isactive: { type: Boolean, default: true },
-                userid: {
-                  type: mongoose.Schema.Types.ObjectId,
-                  ref: "User",
-                  required: true,
-                },
-              },
-              { timestamps: true }
-            );
-            Lookup = mongoose.model("Lookup", lookupSchema);
-          }
-
-          const lookup = await Lookup.findById(categoryIdString);
-          if (lookup && lookup.lookupname) {
-            membershipCategoryName = lookup.lookupname;
-            console.log(
-              `📋 [PROFILE_SUBSCRIPTION_SERVICE] Resolved membership category ID ${categoryIdString} to name: ${membershipCategoryName}`
-            );
-          } else {
-            console.warn(
-              `⚠️ [PROFILE_SUBSCRIPTION_SERVICE] Lookup not found for ID: ${categoryIdString}`
-            );
-          }
-        } catch (lookupError) {
-          console.error(
-            `❌ [PROFILE_SUBSCRIPTION_SERVICE] Error fetching lookup for ID ${categoryIdString}:`,
-            lookupError.message
-          );
-          // Continue with ID as fallback - won't match "Undergraduate Student" but won't break
-        }
-      }
-
-      // Check if membership category is "Undergraduate Student"
-      const isUndergraduateStudent =
-        membershipCategoryName &&
-        membershipCategoryName.toLowerCase() === "undergraduate student";
-
-      // Update application status based on userType and membership category:
-      // - CRM users: Mark ALL applications as "submitted" immediately (bypass payment flow)
-      // - PORTAL users + Undergraduate Student: Mark as "submitted" immediately (no payment required)
-      // - PORTAL users + Other categories: Keep as "in-progress" until payment is received
-      if (userType === "CRM") {
-        console.log(
-          "📝 [PROFILE_SUBSCRIPTION_SERVICE] CRM user - updating status to submitted (bypassing payment flow)"
-        );
-        await personalDetailsHandler.updateApplicationStatus(
-          applicationId,
-          APPLICATION_STATUS.SUBMITTED,
-          tenantId
-        );
-        bizLogger.business("Application submitted after subscription details (CRM)", {
-          eventType: "ApplicationSubmitted",
-          applicationId,
-          tenantId: tenantId != null ? String(tenantId) : null,
-          profileId: personalDetails.profileId
-            ? String(personalDetails.profileId)
-            : null,
-          userId: userId != null ? String(userId) : null,
-        });
-      } else if (userType === "PORTAL" && isUndergraduateStudent) {
-        console.log(
-          "📝 [PROFILE_SUBSCRIPTION_SERVICE] PORTAL user + Undergraduate Student - updating status to submitted (no payment required)"
-        );
-        await personalDetailsHandler.updateApplicationStatus(
-          applicationId,
-          APPLICATION_STATUS.SUBMITTED,
-          tenantId
-        );
-        bizLogger.business(
-          "Application submitted after subscription details (portal undergraduate)",
-          {
-            eventType: "ApplicationSubmitted",
-            applicationId,
-            tenantId: tenantId != null ? String(tenantId) : null,
-            profileId: personalDetails.profileId
-              ? String(personalDetails.profileId)
-              : null,
-            userId: userId != null ? String(userId) : null,
-          }
-        );
-      } else if (userType === "PORTAL" && !isUndergraduateStudent) {
-        console.log(
-          "ℹ️ [PROFILE_SUBSCRIPTION_SERVICE] PORTAL user + Non-Undergraduate Student - keeping status as in-progress until payment is received"
-        );
-        // Status remains as "in-progress" - will be updated when payment is processed
-      } else {
-        console.warn(
-          `⚠️ [PROFILE_SUBSCRIPTION_SERVICE] Unexpected userType: ${userType}, keeping status unchanged`
-        );
-      }
+      await applySubmittedStatusAfterSubscriptionSave({
+        applicationId,
+        userId,
+        userType,
+        tenantId,
+        personalDetails,
+        membershipCategoryRaw:
+          result?.subscriptionDetails?.membershipCategory ||
+          membershipCategoryFromProfessional,
+      });
 
       return result;
     } catch (error) {
@@ -362,6 +402,9 @@ class SubscriptionDetailsService {
         const {
           assertSalaryDeductionAllowedForWorkLocation,
         } = require("../helpers/workLocationPayment.helper.js");
+        const {
+          applyNoFeeMembershipPaymentDefaults,
+        } = require("../helpers/noFeeMembershipPayment.helper.js");
         const [professionalDetails, existingDetails] = await Promise.all([
           professionalDetailsHandler.getByApplicationId(
             applicationId,
@@ -378,13 +421,20 @@ class SubscriptionDetailsService {
           ...safeUpdateData.subscriptionDetails,
         };
 
-        safeUpdateData.subscriptionDetails = enforcePaymentFrequencyRule(
+        safeUpdateData.subscriptionDetails = applyNoFeeMembershipPaymentDefaults(
           mergedSubscriptionDetails,
+        );
+        safeUpdateData.subscriptionDetails = enforcePaymentFrequencyRule(
+          safeUpdateData.subscriptionDetails,
         );
         await assertSalaryDeductionAllowedForWorkLocation(
           safeUpdateData.subscriptionDetails,
           professionalDetails?.professionalDetails,
-          { req, tenantId }
+          {
+            req,
+            tenantId,
+            professionalDetailsOverride: req?.body?.professionalDetails,
+          }
         );
         safeUpdateData.subscriptionDetails = normalizeSubscriptionDetailsDates(
           safeUpdateData.subscriptionDetails
@@ -440,6 +490,21 @@ class SubscriptionDetailsService {
             tenantId
           );
       }
+
+      const personalDetails = await personalDetailsHandler.getApplicationById(
+        applicationId,
+        tenantId,
+      );
+      await applySubmittedStatusAfterSubscriptionSave({
+        applicationId,
+        userId,
+        userType,
+        tenantId,
+        personalDetails,
+        membershipCategoryRaw:
+          result?.subscriptionDetails?.membershipCategory ||
+          safeUpdateData?.subscriptionDetails?.membershipCategory,
+      });
 
       return result;
     } catch (error) {
