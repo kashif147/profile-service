@@ -18,15 +18,16 @@ const {
   resolveLinkedPortalUserIdForProfile,
 } = require("./profileLookup.service.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
+const { loadSubmission } = require("./submission.service.js");
 const {
   getReviewerIdForDb,
   toObjectIdOrNull,
 } = require("../helpers/reviewerIdForDb.js");
 const {
-  buildEffectiveFromMergeChoices,
   validateMergeFieldChoices,
   resolveProfileForDuplicateMerge,
-  fetchLiveSubscriptionForProfile,
+  resolveMergedEffectiveForReview,
+  applyMergedEffectiveToApplication,
 } = require("./duplicate.merge.service.js");
 const {
   APPROVAL_ALLOWED_STATUSES,
@@ -245,7 +246,40 @@ async function recordDuplicateDecision({
     isPotentialDuplicate: activeMatchesFromSummary(matchSummary).length > 0,
   };
 
-  await personal.save();
+  if (action === DUPLICATE_REVIEW_ACTION.MERGE) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      await personal.save({ session });
+
+      const { submission } = await loadSubmission(applicationId);
+      const normalizedChoices = normalizeMergeFieldChoices(mergeFieldChoices);
+      const { mergedEffective } = await resolveMergedEffectiveForReview({
+        applicationId,
+        tenantId: effectiveTenantId,
+        effective: submission,
+        mergeFieldChoices: normalizedChoices,
+        matchedProfileId: matchedProfileId,
+        requireAuthorizedMatch: true,
+      });
+
+      await applyMergedEffectiveToApplication({
+        applicationId,
+        tenantId: effectiveTenantId,
+        effective: mergedEffective,
+        session,
+      });
+
+      await session.commitTransaction();
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  } else {
+    await personal.save();
+  }
 
   const afterReview = personal.duplicateReview?.toObject?.()
     ? personal.duplicateReview.toObject()
@@ -355,6 +389,7 @@ async function resolveProfileForApproval({
   session,
 }) {
   const status = duplicateReview?.status;
+  let approvalEffective = effective;
 
   if (
     status === DUPLICATE_REVIEW_STATUS.LINKED ||
@@ -397,16 +432,15 @@ async function resolveProfileForApproval({
         );
       }
 
-      const liveSubscription = await fetchLiveSubscriptionForProfile(
-        profile,
+      const { mergedEffective } = await resolveMergedEffectiveForReview({
+        applicationId,
         tenantId,
-      );
-      const mergedEffective = buildEffectiveFromMergeChoices(
         effective,
-        profile,
         mergeFieldChoices,
-        liveSubscription,
-      );
+        matchedProfileId: profileId,
+        requireAuthorizedMatch: false,
+      });
+      approvalEffective = mergedEffective;
 
       profile = await applyEffectiveToProfile({
         profile,
@@ -417,7 +451,12 @@ async function resolveProfileForApproval({
     }
 
     const linkedUserId = profile.userId || null;
-    return { profile, linkedUserId, isExistingProfile: true };
+    return {
+      profile,
+      linkedUserId,
+      isExistingProfile: true,
+      approvalEffective,
+    };
   }
 
   const email =
@@ -438,6 +477,7 @@ async function resolveProfileForApproval({
     profile,
     linkedUserId,
     isExistingProfile: !!existingProfile,
+    approvalEffective,
   };
 }
 

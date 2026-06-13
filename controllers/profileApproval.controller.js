@@ -215,21 +215,35 @@ async function approveApplication(req, res, next) {
       tenantId,
     );
 
-    const { profile, linkedUserId, isExistingProfile } =
-      await resolveProfileForApproval({
-        applicationId,
-        tenantId,
-        effective,
-        reviewerId,
-        duplicateReview: personalForReview.duplicateReview,
-        session,
-      });
+    const {
+      profile,
+      linkedUserId,
+      isExistingProfile,
+      approvalEffective: resolvedApprovalEffective,
+    } = await resolveProfileForApproval({
+      applicationId,
+      tenantId,
+      effective,
+      reviewerId,
+      duplicateReview: personalForReview.duplicateReview,
+      session,
+    });
+
+    let approvalEffective = resolvedApprovalEffective;
+    const approvalSubscriptionDetails = normalizeSubscription(
+      approvalEffective.subscriptionDetails,
+      approvalEffective.professionalDetails,
+    );
+    approvalEffective = {
+      ...approvalEffective,
+      subscriptionDetails: approvalSubscriptionDetails,
+    };
 
     // Update main application models with approved data
-    if (effective.personalInfo) {
+    if (approvalEffective.personalInfo) {
       const personalSet = {
-        personalInfo: effective.personalInfo,
-        contactInfo: effective.contactInfo,
+        personalInfo: approvalEffective.personalInfo,
+        contactInfo: approvalEffective.contactInfo,
         applicationStatus: "approved",
         profileId: profile._id,
         "meta.isActive": true,
@@ -249,8 +263,8 @@ async function approveApplication(req, res, next) {
       );
     }
 
-    if (effective.professionalDetails) {
-      const profSet = { professionalDetails: effective.professionalDetails };
+    if (approvalEffective.professionalDetails) {
+      const profSet = { professionalDetails: approvalEffective.professionalDetails };
       if (linkedUserId) {
         const linkedUserObjectId = toObjectIdOrNull(linkedUserId);
         if (linkedUserObjectId) {
@@ -264,11 +278,11 @@ async function approveApplication(req, res, next) {
       );
     }
 
-    if (effective.subscriptionDetails) {
-      // Ensure dateJoined is set - use from effective or current date
+    if (approvalEffective.subscriptionDetails) {
+      // Ensure dateJoined is set - use from approval effective or current date
       const subscriptionDetailsToSave = {
-        ...effective.subscriptionDetails,
-        dateJoined: effective.subscriptionDetails.dateJoined ?? new Date(),
+        ...approvalEffective.subscriptionDetails,
+        dateJoined: approvalEffective.subscriptionDetails.dateJoined ?? new Date(),
       };
 
       const subSet = { subscriptionDetails: subscriptionDetailsToSave };
@@ -297,7 +311,7 @@ async function approveApplication(req, res, next) {
 
     const updatedProfile = await Profile.findById(profile._id).session(session);
     const memberId = updatedProfile?.membershipNumber || null;
-    const sub = effective.subscriptionDetails || {};
+    const sub = approvalEffective.subscriptionDetails || {};
     const dateJoined = parseDateOnlyToUtcNoon(sub.dateJoined, true);
     const postApprovalPayload = {
       applicationId,
@@ -308,8 +322,8 @@ async function approveApplication(req, res, next) {
       updatedProfile,
       linkedUserId,
       effective: {
-        ...effective,
-        subscriptionAttributes: subAttrs(effective.subscriptionDetails),
+        ...approvalEffective,
+        subscriptionAttributes: subAttrs(approvalEffective.subscriptionDetails),
       },
       memberId,
       dateJoined,

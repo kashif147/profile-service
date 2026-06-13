@@ -19,6 +19,7 @@ class ApplicationApprovalEventPublisher {
     crmUserId,
     memberId,
     userId,
+    userEmail,
     effective,
     subscriptionAttributes,
     tenantId,
@@ -48,6 +49,7 @@ class ApplicationApprovalEventPublisher {
           memberId: memberId || null,
           tenantId: tenantId || null,
           userId: userId || null,
+          userEmail: userEmail || null,
           effective: {
             personalInfo: effective.personalInfo,
             contactInfo: effective.contactInfo,

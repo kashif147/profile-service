@@ -1,6 +1,8 @@
 const mongoose = require("mongoose");
 const Profile = require("../models/profile.model.js");
 const PersonalDetails = require("../models/personal.details.model.js");
+const ProfessionalDetails = require("../models/professional.details.model.js");
+const SubscriptionDetails = require("../models/subscription.model.js");
 const { AppError } = require("../errors/AppError.js");
 const { loadSubmission } = require("./submission.service.js");
 const {
@@ -818,6 +820,79 @@ function validateMergeFieldChoices(mergeFieldChoices) {
   }
 }
 
+async function resolveMergedEffectiveForReview({
+  applicationId,
+  tenantId,
+  effective,
+  mergeFieldChoices,
+  matchedProfileId,
+  requireAuthorizedMatch = false,
+}) {
+  validateMergeFieldChoices(mergeFieldChoices);
+
+  const { profile } = await resolveProfileForDuplicateMerge(
+    applicationId,
+    matchedProfileId,
+    tenantId,
+    { requireAuthorizedMatch },
+  );
+  const liveSubscription = await fetchLiveSubscriptionForProfile(profile, tenantId);
+  const mergedEffective = buildEffectiveFromMergeChoices(
+    effective,
+    profile,
+    mergeFieldChoices,
+    liveSubscription,
+  );
+
+  return { mergedEffective, profile, liveSubscription };
+}
+
+async function applyMergedEffectiveToApplication({
+  applicationId,
+  tenantId,
+  effective,
+  session = null,
+}) {
+  const writeOptions = session ? { session } : {};
+
+  await PersonalDetails.updateOne(
+    { applicationId },
+    {
+      $set: {
+        personalInfo: effective.personalInfo || {},
+        contactInfo: effective.contactInfo || {},
+      },
+    },
+    writeOptions,
+  );
+
+  const professionalDetails = { ...(effective.professionalDetails || {}) };
+  delete professionalDetails.membershipCategory;
+
+  await ProfessionalDetails.updateOne(
+    { applicationId },
+    {
+      $set: {
+        tenantId,
+        professionalDetails,
+      },
+    },
+    { upsert: true, ...writeOptions },
+  );
+
+  const subscriptionDetails = { ...(effective.subscriptionDetails || {}) };
+  await SubscriptionDetails.findOneAndUpdate(
+    { applicationId },
+    {
+      $set: {
+        tenantId,
+        subscriptionDetails,
+      },
+    },
+    { upsert: true, new: true, runValidators: true, ...writeOptions },
+  );
+}
+
 module.exports = {
   MERGE_FIELD_DEFINITIONS,
   MERGE_COMPARE_FIELD_DEFINITIONS,
@@ -827,4 +902,6 @@ module.exports = {
   getDuplicateMergeCompare,
   buildEffectiveFromMergeChoices,
   validateMergeFieldChoices,
+  resolveMergedEffectiveForReview,
+  applyMergedEffectiveToApplication,
 };
