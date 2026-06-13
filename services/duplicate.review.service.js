@@ -231,7 +231,9 @@ async function recordDuplicateDecision({
     matchedApplicationId,
     decisionReason: decisionReason || null,
     mergeFieldChoices:
-      action === DUPLICATE_REVIEW_ACTION.MERGE ? mergeFieldChoices : null,
+      action === DUPLICATE_REVIEW_ACTION.MERGE
+        ? normalizeMergeFieldChoices(mergeFieldChoices)
+        : null,
     reviewedBy: getReviewerIdForDb(reviewerId),
     reviewedAt: now,
     matchSummary,

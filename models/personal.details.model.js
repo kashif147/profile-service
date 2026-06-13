@@ -150,8 +150,7 @@ const ProfileSchema = new mongoose.Schema(
       matchedApplicationId: { type: String, default: null },
       decisionReason: { type: String, default: null },
       mergeFieldChoices: {
-        type: Map,
-        of: String,
+        type: mongoose.Schema.Types.Mixed,
         default: null,
       },
       reviewedBy: {

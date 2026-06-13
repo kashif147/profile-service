@@ -36,6 +36,9 @@ const {
   parseDateOnlyToUtcNoon,
   normalizeSubscriptionDetailsDates,
 } = require("../helpers/parseDateOnly.js");
+const {
+  applyNoFeeMembershipPaymentDefaults,
+} = require("../helpers/noFeeMembershipPayment.helper.js");
 
 function normalizeSubscriptionDetails(
   subscriptionDetails = {},
@@ -51,7 +54,9 @@ function normalizeSubscriptionDetails(
   if (!normalized.dateJoined) {
     normalized.dateJoined = parseDateOnlyToUtcNoon(null, true);
   }
-  return normalizeSubscriptionDetailsDates(normalized);
+  return applyNoFeeMembershipPaymentDefaults(
+    normalizeSubscriptionDetailsDates(normalized),
+  );
 }
 
 async function approveApplication({

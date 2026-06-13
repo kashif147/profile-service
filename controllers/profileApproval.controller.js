@@ -11,7 +11,6 @@ const SubscriptionDetails = require("../models/subscription.model.js");
 const Profile = require("../models/profile.model.js");
 const {
   APPLICATION_STATUS,
-  PAYMENT_FREQUENCY,
 } = require("../constants/enums.js");
 const { loadSubmission } = require("../services/submission.service.js");
 const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
@@ -22,6 +21,12 @@ const {
 const {
   publishPostApprovalEvents,
 } = require("../services/publishPostApprovalEvents.js");
+const {
+  applyNoFeeMembershipPaymentDefaults,
+  resolveSubscriptionPaymentFallbacks,
+  hasPaymentTypeValue,
+  hasPaymentFrequencyValue,
+} = require("../helpers/noFeeMembershipPayment.helper.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
   parseDateOnlyToUtcNoon,
@@ -57,15 +62,22 @@ const subAttrs = (s = {}) => ({
   reasonLeft: s?.reasonLeft ?? null,
 });
 
-const pickSubForContract = (s = {}) => ({
-  membershipCategory: s?.membershipCategory ?? null,
-  membershipStatus: s?.membershipStatus ?? "ACTIVE",
-  dateJoined: s?.dateJoined ?? new Date().toISOString().slice(0, 10),
-  dateLeft: s?.dateLeft ?? null,
-  reasonLeft: s?.reasonLeft ?? null,
-  paymentType: s?.paymentType ?? "PAYROLL_DEDUCTION",
-  paymentFrequency: s?.paymentFrequency ?? PAYMENT_FREQUENCY.MONTHLY,
-});
+const pickSubForContract = (s = {}) => {
+  const fallbacks = resolveSubscriptionPaymentFallbacks(s?.membershipCategory);
+  return {
+    membershipCategory: s?.membershipCategory ?? null,
+    membershipStatus: s?.membershipStatus ?? "ACTIVE",
+    dateJoined: s?.dateJoined ?? new Date().toISOString().slice(0, 10),
+    dateLeft: s?.dateLeft ?? null,
+    reasonLeft: s?.reasonLeft ?? null,
+    paymentType: hasPaymentTypeValue(s?.paymentType)
+      ? s.paymentType
+      : fallbacks.paymentType,
+    paymentFrequency: hasPaymentFrequencyValue(s?.paymentFrequency)
+      ? s.paymentFrequency
+      : fallbacks.paymentFrequency,
+  };
+};
 
 const normalizeSubscription = (subscriptionDetails = {}, professional = {}) => {
   const normalized = { ...subscriptionDetails };
@@ -87,7 +99,7 @@ const normalizeSubscription = (subscriptionDetails = {}, professional = {}) => {
       false
     );
   }
-  return normalized;
+  return applyNoFeeMembershipPaymentDefaults(normalized);
 };
 
 // Optional path whitelist, shared with overlay controller
