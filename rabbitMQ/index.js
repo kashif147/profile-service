@@ -203,7 +203,11 @@ async function setupConsumers() {
         }
         const beforeLean = profile.toObject({ depopulate: true });
         const data = payload.data || {};
-        const update = { currentSubscriptionId: subscriptionId };
+        const update = {
+          currentSubscriptionId: subscriptionId,
+          isActive: true,
+          deactivatedAt: null,
+        };
         if (
           profile.currentSubscriptionId &&
           String(profile.currentSubscriptionId) !== String(subscriptionId)
