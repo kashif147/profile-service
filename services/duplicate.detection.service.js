@@ -5,6 +5,12 @@ const Profile = require("../models/profile.model.js");
 const { AppError } = require("../errors/AppError.js");
 const { APPLICATION_STATUS, DUPLICATE_REVIEW_STATUS } = require("../constants/enums.js");
 const {
+  publishDuplicateDetectionRunAudit,
+} = require("./duplicate.review.audit.publisher.js");
+const {
+  publishProfileDuplicateDetectionRunAudit,
+} = require("./profile.duplicate.audit.publisher.js");
+const {
   normalizeEmail,
   normalizePhoneNumber,
   normalizeIdentifier,
@@ -471,12 +477,19 @@ async function findProfileDuplicateMatches(sourceProfileId, tenantId) {
   };
 }
 
-async function detectProfileDuplicates(sourceProfileId, tenantId) {
+async function detectProfileDuplicates(sourceProfileId, tenantId, actorId = null) {
   const result = await findProfileDuplicateMatches(sourceProfileId, tenantId);
+  await publishProfileDuplicateDetectionRunAudit({
+    tenantId,
+    profileId: sourceProfileId,
+    actorId,
+    matchSummary: result.matchSummary || [],
+    hasPotentialDuplicate: result.hasPotentialDuplicate,
+  });
   return result;
 }
 
-async function detectDuplicates(applicationId, tenantId) {
+async function detectDuplicates(applicationId, tenantId, actorId = null) {
   try {
     const result = await findDuplicateMatches(applicationId, tenantId);
     const activeMatches = result.matchSummary.filter((m) => !m.ignored);
@@ -510,6 +523,19 @@ async function detectDuplicates(applicationId, tenantId) {
         },
       },
     );
+
+    const updatedPersonal = await PersonalDetails.findOne({ applicationId })
+      .select("duplicateReview tenantId")
+      .lean();
+
+    await publishDuplicateDetectionRunAudit({
+      tenantId: tenantId || updatedPersonal?.tenantId,
+      applicationId,
+      actorId,
+      matchSummary: updatedPersonal?.duplicateReview?.matchSummary || result.matchSummary,
+      hasPotentialDuplicate: isDuplicate,
+      duplicateReviewStatus: reviewStatus,
+    });
 
     return result;
   } catch (error) {

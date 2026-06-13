@@ -28,6 +28,9 @@ const {
   consolidateProfileMergeHistory,
   reassignProfileServiceReferences,
 } = require("./profile.merge.consolidation.service.js");
+const {
+  publishProfileDuplicateMergedAudit,
+} = require("./profile.duplicate.audit.publisher.js");
 const SECTION_FIELDS_FROM_SUBSCRIPTION = [
   "primarySection",
   "otherPrimarySection",
@@ -1202,6 +1205,17 @@ async function executeProfileDuplicateMerge({
       absorbedProfile,
       req,
       skipLocal: true,
+    });
+
+    await publishProfileDuplicateMergedAudit({
+      tenantId,
+      masterProfileId: masterProfile._id,
+      absorbedProfileId: absorbedProfile._id,
+      actorId: reviewerId,
+      mergeFieldChoices: normalizedChoices,
+      beforeMaster: masterProfile,
+      beforeAbsorbed: absorbedProfile,
+      afterMaster: updatedProfile,
     });
 
     return {

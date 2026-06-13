@@ -36,7 +36,6 @@ const {
 } = require("./duplicate.review.helpers.js");
 const {
   publishDuplicateReviewDecidedAudit,
-  publishDuplicateDetectionRunAudit,
 } = require("./duplicate.review.audit.publisher.js");
 
 function normalizeMergeFieldChoices(raw) {
@@ -88,17 +87,8 @@ function resolveApplicationTenantId(personal, requestTenantId) {
 async function runDuplicateDetection(applicationId, tenantId, actorId = null) {
   const personal = await getPersonalDetailsForReview(applicationId);
   const effectiveTenantId = resolveApplicationTenantId(personal, tenantId);
-  const result = await detectDuplicates(applicationId, effectiveTenantId);
+  const result = await detectDuplicates(applicationId, effectiveTenantId, actorId);
   const updatedPersonal = await getPersonalDetailsForReview(applicationId);
-
-  await publishDuplicateDetectionRunAudit({
-    tenantId: effectiveTenantId,
-    applicationId,
-    actorId,
-    matchSummary: updatedPersonal.duplicateReview?.matchSummary || [],
-    hasPotentialDuplicate: result.hasPotentialDuplicate,
-    duplicateReviewStatus: updatedPersonal.duplicateReview?.status || null,
-  });
 
   return {
     ...result,

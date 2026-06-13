@@ -17,7 +17,8 @@ async function detectProfileDuplicatesHandler(req, res, next) {
       return next(AppError.badRequest("Tenant context is required"));
     }
 
-    const result = await detectProfileDuplicates(profileId, tenantId);
+    const actorId = req.user?.id || req.userId || null;
+    const result = await detectProfileDuplicates(profileId, tenantId, actorId);
     return res.success({
       profileId,
       ...result,
