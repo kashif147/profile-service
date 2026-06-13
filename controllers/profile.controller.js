@@ -649,7 +649,13 @@ async function updateProfile(req, res, next) {
       profile.currentSubscriptionId?.toString?.() ??
         profile.currentSubscriptionId,
     );
-    if (currentSubscription?.paymentType) {
+    const {
+      isNoFeeMembershipCategory,
+    } = require("../helpers/noFeeMembershipPayment.helper.js");
+    const subscriptionCategory = currentSubscription?.membershipCategory;
+    const skipSalaryDeductionValidation =
+      isNoFeeMembershipCategory(subscriptionCategory);
+    if (currentSubscription?.paymentType && !skipSalaryDeductionValidation) {
       const {
         assertSalaryDeductionAllowedForWorkLocation,
       } = require("../helpers/workLocationPayment.helper.js");

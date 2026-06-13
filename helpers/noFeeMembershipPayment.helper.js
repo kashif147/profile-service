@@ -28,8 +28,8 @@ function hasPaymentFrequencyValue(paymentFrequency) {
 
 /**
  * Honorary and undergraduate student categories have no fee today.
- * Default to Cash + Annually when payment fields are omitted so we do not
- * persist Salary Deduction / Monthly from Mongoose defaults.
+ * Always use Cash + Annually so we do not persist Salary Deduction / Monthly
+ * from prior categories or Mongoose defaults.
  */
 function applyNoFeeMembershipPaymentDefaults(subscriptionDetails = {}) {
   if (!subscriptionDetails || typeof subscriptionDetails !== "object") {
@@ -40,14 +40,12 @@ function applyNoFeeMembershipPaymentDefaults(subscriptionDetails = {}) {
     return subscriptionDetails;
   }
 
-  const next = { ...subscriptionDetails };
-  if (!hasPaymentTypeValue(next.paymentType)) {
-    next.paymentType = PAYMENT_TYPE.CASH;
-  }
-  if (!hasPaymentFrequencyValue(next.paymentFrequency)) {
-    next.paymentFrequency = PAYMENT_FREQUENCY.ANNUALLY;
-  }
-  return next;
+  return {
+    ...subscriptionDetails,
+    paymentType: PAYMENT_TYPE.CASH,
+    paymentFrequency: PAYMENT_FREQUENCY.ANNUALLY,
+    payrollNo: null,
+  };
 }
 
 function resolveSubscriptionPaymentFallbacks(membershipCategory) {
