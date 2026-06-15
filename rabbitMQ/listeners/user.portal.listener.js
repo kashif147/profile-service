@@ -1,5 +1,8 @@
 const User = require("../../models/user.model.js");
-const { setOnInsertSyncedUserId } = require("../../helpers/syncedUserDocumentId.js");
+const {
+  syncedUserObjectId,
+  setOnInsertSyncedUserId,
+} = require("../../helpers/syncedUserDocumentId.js");
 const Profile = require("../../models/profile.model.js");
 const PersonalDetails = require("../../models/personal.details.model.js");
 const ProfessionalDetails = require("../../models/professional.details.model.js");
@@ -37,7 +40,7 @@ async function handlePortalUserCreated(payload) {
   try {
     const setOnInsert = setOnInsertSyncedUserId(userId);
     // 1. Create/update user in profile-service
-    await User.findOneAndUpdate(
+    const syncedUser = await User.findOneAndUpdate(
       { tenantId, userId: userId },
       {
         $set: {
@@ -60,6 +63,7 @@ async function handlePortalUserCreated(payload) {
         setDefaultsOnInsert: true,
       }
     );
+    const localUserId = syncedUser._id;
 
     console.log(
       `✅ Portal user created/updated in profile-service: ${userId} (${userEmail})`
@@ -82,11 +86,11 @@ async function handlePortalUserCreated(payload) {
         );
 
         // 3. Update profile with userId if not already set
-        if (!profile.userId || String(profile.userId) !== String(userId)) {
+        if (!profile.userId || String(profile.userId) !== String(localUserId)) {
           const beforeLean = profile.toObject({ depopulate: true });
           await Profile.updateOne(
             { _id: profile._id },
-            { $set: { userId: userId } }
+            { $set: { userId: localUserId } }
           );
           await publishProfileAfterUpdateOne({
             tenantId,
@@ -126,10 +130,10 @@ async function handlePortalUserCreated(payload) {
           );
 
           // Update PersonalDetails with userId if not already set
-          if (!personalDetails.userId || String(personalDetails.userId) !== String(userId)) {
+          if (!personalDetails.userId || String(personalDetails.userId) !== String(localUserId)) {
             await PersonalDetails.updateOne(
               { _id: personalDetails._id },
-              { $set: { userId: userId } }
+              { $set: { userId: localUserId } }
             );
             console.log(
               `✅ Linked Portal user ${userId} to PersonalDetails: ${personalDetails._id}`
@@ -148,10 +152,10 @@ async function handlePortalUserCreated(payload) {
             });
 
             if (professionalDetails) {
-              if (!professionalDetails.userId || String(professionalDetails.userId) !== String(userId)) {
+              if (!professionalDetails.userId || String(professionalDetails.userId) !== String(localUserId)) {
                 await ProfessionalDetails.updateOne(
                   { _id: professionalDetails._id },
-                  { $set: { userId: userId } }
+                  { $set: { userId: localUserId } }
                 );
                 console.log(
                   `✅ Linked Portal user ${userId} to ProfessionalDetails: ${professionalDetails._id} (via applicationId: ${personalDetails.applicationId})`
@@ -169,10 +173,10 @@ async function handlePortalUserCreated(payload) {
             });
 
             if (subscriptionDetails) {
-              if (!subscriptionDetails.userId || String(subscriptionDetails.userId) !== String(userId)) {
+              if (!subscriptionDetails.userId || String(subscriptionDetails.userId) !== String(localUserId)) {
                 await SubscriptionDetails.updateOne(
                   { _id: subscriptionDetails._id },
-                  { $set: { userId: userId } }
+                  { $set: { userId: localUserId } }
                 );
                 console.log(
                   `✅ Linked Portal user ${userId} to SubscriptionDetails: ${subscriptionDetails._id} (via applicationId: ${personalDetails.applicationId})`
@@ -229,7 +233,7 @@ async function handlePortalUserUpdated(payload) {
   try {
     const setOnInsert = setOnInsertSyncedUserId(userId);
     // 1. Update user in profile-service
-    await User.findOneAndUpdate(
+    const syncedUser = await User.findOneAndUpdate(
       { tenantId, userId: userId },
       {
         $set: {
@@ -248,6 +252,7 @@ async function handlePortalUserUpdated(payload) {
         setDefaultsOnInsert: true,
       }
     );
+    const localUserId = syncedUser._id;
 
     console.log(
       `✅ Portal user updated in profile-service: ${userId} (${userEmail})`
@@ -256,13 +261,20 @@ async function handlePortalUserUpdated(payload) {
     // 2. Update profile if email or member number changed
     if (userEmail || userMemberNumber) {
       const normalizedEmail = userEmail ? userEmail.toLowerCase() : null;
+      const userIdCandidates = [localUserId];
+      const legacyUserObjectId = syncedUserObjectId(userId);
+      if (legacyUserObjectId) userIdCandidates.push(legacyUserObjectId);
+
       const profile = await Profile.findOne({
         tenantId,
-        userId: userId,
+        userId: { $in: userIdCandidates },
       });
 
       if (profile) {
         const updateFields = {};
+        if (String(profile.userId) !== String(localUserId)) {
+          updateFields.userId = localUserId;
+        }
         if (normalizedEmail && profile.normalizedEmail !== normalizedEmail) {
           updateFields.normalizedEmail = normalizedEmail;
         }
@@ -304,7 +316,7 @@ async function handlePortalUserUpdated(payload) {
           });
           await Profile.updateOne(
             { _id: profileByEmailOrMember._id },
-            { $set: { userId: userId } }
+            { $set: { userId: localUserId } }
           );
           await publishProfileAfterUpdateOne({
             tenantId,
@@ -336,10 +348,10 @@ async function handlePortalUserUpdated(payload) {
           );
 
           // Update PersonalDetails with userId if not already set
-          if (!personalDetails.userId || String(personalDetails.userId) !== String(userId)) {
+          if (!personalDetails.userId || String(personalDetails.userId) !== String(localUserId)) {
             await PersonalDetails.updateOne(
               { _id: personalDetails._id },
-              { $set: { userId: userId } }
+              { $set: { userId: localUserId } }
             );
             console.log(
               `✅ Linked Portal user ${userId} to PersonalDetails: ${personalDetails._id}`
@@ -358,10 +370,10 @@ async function handlePortalUserUpdated(payload) {
             });
 
             if (professionalDetails) {
-              if (!professionalDetails.userId || String(professionalDetails.userId) !== String(userId)) {
+              if (!professionalDetails.userId || String(professionalDetails.userId) !== String(localUserId)) {
                 await ProfessionalDetails.updateOne(
                   { _id: professionalDetails._id },
-                  { $set: { userId: userId } }
+                  { $set: { userId: localUserId } }
                 );
                 console.log(
                   `✅ Linked Portal user ${userId} to ProfessionalDetails: ${professionalDetails._id} (via applicationId: ${personalDetails.applicationId})`
@@ -379,10 +391,10 @@ async function handlePortalUserUpdated(payload) {
             });
 
             if (subscriptionDetails) {
-              if (!subscriptionDetails.userId || String(subscriptionDetails.userId) !== String(userId)) {
+              if (!subscriptionDetails.userId || String(subscriptionDetails.userId) !== String(localUserId)) {
                 await SubscriptionDetails.updateOne(
                   { _id: subscriptionDetails._id },
-                  { $set: { userId: userId } }
+                  { $set: { userId: localUserId } }
                 );
                 console.log(
                   `✅ Linked Portal user ${userId} to SubscriptionDetails: ${subscriptionDetails._id} (via applicationId: ${personalDetails.applicationId})`
@@ -415,4 +427,3 @@ module.exports = {
   handlePortalUserCreated,
   handlePortalUserUpdated,
 };
-

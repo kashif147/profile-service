@@ -7,6 +7,7 @@ const { AppError } = require("../errors/AppError");
 const mongoose = require("mongoose");
 const { APPLICATION_STATUS } = require("../constants/enums");
 const Profile = require("../models/profile.model");
+const User = require("../models/user.model.js");
 const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
 const SubscriptionDetails = require("../models/subscription.model.js");
@@ -70,11 +71,27 @@ function extractPortalEmail(req) {
 async function resolveProfileIdsForPortalUser(userId, tenantId, email) {
   const profileIds = new Set();
   const tenant = String(tenantId);
+  const portalUser =
+    userId &&
+    (await User.findOne({
+      tenantId: tenant,
+      userId: String(userId),
+      userType: "PORTAL",
+      isActive: true,
+    })
+      .select("_id userEmail")
+      .lean());
 
+  const userIdCandidates = [];
+  if (portalUser?._id) userIdCandidates.push(portalUser._id);
   if (userId && mongoose.Types.ObjectId.isValid(String(userId))) {
+    userIdCandidates.push(buildPortalUserIdMatcher(String(userId)));
+  }
+
+  if (userIdCandidates.length > 0) {
     const byUserId = await Profile.find({
       tenantId: tenant,
-      userId: buildPortalUserIdMatcher(String(userId)),
+      userId: { $in: userIdCandidates },
     })
       .select("_id")
       .lean();
@@ -89,15 +106,7 @@ async function resolveProfileIdsForPortalUser(userId, tenantId, email) {
       ? email.trim().toLowerCase()
       : null;
 
-  if (!lookupEmail && userId) {
-    const User = require("../models/user.model.js");
-    const portalUser = await User.findOne({
-      tenantId: tenant,
-      userId: String(userId),
-      userType: "PORTAL",
-    })
-      .select("userEmail")
-      .lean();
+  if (!lookupEmail && portalUser) {
     lookupEmail = portalUser?.userEmail?.trim()?.toLowerCase() || null;
   }
 
@@ -613,10 +622,20 @@ exports.getApplicationsByProfileId = async (req, res, next) => {
           ),
         );
       }
+      const portalUser = await User.findOne({
+        tenantId: String(tenantId),
+        userId: String(userId),
+        userType: "PORTAL",
+        isActive: true,
+      })
+        .select("_id")
+        .lean();
+      const userIdCandidates = [buildPortalUserIdMatcher(String(userId))];
+      if (portalUser?._id) userIdCandidates.push(portalUser._id);
       const ownsProfile = await Profile.exists({
         _id: new mongoose.Types.ObjectId(profileId),
         tenantId: String(tenantId),
-        userId: buildPortalUserIdMatcher(String(userId)),
+        userId: { $in: userIdCandidates },
       });
       if (!ownsProfile) {
         return next(

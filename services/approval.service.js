@@ -10,6 +10,14 @@ function getReviewerIdForDb(reviewerId) {
   }
   return reviewerId;
 }
+
+function toObjectIdOrNull(value) {
+  if (value == null || value === "" || value === "bypass-user") return null;
+  const str = String(value).trim();
+  return mongoose.Types.ObjectId.isValid(str)
+    ? new mongoose.Types.ObjectId(str)
+    : null;
+}
 const ReviewOverlay = require("../models/reviewOverlay.model.js");
 const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
@@ -132,6 +140,10 @@ async function approveApplication({
     }).session(session);
 
     const portalUserId = existingUser?.userId || null;
+    const portalUserDocumentId = existingUser?._id || null;
+    const linkedUserDocumentId =
+      portalUserDocumentId ||
+      (portalUserId ? toObjectIdOrNull(portalUserId) : null);
 
     if (portalUserId) {
       console.log(
@@ -157,8 +169,11 @@ async function approveApplication({
       }
 
       // Link portal userId if found and not already set
-      if (portalUserId && !existingProfile.userId) {
-        profileUpdate.userId = portalUserId;
+      if (
+        linkedUserDocumentId &&
+        String(existingProfile.userId || "") !== String(linkedUserDocumentId)
+      ) {
+        profileUpdate.userId = linkedUserDocumentId;
         console.log(
           `✅ Linking portal user ${portalUserId} to existing profile ${existingProfile._id}`
         );
@@ -208,8 +223,8 @@ async function approveApplication({
       }
 
       // Link portal userId if found
-      if (portalUserId) {
-        profileSetFields.userId = portalUserId;
+      if (linkedUserDocumentId) {
+        profileSetFields.userId = linkedUserDocumentId;
         console.log(
           `✅ Linking portal user ${portalUserId} to new profile`
         );
@@ -275,8 +290,8 @@ async function approveApplication({
     };
 
     // Link portal userId if found
-    if (portalUserId) {
-      personalUpdate.userId = portalUserId;
+    if (linkedUserDocumentId) {
+      personalUpdate.userId = linkedUserDocumentId;
     }
 
     await PersonalDetails.updateOne(
@@ -291,8 +306,8 @@ async function approveApplication({
       };
 
       // Link portal userId if found
-      if (portalUserId) {
-        professionalUpdate.userId = portalUserId;
+      if (linkedUserDocumentId) {
+        professionalUpdate.userId = linkedUserDocumentId;
       }
 
       await ProfessionalDetails.updateOne(
@@ -314,8 +329,8 @@ async function approveApplication({
       };
 
       // Link portal userId if found
-      if (portalUserId) {
-        subscriptionUpdate.userId = portalUserId;
+      if (linkedUserDocumentId) {
+        subscriptionUpdate.userId = linkedUserDocumentId;
       }
 
       await SubscriptionDetails.findOneAndUpdate(

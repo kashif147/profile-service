@@ -291,8 +291,10 @@ exports.portalPrefill = async (req, res, next) => {
     const { tenantId, userId } = extractUserAndCreatorContext(req);
     if (!tenantId) return next(AppError.badRequest("tenantId is required"));
     if (!userId) return next(AppError.forbidden("Portal user required"));
-    const Profile = require("../models/profile.model.js");
-    const profile = await Profile.findOne({ tenantId, userId }).lean();
+    const profile = await paymentFormService.findProfileForPortalUser(
+      tenantId,
+      userId,
+    );
     if (!profile) return next(AppError.notFound("Member profile not found"));
     const data = await paymentFormService.prefillForm({
       tenantId,
@@ -364,8 +366,10 @@ exports.portalCreate = async (req, res, next) => {
     const { tenantId, userId } = extractUserAndCreatorContext(req);
     const { formType, ...payload } = req.body;
     if (!formType) return next(AppError.badRequest("formType is required"));
-    const Profile = require("../models/profile.model.js");
-    const profile = await Profile.findOne({ tenantId, userId }).lean();
+    const profile = await paymentFormService.findProfileForPortalUser(
+      tenantId,
+      userId,
+    );
     if (!profile) return next(AppError.notFound("Member profile not found"));
     const data = await paymentFormService.createForm({
       tenantId,

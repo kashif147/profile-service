@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const Profile = require("../models/profile.model.js");
 const Subscription = require("../models/subscription.model.js");
+const User = require("../models/user.model.js");
 const { AppError } = require("../errors/AppError");
 const {
   normalizeEmail,
@@ -30,6 +31,88 @@ const {
   publishProfileAfterUpdateOne,
 } = require("../services/profile.audit.publisher.js");
 const bizLogger = require("../config/bizLogger.js");
+
+function objectIdCandidate(value) {
+  if (!value || !mongoose.Types.ObjectId.isValid(value)) return null;
+  return new mongoose.Types.ObjectId(value);
+}
+
+async function findPortalProfileForUserContext({
+  tenantId,
+  userId,
+  userEmail,
+  select = null,
+  linkIfFound = false,
+  actorId = null,
+  source = "portal.profileLookup",
+}) {
+  const portalUser = await User.findOne({
+    tenantId,
+    userId,
+    userType: "PORTAL",
+    isActive: true,
+  }).lean();
+
+  const userIdCandidates = [];
+  if (portalUser?._id) userIdCandidates.push(portalUser._id);
+  const legacyUserObjectId = objectIdCandidate(userId);
+  if (legacyUserObjectId) userIdCandidates.push(legacyUserObjectId);
+
+  let query = Profile.findOne({
+    tenantId,
+    isActive: true,
+    ...(userIdCandidates.length
+      ? { userId: { $in: userIdCandidates } }
+      : { _id: null }),
+  });
+  if (select) query = query.select(select);
+  let profile = await query.lean();
+  if (profile || !linkIfFound) return { profile, portalUser };
+
+  const normalizedEmail = (
+    portalUser?.userEmail ||
+    userEmail ||
+    ""
+  ).trim().toLowerCase();
+  const memberNumber = portalUser?.userMemberNumber || null;
+
+  if (!normalizedEmail && !memberNumber) return { profile: null, portalUser };
+
+  query = Profile.findOne({
+    tenantId,
+    isActive: true,
+    $or: [
+      ...(normalizedEmail ? [{ normalizedEmail }] : []),
+      ...(memberNumber ? [{ membershipNumber: memberNumber }] : []),
+    ],
+  });
+  if (select) query = query.select(select);
+  const profileByIdentity = await query.lean();
+  if (!profileByIdentity) return { profile: null, portalUser };
+
+  if (portalUser?._id) {
+    const beforeLean = await Profile.findById(profileByIdentity._id).lean();
+    await Profile.updateOne(
+      { _id: profileByIdentity._id, tenantId },
+      { $set: { userId: portalUser._id } },
+    );
+    await publishProfileAfterUpdateOne({
+      tenantId,
+      profileId: profileByIdentity._id,
+      beforeLean,
+      actorId,
+      source,
+    });
+    profile = {
+      ...profileByIdentity,
+      userId: portalUser._id,
+    };
+  } else {
+    profile = profileByIdentity;
+  }
+
+  return { profile, portalUser };
+}
 
 function requestHasUsableFilters(bodyFilters) {
   if (
@@ -139,7 +222,6 @@ const allowedUpdateFields = new Set([
   "recruitmentDetails",
   "membershipNumber",
   "normalizedEmail",
-  "userId",
   "isActive",
   "deactivatedAt",
 ]);
@@ -766,76 +848,23 @@ async function getMyProfile(req, res, next) {
       return next(AppError.badRequest("User ID is required"));
     }
 
-    // Convert userId string to ObjectId if it's a valid ObjectId
-    let userIdObjectId;
-    if (mongoose.Types.ObjectId.isValid(userId)) {
-      userIdObjectId = new mongoose.Types.ObjectId(userId);
-    } else {
-      return next(AppError.badRequest("Invalid user ID format"));
-    }
-
-    console.log("Looking up profile with userId:", userIdObjectId.toString());
-
-    // Find profile by userId
-    const profile = await Profile.findOne({
-      userId: userIdObjectId,
-    })
-      .select("_id membershipNumber userId normalizedEmail")
-      .lean();
-
-    console.log("Profile found by userId:", profile);
+    const { profile, portalUser } = await findPortalProfileForUserContext({
+      tenantId,
+      userId,
+      userEmail: req.user?.email,
+      select: "_id membershipNumber userId normalizedEmail",
+      linkIfFound: true,
+      actorId: userId,
+      source: "portal.getMyProfile.userIdLink",
+    });
 
     if (!profile) {
-      // Try to find by email from User table as fallback
-      const User = require("../models/user.model.js");
-      const user = await User.findOne({
-        userId: userId,
+      console.log("No profile found by portal user context:", {
+        userId,
         tenantId,
-        userType: "PORTAL",
-        isActive: true,
-      }).lean();
-
-      console.log("User found in User table:", user);
-
-      if (user?.userEmail) {
-        const profileByEmail = await Profile.findOne({
-          tenantId,
-          normalizedEmail: user.userEmail.toLowerCase(),
-          isActive: true,
-        })
-          .select("_id membershipNumber userId normalizedEmail")
-          .lean();
-
-        console.log("Profile found by email:", profileByEmail);
-
-        if (profileByEmail) {
-          const beforeLean = await Profile.findById(profileByEmail._id).lean();
-          // Link userId to profile for future requests
-          await Profile.updateOne(
-            { _id: profileByEmail._id },
-            { $set: { userId: userIdObjectId } },
-          );
-
-          await publishProfileAfterUpdateOne({
-            tenantId,
-            profileId: profileByEmail._id,
-            beforeLean,
-            actorId: userId,
-            source: "portal.getMyProfile.userIdLink",
-          });
-
-          console.log(
-            `✅ Auto-linked userId ${userId} to profile ${profileByEmail._id}`,
-          );
-
-          return res.success({
-            profileId: profileByEmail._id,
-            membershipNumber: profileByEmail.membershipNumber,
-          });
-        }
-      }
-
-      console.log("No profile found by userId or email");
+        portalUserId: portalUser?._id,
+        userEmail: portalUser?.userEmail || req.user?.email,
+      });
 
       return res.status(200).json({
         data: null,
@@ -859,7 +888,7 @@ async function getMyProfile(req, res, next) {
 
 async function updateMyProfile(req, res, next) {
   try {
-    const { userId, userType } = extractUserAndCreatorContext(req);
+    const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
 
     if (userType !== "PORTAL") {
       return next(AppError.forbidden("Access denied. Only for PORTAL users."));
@@ -873,20 +902,23 @@ async function updateMyProfile(req, res, next) {
       );
     }
 
-    let userIdObjectId;
-    if (mongoose.Types.ObjectId.isValid(userId)) {
-      userIdObjectId = new mongoose.Types.ObjectId(userId);
-    } else {
-      return next(AppError.badRequest("Invalid user ID format"));
-    }
-
     const validatedData = await joischemas.profile_update.validateAsync(
       req.body,
     );
 
-    const profile = await Profile.findOne({
-      userId: userIdObjectId,
+    const { profile: profileLean } = await findPortalProfileForUserContext({
+      tenantId,
+      userId,
+      userEmail: req.user?.email,
+      select: "_id",
+      linkIfFound: true,
+      actorId: userId,
+      source: "portal.updateMyProfile.userIdLink",
     });
+
+    const profile = profileLean
+      ? await Profile.findOne({ _id: profileLean._id, tenantId })
+      : null;
 
     if (!profile) {
       return next(AppError.notFound("Profile not found"));
@@ -1847,8 +1879,25 @@ async function getProfilesByUserIds(req, res, next) {
       });
     }
 
-    // Convert userIds to ObjectIds (Profile.userId is ObjectId, but FCMToken.userId is String)
-    // Try to convert each userId to ObjectId, filter out invalid ones
+    const normalizedUserIds = [
+      ...new Set(userIds.map((id) => String(id || "").trim()).filter(Boolean)),
+    ];
+
+    const syncedUsers = await User.find({
+      userId: { $in: normalizedUserIds },
+      ...(req.tenantId ? { tenantId: req.tenantId } : {}),
+      userType: "PORTAL",
+      isActive: true,
+    })
+      .select("_id userId userEmail tenantId")
+      .lean();
+
+    const syncedUserBySourceId = new Map(
+      syncedUsers.map((user) => [String(user.userId), user]),
+    );
+
+    // Convert userIds to ObjectIds for legacy rows and include local synced User._id
+    // values because Profile.userId references profile-service users._id.
     const objectIdUserIds = userIds
       .map((id) => {
         try {
@@ -1862,6 +1911,10 @@ async function getProfilesByUserIds(req, res, next) {
         }
       })
       .filter(Boolean);
+
+    for (const user of syncedUsers) {
+      objectIdUserIds.push(user._id);
+    }
 
     if (objectIdUserIds.length === 0) {
       return res.status(200).json({
@@ -1879,6 +1932,28 @@ async function getProfilesByUserIds(req, res, next) {
       )
       .lean();
 
+    const foundUserIds = new Set(profiles.map((profile) => String(profile.userId)));
+    const emailFallbackUsers = syncedUsers.filter((user) => {
+      if (!user.userEmail) return false;
+      return !foundUserIds.has(String(user._id));
+    });
+
+    if (emailFallbackUsers.length > 0) {
+      const fallbackProfiles = await Profile.find({
+        $or: emailFallbackUsers.map((user) => ({
+          tenantId: user.tenantId,
+          normalizedEmail: normalizeEmail(user.userEmail),
+          isActive: { $ne: false },
+        })),
+      })
+        .select(
+          "userId tenantId personalInfo contactInfo membershipNumber currentSubscriptionId isActive normalizedEmail",
+        )
+        .lean();
+
+      profiles.push(...fallbackProfiles);
+    }
+
     enrichPersonalInfoFullNameOnDocuments(profiles);
 
     // Create a map of userId -> profile for easy lookup
@@ -1891,10 +1966,18 @@ async function getProfilesByUserIds(req, res, next) {
 
         // Find the original userId from the request that matches this profile's userId
         // This handles the case where FCMToken.userId is a string but Profile.userId is ObjectId
-        const matchingOriginalId = userIds.find((id) => {
+        const matchingOriginalId = normalizedUserIds.find((id) => {
           const originalIdStr = String(id);
+          const syncedUser = syncedUserBySourceId.get(originalIdStr);
           // Compare both as strings - MongoDB ObjectId comparison works with string comparison
-          return originalIdStr === profileUserIdStr;
+          return (
+            originalIdStr === profileUserIdStr ||
+            (syncedUser && String(syncedUser._id) === profileUserIdStr) ||
+            (syncedUser &&
+              syncedUser.userEmail &&
+              syncedUser.tenantId === profile.tenantId &&
+              normalizeEmail(syncedUser.userEmail) === profile.normalizedEmail)
+          );
         });
 
         // Map using the original userId string from the request (so notification-service can find it)

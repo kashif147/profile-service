@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const axios = require("axios");
 const Profile = require("../models/profile.model.js");
+const User = require("../models/user.model.js");
 const {
   MemberPaymentForm,
   PAYMENT_FORM_TYPES,
@@ -37,6 +38,43 @@ const FORM_TYPE_LABELS = {
   SALARY_DEDUCTION: "Salary Deduction",
   DD_MANDATE: "Direct Debit Mandate",
 };
+
+function objectIdCandidate(value) {
+  if (!value || !mongoose.Types.ObjectId.isValid(String(value))) return null;
+  return new mongoose.Types.ObjectId(String(value));
+}
+
+async function findProfileForPortalUser(tenantId, userId) {
+  const legacyUserObjectId = objectIdCandidate(userId);
+  const portalUser = await User.findOne({
+    tenantId,
+    userId: String(userId),
+    userType: "PORTAL",
+    isActive: true,
+  })
+    .select("_id userEmail")
+    .lean();
+
+  const candidates = [];
+  if (portalUser?._id) candidates.push(portalUser._id);
+  if (legacyUserObjectId) candidates.push(legacyUserObjectId);
+
+  if (candidates.length > 0) {
+    const profile = await Profile.findOne({
+      tenantId,
+      userId: { $in: candidates },
+    }).lean();
+    if (profile) return profile;
+  }
+
+  const normalizedEmail = portalUser?.userEmail?.trim()?.toLowerCase();
+  if (!normalizedEmail) return null;
+  return Profile.findOne({
+    tenantId,
+    normalizedEmail,
+    isActive: { $ne: false },
+  }).lean();
+}
 
 const PAYMENT_TYPE_BY_FORM = {
   STANDING_ORDER: "Standing Order",
@@ -1312,7 +1350,7 @@ async function listForProfile(profileId, tenantId, { portalUserId = null } = {})
 }
 
 async function listPortalForUser(tenantId, userId, req) {
-  const profile = await Profile.findOne({ tenantId, userId }).lean();
+  const profile = await findProfileForPortalUser(tenantId, userId);
   if (!profile) return [];
   return listForProfile(profile._id, tenantId, { portalUserId: userId });
 }
@@ -1474,6 +1512,7 @@ module.exports = {
   uploadSignature,
   sendFormEmail,
   listForProfile,
+  findProfileForPortalUser,
   listPortalForUser,
   listDirectDebitMandatesForPrepare,
   PAYMENT_FORM_TYPES,

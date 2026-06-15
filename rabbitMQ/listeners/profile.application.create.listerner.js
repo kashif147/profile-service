@@ -1,6 +1,8 @@
 const PersonalDetails = require("../../models/personal.details.model.js");
 const ProfessionalDetails = require("../../models/professional.details.model.js");
 const SubscriptionDetails = require("../../models/subscription.model.js");
+const User = require("../../models/user.model.js");
+const mongoose = require("mongoose");
 const { APPLICATION_STATUS } = require("../../constants/enums.js");
 const {
   queueDuplicateDetection,
@@ -25,6 +27,28 @@ function resolveUserIdForSync(incomingUserId, existingUserId) {
     return incomingUserId;
   }
   return existingUserId ?? null;
+}
+
+async function resolveLocalPortalUserIdForSync(tenantId, candidateUserId) {
+  if (candidateUserId == null || candidateUserId === "") return null;
+  const candidate = String(candidateUserId);
+  const objectIdCandidate = mongoose.Types.ObjectId.isValid(candidate)
+    ? new mongoose.Types.ObjectId(candidate)
+    : null;
+
+  const user = await User.findOne({
+    tenantId,
+    userType: "PORTAL",
+    isActive: true,
+    $or: [
+      { userId: candidate },
+      ...(objectIdCandidate ? [{ _id: objectIdCandidate }] : []),
+    ],
+  })
+    .select("_id")
+    .lean();
+
+  return user?._id || objectIdCandidate || null;
 }
 
 function isPortalOriginatedApplication(personalDetails) {
@@ -112,9 +136,12 @@ class ProfileApplicationCreateListener {
       console.log(
         "📝 [PROFILE_CREATE_LISTENER] Creating/updating personal details..."
       );
-      const resolvedPersonalUserId = resolveUserIdForSync(
+      const resolvedPersonalUserId = await resolveLocalPortalUserIdForSync(
+        tenantId || personalDetails.tenantId || existingPersonal?.tenantId,
+        resolveUserIdForSync(
         personalDetails.userId,
         existingPersonal?.userId
+        )
       );
       if (
         isPortalOriginatedApplication(personalDetails) &&
@@ -175,9 +202,12 @@ class ProfileApplicationCreateListener {
         const existingProfessional = await ProfessionalDetails.findOne({
           applicationId,
         }).lean();
-        const resolvedProfessionalUserId = resolveUserIdForSync(
-          professionalDetails.userId,
-          existingProfessional?.userId ?? resolvedPersonalUserId
+        const resolvedProfessionalUserId = await resolveLocalPortalUserIdForSync(
+          tenantId || personalDetails.tenantId || existingPersonal?.tenantId,
+          resolveUserIdForSync(
+            professionalDetails.userId,
+            existingProfessional?.userId ?? resolvedPersonalUserId
+          )
         );
         const newProfessionalDetails =
           await ProfessionalDetails.findOneAndUpdate(
@@ -282,9 +312,12 @@ class ProfileApplicationCreateListener {
       // Portal-service has deleted/isActive in meta, profile-service has them at root
       const portalMeta = subscriptionDetails?.meta || {};
       const existingSubUserId = existingSubscriptionDetails?.userId;
-      const resolvedSubscriptionUserId = resolveUserIdForSync(
-        subscriptionDetails?.userId,
-        existingSubUserId ?? newPersonalDetails.userId
+      const resolvedSubscriptionUserId = await resolveLocalPortalUserIdForSync(
+        tenantId || personalDetails.tenantId || existingPersonal?.tenantId,
+        resolveUserIdForSync(
+          subscriptionDetails?.userId,
+          existingSubUserId ?? newPersonalDetails.userId
+        )
       );
 
       const updateData = {

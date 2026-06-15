@@ -12,6 +12,14 @@ function getReviewerIdForDb(reviewerId) {
   return reviewerId;
 }
 
+function toObjectIdOrNull(value) {
+  if (value == null || value === "" || value === "bypass-user") return null;
+  const str = String(value).trim();
+  return mongoose.Types.ObjectId.isValid(str)
+    ? new mongoose.Types.ObjectId(str)
+    : null;
+}
+
 const ReviewOverlay = require("../models/reviewOverlay.model.js");
 const PersonalDetails = require("../models/personal.details.model.js");
 const ProfessionalDetails = require("../models/professional.details.model.js");
@@ -23,7 +31,7 @@ const {
 const { loadSubmission } = require("../services/submission.service.js");
 const {
   findOrCreateProfileByEmail,
-  findPortalUserIdByTenantEmail,
+  findPortalUserByTenantEmail,
   resolveLinkedPortalUserIdForProfile,
   pickPrimaryEmail,
   normalizeEmail,
@@ -224,16 +232,20 @@ async function approveSingleApplication({
     const userId = effective?.userId || null;
     const userType = effective?.userType || null;
 
-    const portalUserId = await findPortalUserIdByTenantEmail(
+    const portalUser = await findPortalUserByTenantEmail(
       tenantId,
       normalizedEmail,
       session
     );
+    const portalUserId = portalUser?.userId || null;
+    const portalUserDocumentId = portalUser?._id || null;
     const linkedUserId = resolveLinkedPortalUserIdForProfile(
       userType,
       userId,
       portalUserId
     );
+    const linkedUserDocumentId =
+      portalUserDocumentId || toObjectIdOrNull(linkedUserId);
 
     let profile;
     if (existingProfile) {
@@ -261,8 +273,11 @@ async function approveSingleApplication({
         );
       }
 
-      if (linkedUserId && !existingProfile.userId) {
-        updateFields.userId = linkedUserId;
+      if (
+        linkedUserDocumentId &&
+        String(existingProfile.userId || "") !== String(linkedUserDocumentId)
+      ) {
+        updateFields.userId = linkedUserDocumentId;
       }
 
       // Set crmUserId (the user who approved this profile)
@@ -298,8 +313,8 @@ async function approveSingleApplication({
       // Update Profile with approved data
       const updateFields = { ...flattenedProfileFields };
 
-      if (linkedUserId) {
-        updateFields.userId = linkedUserId;
+      if (linkedUserDocumentId) {
+        updateFields.userId = linkedUserDocumentId;
       }
 
       // Set crmUserId (the user who approved this profile)
@@ -334,8 +349,8 @@ async function approveSingleApplication({
         "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
         "approvalDetails.approvedAt": new Date(),
       };
-      if (linkedUserId) {
-        personalSet.userId = linkedUserId;
+      if (linkedUserDocumentId) {
+        personalSet.userId = linkedUserDocumentId;
       }
       await PersonalDetails.updateOne(
         { applicationId: applicationId },
@@ -346,8 +361,8 @@ async function approveSingleApplication({
 
     if (effective.professionalDetails) {
       const profSet = { professionalDetails: effective.professionalDetails };
-      if (linkedUserId) {
-        profSet.userId = linkedUserId;
+      if (linkedUserDocumentId) {
+        profSet.userId = linkedUserDocumentId;
       }
       await ProfessionalDetails.updateOne(
         { applicationId: applicationId },
@@ -368,8 +383,8 @@ async function approveSingleApplication({
       };
 
       const subSet = { subscriptionDetails: subscriptionDetailsToSave };
-      if (linkedUserId) {
-        subSet.userId = linkedUserId;
+      if (linkedUserDocumentId) {
+        subSet.userId = linkedUserDocumentId;
       }
       await SubscriptionDetails.findOneAndUpdate(
         { applicationId: applicationId },
@@ -414,7 +429,7 @@ async function approveSingleApplication({
         tenantId,
         isExistingProfile: !!existingProfile,
         updatedProfile,
-        linkedUserId,
+        linkedUserId: linkedUserDocumentId,
         effective: {
           ...effective,
           subscriptionAttributes: subAttrs(effective.subscriptionDetails),

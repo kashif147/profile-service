@@ -14,7 +14,7 @@ const {
   findOrCreateProfileByEmail,
   pickPrimaryEmail,
   normalizeEmail,
-  findPortalUserIdByTenantEmail,
+  findPortalUserByTenantEmail,
   resolveLinkedPortalUserIdForProfile,
 } = require("./profileLookup.service.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
@@ -335,24 +335,28 @@ async function applyEffectiveToProfile({ profile, effective, reviewerId, session
   const userId = effective?.userId || null;
   const userType = effective?.userType || null;
   const email = pickPrimaryEmail(flattened.contactInfo || {});
-  const portalUserId = email
-    ? await findPortalUserIdByTenantEmail(
+  const portalUser = email
+    ? await findPortalUserByTenantEmail(
         profile.tenantId,
         normalizeEmail(email),
         session,
       )
     : null;
+  const portalUserId = portalUser?.userId || null;
+  const portalUserDocumentId = portalUser?._id || null;
   const linkedUserId = resolveLinkedPortalUserIdForProfile(
     userType,
     userId,
     portalUserId,
   );
+  const linkedUserDocumentId =
+    portalUserDocumentId || toObjectIdOrNull(linkedUserId);
 
-  if (!profile.userId && linkedUserId) {
-    const linkedUserObjectId = toObjectIdOrNull(linkedUserId);
-    if (linkedUserObjectId) {
-      $set.userId = linkedUserObjectId;
-    }
+  if (
+    linkedUserDocumentId &&
+    String(profile.userId || "") !== String(linkedUserDocumentId)
+  ) {
+    $set.userId = linkedUserDocumentId;
   }
   if (reviewerId) {
     $set.crmUserId = getReviewerIdForDb(reviewerId);
