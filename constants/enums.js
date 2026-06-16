@@ -222,6 +222,7 @@ exports.APPLICATION_RESPONSE_COLUMNS = [
   "applicationStatus",
   "createdAt",
   "updatedAt",
+  "personalDetails.applicationStatus",
   "personalDetails.personalInfo.title",
   "personalDetails.personalInfo.forename",
   "personalDetails.personalInfo.surname",

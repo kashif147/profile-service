@@ -128,11 +128,17 @@ exports.getApplicationById = (applicationId) =>
 function applyApplicationStatusFilters(query, statusFilters = []) {
   if (statusFilters && statusFilters.length > 0) {
     const normalized = statusFilters.map((s) =>
-      typeof s === "string" ? s.toLowerCase() : s,
+      normalizeApplicationStatusValue(s),
     );
     query.applicationStatus = { $in: normalized };
   }
   return query;
+}
+
+function normalizeApplicationStatusValue(value) {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "approved" ? APPLICATION_STATUS.PROCESSED : normalized;
 }
 
 function buildUserObjectIdMatcher(userId) {
@@ -515,7 +521,8 @@ exports.getAllApplicationsWithDetails = (
           createdAt: -1,
         })
         .skip(skip)
-        .limit(limit);
+        .limit(limit)
+        .lean();
 
       const applicationsWithDetails = await Promise.all(
         applications.map(async (application) => {
@@ -705,9 +712,7 @@ exports.getApplicationsWithTemplateFilters = (
           typeof v === "string" ? v.trim() : v,
         );
         if (resolvedKey === "applicationStatus") {
-          values = values.map((v) =>
-            typeof v === "string" ? v.toLowerCase() : v,
-          );
+          values = values.map(normalizeApplicationStatusValue);
         }
 
         if (config.source === "personalDetails") {
@@ -815,7 +820,8 @@ exports.getApplicationsWithTemplateFilters = (
           createdAt: -1,
         })
         .skip(skip)
-        .limit(limit);
+        .limit(limit)
+        .lean();
 
       const applicationsWithDetails = await Promise.all(
         applications.map(async (application) => {
