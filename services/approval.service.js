@@ -77,6 +77,19 @@ async function approveApplication({
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
+    const personalForStatus = await PersonalDetails.findOne({
+      applicationId,
+      tenantId: String(tenantId),
+    })
+      .select("applicationStatus")
+      .session(session);
+
+    if (personalForStatus?.applicationStatus === APPLICATION_STATUS.PROCESSED) {
+      throw Object.assign(new Error("Application has already been processed."), {
+        statusCode: 409,
+      });
+    }
+
     // Load submission and overlay
     const { submission } = await loadSubmission(applicationId);
     const overlay = await ReviewOverlay.findOne({
@@ -280,7 +293,7 @@ async function approveApplication({
     const personalUpdate = {
       personalInfo: effective.personalInfo ?? null,
       contactInfo: effective.contactInfo ?? null,
-      applicationStatus: APPLICATION_STATUS.APPROVED,
+      applicationStatus: APPLICATION_STATUS.PROCESSED,
       profileId: profile._id,
       approvalDetails: {
         approvedBy: getReviewerIdForDb(reviewerId),
@@ -409,7 +422,7 @@ async function approveApplication({
       dateJoined,
     });
 
-    return { applicationId, effectiveHash, status: "approved" };
+    return { applicationId, effectiveHash, status: "processed" };
   } catch (e) {
     await session.abortTransaction();
     throw e;

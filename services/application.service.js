@@ -39,10 +39,10 @@ class ApplicationService {
   }
 
   /**
-   * Update application status (approve/reject)
+   * Update application status (process/reject)
    * @param {string} applicationId - Application ID
-   * @param {string} newStatus - New status (approved/rejected)
-   * @param {string} approvedBy - User ID who approved/rejected
+   * @param {string} newStatus - New status (processed/rejected)
+   * @param {string} approvedBy - User ID who processed/rejected
    * @param {string} comments - Comments for the decision
    * @returns {Promise<Object>} Updated application
    */
@@ -62,14 +62,14 @@ class ApplicationService {
       }
 
       if (!approvedBy) {
-        throw AppError.badRequest("Approver ID is required");
+        throw AppError.badRequest("Processor ID is required");
       }
 
       // Normalize status to lowercase for consistency
       const normalizedStatus = newStatus?.toLowerCase();
 
       // Validate status
-      const validStatuses = ["approved", "rejected", "pending"];
+      const validStatuses = ["processed", "rejected", "pending"];
       if (!validStatuses.includes(normalizedStatus)) {
         throw AppError.badRequest(
           `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
@@ -173,7 +173,7 @@ class ApplicationService {
   /**
    * Get applications by profile ID
    * @param {string} profileId - Profile ID
-   * @param {Array} [statusFilters] - Optional array of application status values to filter by (e.g. ["approved", "submitted"])
+   * @param {Array} [statusFilters] - Optional array of application status values to filter by (e.g. ["processed", "submitted"])
    * @returns {Promise<Array>} Array of applications with summary details
    */
   async getApplicationsByProfileId(profileId, statusFilters = []) {

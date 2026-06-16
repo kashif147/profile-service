@@ -209,6 +209,11 @@ async function fetchApplicationsForList(query) {
         model: "User",
         select: "userFullName userEmail",
       })
+      .populate({
+        path: "executiveCouncilApprovalDetails.approvedBy",
+        model: "User",
+        select: "userFullName userEmail",
+      })
       .sort({ createdAt: -1 })
       .lean();
   } catch (populateErr) {
@@ -229,6 +234,8 @@ async function enrichApplicationsForList(applications) {
 
       const dateJoined = subscription?.subscriptionDetails?.dateJoined;
       const approvedBy = app.approvalDetails?.approvedBy;
+      const executiveApprovedBy =
+        app.executiveCouncilApprovalDetails?.approvedBy;
       const approvedByPayload = !approvedBy
         ? null
         : approvedBy instanceof mongoose.Types.ObjectId
@@ -245,6 +252,30 @@ async function enrichApplicationsForList(applications) {
             : approvedBy && typeof approvedBy === "object"
               ? {
                   id: approvedBy._id != null ? String(approvedBy._id) : null,
+                }
+              : null;
+      const executiveApprovedByPayload = !executiveApprovedBy
+        ? null
+        : executiveApprovedBy instanceof mongoose.Types.ObjectId
+          ? { id: executiveApprovedBy.toString() }
+          : executiveApprovedBy &&
+              typeof executiveApprovedBy === "object" &&
+              (executiveApprovedBy.userFullName !== undefined ||
+                executiveApprovedBy.userEmail !== undefined)
+            ? {
+                id:
+                  executiveApprovedBy._id != null
+                    ? String(executiveApprovedBy._id)
+                    : null,
+                name: executiveApprovedBy.userFullName,
+                email: executiveApprovedBy.userEmail,
+              }
+            : executiveApprovedBy && typeof executiveApprovedBy === "object"
+              ? {
+                  id:
+                    executiveApprovedBy._id != null
+                      ? String(executiveApprovedBy._id)
+                      : null,
                 }
               : null;
 
@@ -264,6 +295,10 @@ async function enrichApplicationsForList(applications) {
         joinDate: dateJoined != null ? formatDateOnly(dateJoined) : null,
         approvedBy: approvedByPayload,
         applicationStatus: app.applicationStatus,
+        executiveCouncilApprovalDetails: {
+          ...(app.executiveCouncilApprovalDetails || {}),
+          approvedBy: executiveApprovedByPayload,
+        },
         personalDetails: {
           meta: {
             isActive:
@@ -352,7 +387,7 @@ exports.updateApplicationStatus = (
       };
       if (normalizedStatus === APPLICATION_STATUS.REJECTED) {
         updateData["meta.isActive"] = false;
-      } else if (normalizedStatus === APPLICATION_STATUS.APPROVED) {
+      } else if (normalizedStatus === APPLICATION_STATUS.PROCESSED) {
         updateData["meta.isActive"] = true;
       }
 
@@ -367,9 +402,9 @@ exports.updateApplicationStatus = (
         return;
       }
 
-      const active = normalizedStatus === APPLICATION_STATUS.APPROVED;
+      const active = normalizedStatus === APPLICATION_STATUS.PROCESSED;
       if (
-        normalizedStatus === APPLICATION_STATUS.APPROVED ||
+        normalizedStatus === APPLICATION_STATUS.PROCESSED ||
         normalizedStatus === APPLICATION_STATUS.REJECTED
       ) {
         await ProfessionalDetails.updateMany(

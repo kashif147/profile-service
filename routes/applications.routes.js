@@ -11,6 +11,10 @@ const {
   bulkApproveApplications,
 } = require("../controllers/bulkApproval.controller.js");
 const {
+  updateExecutiveCouncilApproval,
+  bulkExecutiveCouncilApproval,
+} = require("../controllers/executiveCouncilApproval.controller.js");
+const {
   detectDuplicatesForApplication,
   getDuplicateMatches,
   submitDuplicateReviewDecision,
@@ -21,6 +25,8 @@ const {
   ApproveBody,
   RejectBody,
   BulkApprovalBody,
+  ExecutiveCouncilApprovalBody,
+  BulkExecutiveCouncilApprovalBody,
   DuplicateReviewDecisionBody,
 } = require("../validation/applications.validators.js");
 const {
@@ -55,6 +61,20 @@ router.post(
   idempotency(),
   validate(BulkApprovalBody),
   bulkApproveApplications
+);
+router.post(
+  "/:applicationId/executive-council-approval",
+  ensureAuthenticated,
+  idempotency(),
+  validate({ params: ApplicationParams, body: ExecutiveCouncilApprovalBody }),
+  updateExecutiveCouncilApproval
+);
+router.post(
+  "/bulk-executive-council-approval",
+  ensureAuthenticated,
+  idempotency(),
+  validate(BulkExecutiveCouncilApprovalBody),
+  bulkExecutiveCouncilApproval
 );
 
 router.post(

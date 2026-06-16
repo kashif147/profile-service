@@ -93,6 +93,20 @@ const ProfileSchema = new mongoose.Schema(
       rejectionReason: String,
       comments: String,
     },
+    executiveCouncilApprovalDetails: {
+      status: {
+        type: String,
+        enum: ["pending", "approved", "rejected"],
+        default: "pending",
+      },
+      decisionDate: Date,
+      approvedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "users",
+      },
+      processedAt: Date,
+      comments: String,
+    },
     profileId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Profile",

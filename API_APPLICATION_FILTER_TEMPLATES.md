@@ -11,7 +11,7 @@ Each template has a **template type** (`templateType`): e.g. `"application"` for
 
 1. **Templates** store saved filter + column configs. Each has:
    - **templateType**: e.g. `"application"` (or any type you define).
-   - **filters.type**: which application statuses to show (e.g. `"submitted"`, `["approved","rejected"]`).
+   - **filters.type**: which application statuses to show (e.g. `"submitted"`, `["processed","rejected"]`).
    - **columns**: which fields to return per application (empty = all).
 
 2. **CRM user flow:**
@@ -32,7 +32,7 @@ Each template has a **template type** (`templateType`): e.g. `"application"` for
 **Valid Application Status Values:**
 - `in-progress`
 - `submitted`
-- `approved`
+- `processed`
 - `rejected`
 
 ---
@@ -51,7 +51,7 @@ Create a new filter template with specified filters.
 {
   "templateType": "application",
   "filters": {
-    "type": "approved"  // or ["approved", "submitted"] for multiple
+    "type": "processed"  // or ["processed", "submitted"] for multiple
   },
   "isDefault": false
 }
@@ -66,7 +66,7 @@ curl -X POST "http://localhost:3000/api/application-filter-templates" \
   -H "Content-Type: application/json" \
   -d '{
     "filters": {
-      "type": "approved"
+      "type": "processed"
     },
     "isDefault": false
   }'
@@ -79,7 +79,7 @@ curl -X POST "http://localhost:3000/api/application-filter-templates" \
   -H "Content-Type: application/json" \
   -d '{
     "filters": {
-      "type": ["approved", "submitted"]
+      "type": ["processed", "submitted"]
     },
     "isDefault": true
   }'
@@ -94,7 +94,7 @@ curl -X POST "http://localhost:3000/api/application-filter-templates" \
     "templateType": "application",
     "userId": "507f191e810c19729de860ea",
     "filters": {
-      "type": "approved"
+      "type": "processed"
     },
     "isDefault": false,
     "meta": {
@@ -135,7 +135,7 @@ curl -X GET "http://localhost:3000/api/application-filter-templates" \
         "_id": "507f1f77bcf86cd799439011",
         "userId": "507f191e810c19729de860ea",
         "filters": {
-          "type": "approved"
+          "type": "processed"
         },
         "isDefault": true,
         "meta": {
@@ -188,7 +188,7 @@ curl -X GET "http://localhost:3000/api/application-filter-templates/default" \
     "_id": "507f1f77bcf86cd799439011",
     "userId": "507f191e810c19729de860ea",
     "filters": {
-      "type": "approved"
+      "type": "processed"
     },
     "isDefault": true,
     "meta": {
@@ -237,7 +237,7 @@ curl -X GET "http://localhost:3000/api/application-filter-templates/507f1f77bcf8
     "_id": "507f1f77bcf86cd799439011",
     "userId": "507f191e810c19729de860ea",
     "filters": {
-      "type": "approved"
+      "type": "processed"
     },
     "isDefault": true,
     "meta": {
@@ -275,7 +275,7 @@ Update an existing filter template. This is the PUT API mentioned for saving fil
 {
   "templateType": "application",
   "filters": {
-    "type": "rejected"  // or ["approved", "rejected"] for multiple
+    "type": "rejected"  // or ["processed", "rejected"] for multiple
   },
   "isDefault": true
 }
@@ -290,7 +290,7 @@ curl -X PUT "http://localhost:3000/api/application-filter-templates/507f1f77bcf8
   -H "Content-Type: application/json" \
   -d '{
     "filters": {
-      "type": ["approved", "submitted"]
+      "type": ["processed", "submitted"]
     },
     "isDefault": true
   }'
@@ -326,7 +326,7 @@ curl -X PUT "http://localhost:3000/api/application-filter-templates/507f1f77bcf8
     "_id": "507f1f77bcf86cd799439011",
     "userId": "507f191e810c19729de860ea",
     "filters": {
-      "type": ["approved", "submitted"]
+      "type": ["processed", "submitted"]
     },
     "isDefault": true,
     "meta": {
@@ -392,7 +392,7 @@ curl -X DELETE "http://localhost:3000/api/application-filter-templates/507f1f77b
 ```json
 {
   "status": "error",
-  "message": "Validation error: filters.type must be one of [in-progress, submitted, approved, rejected]"
+  "message": "Validation error: filters.type must be one of [in-progress, submitted, processed, rejected]"
 }
 ```
 
@@ -437,7 +437,7 @@ curl -X POST "http://localhost:3000/api/application-filter-templates" \
   -H "Content-Type: application/json" \
   -d '{
     "filters": {
-      "type": ["approved", "submitted"]
+      "type": ["processed", "submitted"]
     },
     "isDefault": true
   }'
@@ -456,21 +456,21 @@ curl -X PUT "http://localhost:3000/api/application-filter-templates/TEMPLATE_ID_
   -H "Content-Type: application/json" \
   -d '{
     "filters": {
-      "type": "approved"
+      "type": "processed"
     }
   }'
 ```
 
 ### Example 2: Multiple Templates for Different Use Cases
 
-**Create template for approved applications:**
+**Create template for processed applications:**
 ```bash
 curl -X POST "http://localhost:3000/api/application-filter-templates" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "filters": {
-      "type": "approved"
+      "type": "processed"
     },
     "isDefault": false
   }'
@@ -511,8 +511,8 @@ curl -X POST "http://localhost:3000/api/application-filter-templates" \
 2. **Default Template:** When setting a template as default (`isDefault: true`), all other templates for that user will automatically have their `isDefault` flag set to `false`.
 
 3. **Filter Type:** The `filters.type` field can accept either:
-   - A single string: `"approved"`
-   - An array of strings: `["approved", "submitted"]`
+   - A single string: `"processed"`
+   - An array of strings: `["processed", "submitted"]`
 
 4. **Template type:** Each template has `templateType` (e.g. `"application"`). The applications API (`PUT /api/applications/filter`) only uses templates with `templateType: "application"`. You can use other values for future features.
 

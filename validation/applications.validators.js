@@ -137,9 +137,24 @@ const BulkApprovalBody = z.object({
     .array(z.string().min(1))
     .min(1, { message: "At least one application ID is required" })
     .max(1000, {
-      message: "Maximum 1000 applications can be approved at once",
+      message: "Maximum 1000 applications can be processed at once",
     }),
   processingDate: z.union([z.string(), z.date()]).optional(), // Optional processingDate for all subscriptions in bulk approval
+});
+
+const ExecutiveCouncilApprovalBody = z.object({
+  status: z.enum(["approved", "rejected"]).default("approved").optional(),
+  decisionDate: z.union([z.string(), z.date()]).optional(),
+  comments: z.string().max(2000).optional(),
+});
+
+const BulkExecutiveCouncilApprovalBody = ExecutiveCouncilApprovalBody.extend({
+  applicationIds: z
+    .array(z.string().min(1))
+    .min(1, { message: "At least one application ID is required" })
+    .max(1000, {
+      message: "Maximum 1000 applications can be marked at once",
+    }),
 });
 
 module.exports = {
@@ -147,6 +162,8 @@ module.exports = {
   ApproveBody,
   RejectBody,
   BulkApprovalBody,
+  ExecutiveCouncilApprovalBody,
+  BulkExecutiveCouncilApprovalBody,
   DuplicateReviewDecisionBody: z.object({
     action: z.enum(["LINK", "MERGE", "MARKED_NEW", "IGNORE_MATCH"]),
     sourceType: z.enum(["PROFILE", "APPLICATION"]).optional(),

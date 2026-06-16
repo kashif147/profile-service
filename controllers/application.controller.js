@@ -481,7 +481,7 @@ exports.approveApplication = async (req, res, next) => {
     );
 
     const decision = (applicationStatus || "").toLowerCase().trim();
-    if (decision === APPLICATION_STATUS.APPROVED) {
+    if (decision === APPLICATION_STATUS.PROCESSED) {
       try {
         const [personal, professional, subscription] = await Promise.all([
           PersonalDetails.findOne({ applicationId }).lean(),
@@ -509,7 +509,7 @@ exports.approveApplication = async (req, res, next) => {
           applicationId,
           reviewerId: creatorId,
           profileId: personal?.profileId ? String(personal.profileId) : null,
-          applicationStatus: "APPROVED",
+          applicationStatus: APPLICATION_STATUS.PROCESSED,
           isExistingProfile: !!profileDoc,
           crmUserId: profileDoc?.crmUserId
             ? String(profileDoc.crmUserId)
@@ -551,7 +551,7 @@ exports.approveApplication = async (req, res, next) => {
         });
       } catch (publishError) {
         console.error(
-          "[approveApplication] Failed to publish application approved event:",
+          "[processApplication] Failed to publish application processed event:",
           publishError.message,
         );
       }

@@ -40,7 +40,7 @@ async function findOrCreateProfileByEmail({
 
   const email = pickPrimaryEmail(contactInfo);
   if (!email) {
-    throw new Error("Cannot approve without a primary email address");
+    throw new Error("Cannot process without a primary email address");
   }
   const nEmail = normalizeEmail(email);
 
@@ -61,8 +61,8 @@ async function findOrCreateProfileByEmail({
           normalizedEmail: nEmail,
           ...flattenedProfileFields,
           membershipNumber: membershipNumber, // Auto-generated membership number for new profile
-          crmUserId: getReviewerIdForDb(reviewerId), // ID of the CRM user who approved this profile
-          applicationStatus: "APPROVED",
+          crmUserId: getReviewerIdForDb(reviewerId), // ID of the CRM user who processed this profile
+          applicationStatus: "processed",
           approvalDetails: {
             approvedBy: getReviewerIdForDb(reviewerId),
             approvedAt: new Date(),
@@ -76,8 +76,8 @@ async function findOrCreateProfileByEmail({
     // Update profile fields conservatively: fill if blank, refresh core payloads
     const $set = {
       ...flattenedProfileFields,
-      crmUserId: getReviewerIdForDb(reviewerId), // ID of the CRM user who approved this profile
-      applicationStatus: "APPROVED",
+      crmUserId: getReviewerIdForDb(reviewerId), // ID of the CRM user who processed this profile
+      applicationStatus: "processed",
       "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
       "approvalDetails.approvedAt": new Date(),
     };

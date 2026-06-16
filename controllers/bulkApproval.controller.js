@@ -152,6 +152,15 @@ async function approveSingleApplication({
       };
     }
 
+    if (personalDetails.applicationStatus === APPLICATION_STATUS.PROCESSED) {
+      return {
+        applicationId,
+        status: "failed",
+        success: false,
+        error: "Application has already been processed.",
+      };
+    }
+
     try {
       await ensureDuplicateReviewAllowsApproval(applicationId, tenantId);
     } catch (duplicateError) {
@@ -343,7 +352,7 @@ async function approveSingleApplication({
       const personalSet = {
         personalInfo: effective.personalInfo,
         contactInfo: effective.contactInfo,
-        applicationStatus: "approved",
+        applicationStatus: APPLICATION_STATUS.PROCESSED,
         profileId: profile._id,
         "meta.isActive": true,
         "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
@@ -420,7 +429,7 @@ async function approveSingleApplication({
     return {
       applicationId,
       profileId: String(profile._id),
-      status: "approved",
+      status: "processed",
       success: true,
       postApprovalPayload: {
         applicationId,
@@ -461,7 +470,7 @@ async function bulkApproveApplications(req, res, next) {
 
   // Limit batch size
   if (applicationIds.length > 1000) {
-    return next(AppError.badRequest("Maximum 1000 applications can be approved at once"));
+    return next(AppError.badRequest("Maximum 1000 applications can be processed at once"));
   }
 
   // Parse processingDate if provided (convert string to Date if needed)

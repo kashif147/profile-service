@@ -43,7 +43,7 @@ async function publishPostApprovalEvents({
       applicationId,
       reviewerId,
       profileId: String(profileId),
-      applicationStatus: "APPROVED",
+      applicationStatus: "processed",
       isExistingProfile: !!isExistingProfile,
       crmUserId: updatedProfile?.crmUserId
         ? String(updatedProfile.crmUserId)
@@ -62,7 +62,7 @@ async function publishPostApprovalEvents({
     });
   } catch (err) {
     console.error(
-      "[publishPostApprovalEvents] application approved failed:",
+      "[publishPostApprovalEvents] application processed failed:",
       err.message,
     );
   }

@@ -27,7 +27,7 @@ class ApplicationApprovalEventPublisher {
   }) {
     try {
       console.log(
-        "📤 [APPLICATION_APPROVAL_PUBLISHER] Publishing application approved event:",
+        "📤 [APPLICATION_APPROVAL_PUBLISHER] Publishing application processed event:",
         {
           applicationId,
           profileId,
@@ -38,7 +38,7 @@ class ApplicationApprovalEventPublisher {
 
       // Publish to portal-service for application status update; include tenantId and userId so user-service can upgrade role to Member
       const result = await publisher.publish(
-        APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_APPROVED,
+        APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_PROCESSED,
         {
           applicationId,
           reviewerId,
@@ -62,7 +62,7 @@ class ApplicationApprovalEventPublisher {
           tenantId,
           correlationId,
           exchange: "application.events", // Specify the exchange
-          routingKey: APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_APPROVED,
+          routingKey: APPLICATION_REVIEW_EVENTS.APPLICATION_REVIEW_PROCESSED,
           metadata: {
             service: "profile-service",
             version: "1.0",
@@ -72,16 +72,16 @@ class ApplicationApprovalEventPublisher {
 
       if (!result.success) {
         throw new Error(
-          `Failed to publish application approved event: ${result.error}`
+          `Failed to publish application processed event: ${result.error}`
         );
       }
 
       console.log(
-        "✅ [APPLICATION_APPROVAL_PUBLISHER] Application approved event published successfully"
+        "✅ [APPLICATION_APPROVAL_PUBLISHER] Application processed event published successfully"
       );
     } catch (error) {
       console.error(
-        "❌ [APPLICATION_APPROVAL_PUBLISHER] Error publishing application approved event:",
+        "❌ [APPLICATION_APPROVAL_PUBLISHER] Error publishing application processed event:",
         {
           error: error.message,
           applicationId,

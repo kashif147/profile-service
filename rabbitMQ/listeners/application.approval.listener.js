@@ -21,7 +21,7 @@ class ApplicationApprovalEventListener {
   async handleApplicationApproved(data) {
     try {
       console.log(
-        "📥 [APPLICATION_APPROVAL_LISTENER] Received application approved event:",
+        "📥 [APPLICATION_APPROVAL_LISTENER] Received application processed event:",
         {
           applicationId: data.applicationId,
           profileId: data.profileId,
@@ -36,10 +36,10 @@ class ApplicationApprovalEventListener {
         .trim();
       if (
         applicationStatusNorm &&
-        applicationStatusNorm !== APPLICATION_STATUS.APPROVED
+        applicationStatusNorm !== APPLICATION_STATUS.PROCESSED
       ) {
         console.log(
-          "⏭️ [APPLICATION_APPROVAL_LISTENER] Skipping: payload is not an approval",
+          "⏭️ [APPLICATION_APPROVAL_LISTENER] Skipping: payload is not a processed application",
           { applicationId: data.applicationId, applicationStatus: data.applicationStatus }
         );
         return;
@@ -62,7 +62,7 @@ class ApplicationApprovalEventListener {
         return;
       }
 
-      // Update main application models with approved data (including re-approval after rejection)
+      // Update main application models with processed data.
       if (effective.personalInfo) {
         await PersonalDetails.updateOne(
           { applicationId: applicationId },
@@ -70,7 +70,7 @@ class ApplicationApprovalEventListener {
             $set: {
               personalInfo: effective.personalInfo,
               contactInfo: effective.contactInfo,
-              applicationStatus: APPLICATION_STATUS.APPROVED,
+              applicationStatus: APPLICATION_STATUS.PROCESSED,
               "meta.isActive": true,
               "approvalDetails.approvedBy": getReviewerIdForDb(data.reviewerId),
               "approvalDetails.approvedAt": new Date(),
@@ -115,7 +115,7 @@ class ApplicationApprovalEventListener {
       );
 
       console.log(
-        "✅ [APPLICATION_APPROVAL_LISTENER] Application approval processed successfully:",
+        "✅ [APPLICATION_APPROVAL_LISTENER] Application processed successfully:",
         {
           applicationId,
           profileId,
@@ -124,7 +124,7 @@ class ApplicationApprovalEventListener {
       );
     } catch (error) {
       console.error(
-        "❌ [APPLICATION_APPROVAL_LISTENER] Error handling application approved event:",
+        "❌ [APPLICATION_APPROVAL_LISTENER] Error handling application processed event:",
         {
           error: error.message,
           applicationId: data?.applicationId,

@@ -16,7 +16,7 @@ This document outlines the RabbitMQ exchange and queue configuration for the Pro
 
 - **Purpose**: Application approval events from Profile Service
 - **Type**: Topic Exchange
-- **Routing Pattern**: `applications.review.approved.v1`
+- **Routing Pattern**: `applications.review.processed.v1`
 
 ### 3. `membership.events` Exchange
 
@@ -42,7 +42,7 @@ This document outlines the RabbitMQ exchange and queue configuration for the Pro
 ### 2. `profile.application.events`
 
 - **Exchange**: `application.events`
-- **Routing Key**: `applications.review.approved.v1`
+- **Routing Key**: `applications.review.processed.v1`
 - **Purpose**: Consumes application approval events (internal)
 - **Handler**: `ApplicationApprovalEventListener`
 
@@ -64,7 +64,7 @@ This document outlines the RabbitMQ exchange and queue configuration for the Pro
 
 ### Application Approval Process
 
-1. **Profile Service** publishes `APPLICATION_REVIEW_APPROVED` to `application.events` exchange
+1. **Profile Service** publishes `APPLICATION_REVIEW_PROCESSED` to `application.events` exchange
 2. **Portal Service** consumes from `portal.application.events` queue (to update application status)
 3. **Profile Service** publishes `MEMBER_CREATED_REQUESTED` to `membership.events` exchange
 4. **Subscription Service** consumes from `subscription.membership.events` queue (to create membership)
@@ -87,7 +87,7 @@ This document outlines the RabbitMQ exchange and queue configuration for the Pro
 
 - **Publishes to**: `application.events` and `membership.events` exchanges
 - **Events**:
-  - `APPLICATION_REVIEW_APPROVED`
+  - `APPLICATION_REVIEW_PROCESSED`
   - `MEMBER_CREATED_REQUESTED`
 
 ## Event Listeners
@@ -101,7 +101,7 @@ This document outlines the RabbitMQ exchange and queue configuration for the Pro
 
 - **Consumes from**: `profile.application.events` and `profile.membership.events` queues
 - **Events**:
-  - `applications.review.approved.v1`
+  - `applications.review.processed.v1`
   - `members.member.created.requested.v1`
 
 ## Dead Letter Queues

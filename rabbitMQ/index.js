@@ -121,12 +121,12 @@ async function setupConsumers() {
     console.log("✅ Portal service events consumer ready:", PORTAL_QUEUE);
     console.log("   → profile.application.create from exchange portal.events → queue", PORTAL_QUEUE);
 
-    // 2. Application events queue (application.events exchange) - for approval events
+    // 2. Application events queue (application.events exchange) - for processed events
     const APPLICATION_QUEUE = "profile.application.events";
     console.log("🔧 [SETUP] Creating application queue...");
     console.log("   Queue:", APPLICATION_QUEUE);
     console.log("   Exchange: application.events");
-    console.log("   Routing Key: applications.review.approved.v1");
+    console.log("   Routing Key: applications.review.processed.v1");
 
     await consumer.createQueue(APPLICATION_QUEUE, {
       durable: true,
@@ -134,11 +134,11 @@ async function setupConsumers() {
     });
 
     await consumer.bindQueue(APPLICATION_QUEUE, "application.events", [
-      "applications.review.approved.v1",
+      "applications.review.processed.v1",
     ]);
 
     consumer.registerHandler(
-      "applications.review.approved.v1",
+      "applications.review.processed.v1",
       async (payload, context) => {
         await ApplicationApprovalEventListener.handleApplicationApproved(
           payload.data

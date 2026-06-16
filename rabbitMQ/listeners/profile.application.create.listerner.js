@@ -334,8 +334,8 @@ class ProfileApplicationCreateListener {
         isActive: portalMeta.isActive !== undefined ? portalMeta.isActive : true,
       };
 
-      // Only copy membershipNumber if application status is approved
-      if (status === "approved" && subscriptionDetails?.membershipNumber) {
+      // Only copy membershipNumber if application status is processed
+      if (status === "processed" && subscriptionDetails?.membershipNumber) {
         updateData.membershipNumber = subscriptionDetails.membershipNumber;
       }
 

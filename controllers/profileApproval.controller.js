@@ -148,6 +148,18 @@ async function approveApplication(req, res, next) {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
+    const personalForStatus = await PersonalDetails.findOne({
+      applicationId,
+      tenantId: String(tenantId),
+    })
+      .select("applicationStatus")
+      .session(session);
+
+    if (personalForStatus?.applicationStatus === APPLICATION_STATUS.PROCESSED) {
+      await session.abortTransaction();
+      return next(AppError.conflict("Application has already been processed."));
+    }
+
     const { submission: serverSubmission } = await loadSubmission(
       applicationId
     );
@@ -244,7 +256,7 @@ async function approveApplication(req, res, next) {
       const personalSet = {
         personalInfo: approvalEffective.personalInfo,
         contactInfo: approvalEffective.contactInfo,
-        applicationStatus: "approved",
+        applicationStatus: APPLICATION_STATUS.PROCESSED,
         profileId: profile._id,
         "meta.isActive": true,
         "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
@@ -335,7 +347,7 @@ async function approveApplication(req, res, next) {
     return res.status(200).json({
       applicationId,
       profileId: String(profile._id),
-      status: "approved",
+      status: "processed",
       proposedPatch: patchToApply,
     });
   } catch (e) {

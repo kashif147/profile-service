@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test script for approve/reject endpoints
+ * Test script for process/reject endpoints
  * This script helps verify the publishDomainEvent fix
  */
 
@@ -18,8 +18,8 @@ const rejectPayload = {
   notes: "Test rejection notes",
 };
 
-// Test data for approve endpoint
-const approvePayload = {
+// Test data for process endpoint
+const processPayload = {
   overlayId: "test-overlay-id", // This would need to be a real overlay ID
   overlayVersion: 1,
 };
@@ -62,30 +62,30 @@ async function testRejectEndpoint() {
   }
 }
 
-async function testApproveEndpoint() {
-  console.log("\n🔍 Testing approve endpoint...");
+async function testProcessEndpoint() {
+  console.log("\n🔍 Testing process endpoint...");
   console.log(`📍 URL: ${BASE_URL}/api/applications/${APPLICATION_ID}/approve`);
-  console.log(`📦 Payload:`, JSON.stringify(approvePayload, null, 2));
+  console.log(`📦 Payload:`, JSON.stringify(processPayload, null, 2));
 
   try {
     const response = await axios.post(
       `${BASE_URL}/api/applications/${APPLICATION_ID}/approve`,
-      approvePayload,
+      processPayload,
       {
         headers: {
           "Content-Type": "application/json",
           Authorization: "Bearer YOUR_JWT_TOKEN_HERE", // Replace with actual token
-          "x-correlation-id": "debug-approve-test-" + Date.now(),
+          "x-correlation-id": "debug-process-test-" + Date.now(),
         },
         timeout: 30000,
       }
     );
 
-    console.log("✅ Approve Success!");
+    console.log("✅ Process Success!");
     console.log("📊 Status:", response.status);
     console.log("📄 Response:", JSON.stringify(response.data, null, 2));
   } catch (error) {
-    console.log("❌ Approve Error occurred:");
+    console.log("❌ Process Error occurred:");
 
     if (error.response) {
       console.log("📊 Status:", error.response.status);
@@ -101,11 +101,11 @@ async function testApproveEndpoint() {
 }
 
 async function main() {
-  console.log("🚀 Starting approve/reject endpoint tests...\n");
+  console.log("🚀 Starting process/reject endpoint tests...\n");
 
   await testRejectEndpoint();
   console.log("\n" + "=".repeat(50) + "\n");
-  await testApproveEndpoint();
+  await testProcessEndpoint();
 
   console.log("\n✅ FIXED: publishDomainEvent import issue");
   console.log("📋 Changes made:");
@@ -115,7 +115,7 @@ async function main() {
   console.log("   2. Added publishDomainEvent import to approval.service.js");
   console.log("   3. Added APPLICATION_REVIEW_EVENTS import to both files");
   console.log(
-    "   4. Fixed reviewerId ObjectId casting in all approval services"
+    "   4. Fixed reviewerId ObjectId casting in all processing services"
   );
   console.log("   5. Added getReviewerIdForDb() helper to handle bypass users");
 }
@@ -124,4 +124,4 @@ if (require.main === module) {
   main().catch(console.error);
 }
 
-module.exports = { testRejectEndpoint, testApproveEndpoint };
+module.exports = { testRejectEndpoint, testProcessEndpoint };

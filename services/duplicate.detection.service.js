@@ -22,7 +22,7 @@ const {
   fetchCurrentSubscriptionByProfileId,
 } = require("./subscription.service.client.js");
 
-const NON_APPROVED_STATUSES = [
+const NON_PROCESSED_STATUSES = [
   APPLICATION_STATUS.IN_PROGRESS,
   APPLICATION_STATUS.SUBMITTED,
 ];
@@ -81,7 +81,7 @@ async function filterNonApprovedApplicationIds(applicationIds) {
   if (!applicationIds.length) return [];
   const rows = await PersonalDetails.find({
     applicationId: { $in: applicationIds },
-    applicationStatus: { $in: NON_APPROVED_STATUSES },
+    applicationStatus: { $in: NON_PROCESSED_STATUSES },
     "meta.deleted": { $ne: true },
   })
     .select("applicationId")
@@ -108,7 +108,7 @@ async function findExactApplicationCandidates(source, excludeApplicationId) {
   if (orConditions.length > 0) {
     const emailMobileMatches = await PersonalDetails.find({
       applicationId: { $ne: excludeApplicationId },
-      applicationStatus: { $in: NON_APPROVED_STATUSES },
+      applicationStatus: { $in: NON_PROCESSED_STATUSES },
       "meta.deleted": { $ne: true },
       $or: orConditions,
     })
@@ -217,7 +217,7 @@ async function findFuzzyApplicationCandidates(source, excludeApplicationId) {
 
   const rows = await PersonalDetails.find({
     applicationId: { $ne: excludeApplicationId },
-    applicationStatus: { $in: NON_APPROVED_STATUSES },
+    applicationStatus: { $in: NON_PROCESSED_STATUSES },
     "meta.deleted": { $ne: true },
     $or: conditions,
   })
