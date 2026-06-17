@@ -62,6 +62,7 @@ const SubscriptionSchema = new mongoose.Schema(
       amount: { type: Number, allowNull: true },
       currency: { type: String, allowNull: true },
       status: { type: String, allowNull: true },
+      attemptNumber: { type: Number, allowNull: true },
       updatedAt: { type: Date, allowNull: true },
     },
 

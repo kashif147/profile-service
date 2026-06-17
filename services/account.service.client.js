@@ -138,10 +138,129 @@ async function reassignFinanceForProfileMerge({
   return response.data?.data || response.data || {};
 }
 
+function normalizePaymentStatus(status) {
+  const value = String(status || "").trim().toLowerCase();
+  if (value === "requires_capture") return "Authorised";
+  if (value === "succeeded") return "Captured";
+  if (value === "canceled" || value === "cancelled") return "Cancelled";
+  if (value === "authorization_expired") return "Authorisation Expired";
+  if (value === "payment_required" || value === "requires_payment_method") {
+    return "Payment Required";
+  }
+  if (value === "refund_required") return "Refund Required";
+  if (value === "manual_review") return "Manual Review";
+  return status || null;
+}
+
+async function callPaymentIntentAction({
+  paymentIntentId,
+  action,
+  tenantId,
+  req = null,
+}) {
+  const intentId = String(paymentIntentId || "").trim();
+  if (!intentId) {
+    throw new Error("PaymentIntent ID is required");
+  }
+
+  const base = ACCOUNT_SERVICE_URL.replace(/\/$/, "");
+  const url = `${base}/api/payments/intents/${encodeURIComponent(
+    intentId,
+  )}/${action}`;
+  const idempotencySource =
+    req?.headers?.["idempotency-key"] ||
+    req?.headers?.["x-idempotency-key"] ||
+    `${action}-${intentId}`;
+  const idempotencyKey = String(
+    idempotencySource === `${action}-${intentId}`
+      ? idempotencySource
+      : `${idempotencySource}-${action}-${intentId}`,
+  ).slice(0, 128);
+
+  const response = await axios.post(
+    url,
+    {},
+    {
+      headers: {
+        ...buildHeaders(req, tenantId || ""),
+        "Idempotency-Key": idempotencyKey,
+      },
+      timeout: 30000,
+      validateStatus: (status) => status < 500,
+    },
+  );
+
+  if (response.status >= 400) {
+    const message =
+      response.data?.error?.message ||
+      response.data?.message ||
+      `Payment ${action} failed (${response.status})`;
+    const error = new Error(message);
+    error.statusCode = response.status;
+    error.responseData = response.data;
+    throw error;
+  }
+
+  const data = response.data?.data || response.data || {};
+  if (data.status) {
+    data.displayStatus = normalizePaymentStatus(data.status);
+  }
+  return data;
+}
+
+async function fetchLatestApplicationPayment(applicationId, tenantId, req = null) {
+  const appId = String(applicationId || "").trim();
+  if (!appId) return null;
+
+  const base = ACCOUNT_SERVICE_URL.replace(/\/$/, "");
+  const url = `${base}/api/payments/applications/${encodeURIComponent(
+    appId,
+  )}/latest`;
+
+  const response = await axios.get(url, {
+    headers: buildHeaders(req, tenantId || ""),
+    timeout: 15000,
+    validateStatus: (status) => status < 500,
+  });
+
+  if (response.status === 404) return null;
+  if (response.status >= 400) {
+    const message =
+      response.data?.error?.message ||
+      response.data?.message ||
+      `Latest application payment lookup failed (${response.status})`;
+    throw new Error(message);
+  }
+
+  return response.data?.data || response.data || null;
+}
+
+async function capturePaymentIntent(paymentIntentId, tenantId, req = null) {
+  return callPaymentIntentAction({
+    paymentIntentId,
+    action: "capture",
+    tenantId,
+    req,
+  });
+}
+
+async function cancelPaymentIntent(paymentIntentId, tenantId, req = null) {
+  return callPaymentIntentAction({
+    paymentIntentId,
+    action: "cancel",
+    tenantId,
+    req,
+  });
+}
+
 module.exports = {
   fetchMemberFinanceSummary,
   getMemberIdLookupKeys,
   buildHeaders,
   reassignFinanceForProfileMerge,
+  fetchLatestApplicationPayment,
+  capturePaymentIntent,
+  cancelPaymentIntent,
+  normalizePaymentStatus,
   ACCOUNT_SERVICE_URL,
 };

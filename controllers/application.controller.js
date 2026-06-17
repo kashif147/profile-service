@@ -20,6 +20,12 @@ const {
   fetchTenantContext,
   resolveTenantTradingName,
 } = require("../services/tenant.service.client.js");
+const {
+  fetchLatestApplicationPayment,
+  capturePaymentIntent,
+  cancelPaymentIntent,
+  normalizePaymentStatus,
+} = require("../services/account.service.client.js");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
 
 /** True if the client sent at least one non-empty filter entry (not `{}`). */
@@ -50,6 +56,14 @@ function parseStatusFilters(rawType) {
     }
   }
   return statusFilters;
+}
+
+function resolvePaymentIntentId(subscriptionDetails) {
+  return (
+    subscriptionDetails?.paymentDetails?.paymentIntentId ||
+    subscriptionDetails?.paymentIntentId ||
+    null
+  );
 }
 
 function buildPortalUserIdMatcher(userId) {
@@ -471,6 +485,41 @@ exports.approveApplication = async (req, res, next) => {
       req.body,
     );
     const { comments, applicationStatus } = validatedData;
+    const decision = (applicationStatus || "").toLowerCase().trim();
+    const subscriptionQuery = { applicationId };
+    if (tenantId != null) subscriptionQuery.tenantId = String(tenantId);
+    const existingSubscription = await SubscriptionDetails.findOne(subscriptionQuery)
+      .select("paymentDetails")
+      .lean();
+    const latestPayment = await fetchLatestApplicationPayment(
+      applicationId,
+      tenantId,
+      req,
+    );
+    const paymentIntentId =
+      latestPayment?.paymentIntentId || resolvePaymentIntentId(existingSubscription);
+    let paymentActionResult = null;
+
+    if (paymentIntentId && decision === APPLICATION_STATUS.PROCESSED) {
+      paymentActionResult = await capturePaymentIntent(
+        paymentIntentId,
+        tenantId,
+        req,
+      );
+      if (paymentActionResult.status !== "succeeded") {
+        return next(
+          AppError.conflict(
+            "Payment capture did not succeed. Application was not approved.",
+          ),
+        );
+      }
+    } else if (paymentIntentId && decision === APPLICATION_STATUS.REJECTED) {
+      paymentActionResult = await cancelPaymentIntent(
+        paymentIntentId,
+        tenantId,
+        req,
+      );
+    }
 
     // Use the application service
     const updatedApplication = await applicationService.updateApplicationStatus(
@@ -480,7 +529,25 @@ exports.approveApplication = async (req, res, next) => {
       comments,
     );
 
-    const decision = (applicationStatus || "").toLowerCase().trim();
+    if (paymentIntentId && paymentActionResult?.status) {
+      await SubscriptionDetails.updateOne(
+        { applicationId },
+        {
+          $set: {
+            paymentDetails: {
+              ...(existingSubscription?.paymentDetails || {}),
+              paymentIntentId,
+              status:
+                decision === APPLICATION_STATUS.PROCESSED
+                  ? "Captured"
+                  : normalizePaymentStatus(paymentActionResult.status),
+              attemptNumber: latestPayment?.attemptNumber,
+              updatedAt: new Date(),
+            },
+          },
+        },
+      );
+    }
     if (decision === APPLICATION_STATUS.PROCESSED) {
       try {
         const [personal, professional, subscription] = await Promise.all([

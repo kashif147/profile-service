@@ -35,8 +35,40 @@ const {
   getReviewerIdForDb,
   toObjectIdOrNull,
 } = require("../helpers/reviewerIdForDb.js");
+const {
+  fetchLatestApplicationPayment,
+  capturePaymentIntent,
+  cancelPaymentIntent,
+  normalizePaymentStatus,
+} = require("../services/account.service.client.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
+
+function resolvePaymentIntentId(subscriptionDetails) {
+  return (
+    subscriptionDetails?.paymentDetails?.paymentIntentId ||
+    subscriptionDetails?.paymentIntentId ||
+    null
+  );
+}
+
+async function resolveLatestPaymentIntentId({
+  applicationId,
+  tenantId,
+  req,
+  fallbackSubscription,
+}) {
+  const latestPayment = await fetchLatestApplicationPayment(
+    applicationId,
+    tenantId,
+    req,
+  );
+  return {
+    paymentIntentId:
+      latestPayment?.paymentIntentId || resolvePaymentIntentId(fallbackSubscription),
+    latestPayment,
+  };
+}
 
 const subAttrs = (s = {}) => ({
   payrollNo: s?.payrollNo ?? null,
@@ -158,6 +190,47 @@ async function approveApplication(req, res, next) {
     if (personalForStatus?.applicationStatus === APPLICATION_STATUS.PROCESSED) {
       await session.abortTransaction();
       return next(AppError.conflict("Application has already been processed."));
+    }
+
+    const existingSubscription = await SubscriptionDetails.findOne({
+      applicationId,
+      tenantId: String(tenantId),
+    })
+      .select("paymentDetails")
+      .lean();
+    const { paymentIntentId, latestPayment } = await resolveLatestPaymentIntentId({
+      applicationId,
+      tenantId,
+      req,
+      fallbackSubscription: existingSubscription,
+    });
+    let captureResult = null;
+
+    if (paymentIntentId) {
+      try {
+        captureResult = await capturePaymentIntent(
+          paymentIntentId,
+          tenantId,
+          req,
+        );
+      } catch (captureError) {
+        await session.abortTransaction();
+        return next(
+          AppError.conflict(
+            captureError.message ||
+              "Payment capture failed. Application was not approved.",
+          ),
+        );
+      }
+
+      if (captureResult.status !== "succeeded") {
+        await session.abortTransaction();
+        return next(
+          AppError.conflict(
+            "Payment capture did not succeed. Application was not approved.",
+          ),
+        );
+      }
     }
 
     const { submission: serverSubmission } = await loadSubmission(
@@ -298,6 +371,15 @@ async function approveApplication(req, res, next) {
       };
 
       const subSet = { subscriptionDetails: subscriptionDetailsToSave };
+      if (captureResult) {
+        subSet.paymentDetails = {
+          ...(existingSubscription?.paymentDetails || {}),
+          paymentIntentId,
+          status: "Captured",
+          attemptNumber: latestPayment?.attemptNumber,
+          updatedAt: new Date(),
+        };
+      }
       if (linkedUserId) {
         const linkedUserObjectId = toObjectIdOrNull(linkedUserId);
         if (linkedUserObjectId) {
@@ -348,6 +430,7 @@ async function approveApplication(req, res, next) {
       applicationId,
       profileId: String(profile._id),
       status: "processed",
+      paymentStatus: captureResult ? "Captured" : undefined,
       proposedPatch: patchToApply,
     });
   } catch (e) {
@@ -383,6 +466,34 @@ async function rejectApplication(req, res, next) {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
+    const existingSubscription = await SubscriptionDetails.findOne({
+      applicationId,
+      tenantId: String(tenantId),
+    })
+      .select("paymentDetails")
+      .lean();
+    const { paymentIntentId, latestPayment } = await resolveLatestPaymentIntentId({
+      applicationId,
+      tenantId,
+      req,
+      fallbackSubscription: existingSubscription,
+    });
+    let cancelResult = null;
+
+    if (paymentIntentId) {
+      try {
+        cancelResult = await cancelPaymentIntent(paymentIntentId, tenantId, req);
+      } catch (cancelError) {
+        await session.abortTransaction();
+        return next(
+          AppError.conflict(
+            cancelError.message ||
+              "Payment cancellation failed. Application was not rejected.",
+          ),
+        );
+      }
+    }
+
     if (overlayId) {
       const overlay = await ReviewOverlay.findOne({
         overlayId,
@@ -442,6 +553,23 @@ async function rejectApplication(req, res, next) {
 
     // Note: ProfessionalDetails and SubscriptionDetails are kept as-is (not deleted)
     // No Profile is created for rejected applications
+    if (paymentIntentId && cancelResult?.status) {
+      await SubscriptionDetails.updateOne(
+        { applicationId },
+        {
+          $set: {
+            paymentDetails: {
+              ...(existingSubscription?.paymentDetails || {}),
+              paymentIntentId,
+              status: normalizePaymentStatus(cancelResult.status),
+              attemptNumber: latestPayment?.attemptNumber,
+              updatedAt: new Date(),
+            },
+          },
+        },
+        { session },
+      );
+    }
 
     try {
       await ApplicationApprovalEventPublisher.publishApplicationRejected({
@@ -463,7 +591,11 @@ async function rejectApplication(req, res, next) {
     }
 
     await session.commitTransaction();
-    return res.status(200).json({ applicationId, status: "rejected" });
+    return res.status(200).json({
+      applicationId,
+      status: "rejected",
+      paymentStatus: cancelResult?.displayStatus,
+    });
   } catch (e) {
     await session.abortTransaction();
     next(e);

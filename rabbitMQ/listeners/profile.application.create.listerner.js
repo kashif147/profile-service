@@ -242,7 +242,6 @@ class ProfileApplicationCreateListener {
       );
 
       // Build update object - use subscriptionDetails from event if available, otherwise use defaults
-      // Note: paymentDetails is not stored in profile-service model (commented out in schema)
       console.log(
         "🔍 [PROFILE_CREATE_LISTENER] Processing subscriptionDetails from event:",
         {
@@ -260,6 +259,7 @@ class ProfileApplicationCreateListener {
           nestedSubscriptionDetailsKeys: subscriptionDetails?.subscriptionDetails
             ? Object.keys(subscriptionDetails.subscriptionDetails)
             : [],
+          hasPaymentDetails: !!subscriptionDetails?.paymentDetails,
         }
       );
 
@@ -378,6 +378,10 @@ class ProfileApplicationCreateListener {
         // Only set membershipNumber if provided
         if (updateData.membershipNumber) {
           updateQuery.$set.membershipNumber = updateData.membershipNumber;
+        }
+
+        if (subscriptionDetails?.paymentDetails) {
+          updateQuery.$set.paymentDetails = subscriptionDetails.paymentDetails;
         }
 
         const newSubscriptionDetails = await SubscriptionDetails.findOneAndUpdate(

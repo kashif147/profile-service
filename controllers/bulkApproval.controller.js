@@ -54,6 +54,10 @@ const {
 const {
   publishProfileAfterUpdateOne,
 } = require("../services/profile.audit.publisher.js");
+const {
+  fetchLatestApplicationPayment,
+  capturePaymentIntent,
+} = require("../services/account.service.client.js");
 
 const {
   parseDateOnlyToUtcNoon,
@@ -61,6 +65,14 @@ const {
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
+
+function resolvePaymentIntentId(subscriptionDetails) {
+  return (
+    subscriptionDetails?.paymentDetails?.paymentIntentId ||
+    subscriptionDetails?.paymentIntentId ||
+    null
+  );
+}
 
 const subAttrs = (s = {}) => ({
   payrollNo: s?.payrollNo ?? null,
@@ -134,6 +146,7 @@ async function approveSingleApplication({
   applicationId,
   tenantId,
   reviewerId,
+  req,
   session,
   bulkDateJoined = null, // Optional dateJoined from bulk approval request
 }) {
@@ -159,6 +172,30 @@ async function approveSingleApplication({
         success: false,
         error: "Application has already been processed.",
       };
+    }
+
+    const existingSubscriptionForPayment = await SubscriptionDetails.findOne({
+      applicationId,
+      tenantId: String(tenantId),
+    })
+      .select("paymentDetails")
+      .lean();
+    const latestPayment = await fetchLatestApplicationPayment(
+      applicationId,
+      tenantId,
+      req,
+    );
+    const paymentIntentId =
+      latestPayment?.paymentIntentId ||
+      resolvePaymentIntentId(existingSubscriptionForPayment);
+    let captureResult = null;
+    if (paymentIntentId) {
+      captureResult = await capturePaymentIntent(paymentIntentId, tenantId, req);
+      if (captureResult.status !== "succeeded") {
+        throw new Error(
+          "Payment capture did not succeed. Application was not processed.",
+        );
+      }
     }
 
     try {
@@ -392,6 +429,15 @@ async function approveSingleApplication({
       };
 
       const subSet = { subscriptionDetails: subscriptionDetailsToSave };
+      if (captureResult) {
+        subSet.paymentDetails = {
+          ...(existingSubscriptionForPayment?.paymentDetails || {}),
+          paymentIntentId,
+          status: "Captured",
+          attemptNumber: latestPayment?.attemptNumber,
+          updatedAt: new Date(),
+        };
+      }
       if (linkedUserDocumentId) {
         subSet.userId = linkedUserDocumentId;
       }
@@ -496,6 +542,7 @@ async function bulkApproveApplications(req, res, next) {
             applicationId,
             tenantId,
             reviewerId,
+            req,
             session: appSession,
             bulkDateJoined, // Pass bulkDateJoined to use for all subscriptions
           });

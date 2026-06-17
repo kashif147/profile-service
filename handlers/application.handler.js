@@ -40,6 +40,32 @@ function buildSubscriptionPayload(subscriptionDetails, membershipCategory) {
   return subscriptionDetailsToPlain(subscriptionDetails.subscriptionDetails);
 }
 
+function normalizePaymentStatusForDisplay(status) {
+  const value = String(status || "").trim().toLowerCase();
+  if (!value) return null;
+  if (value === "requires_capture" || value === "authorised") return "Authorised";
+  if (value === "succeeded" || value === "captured") return "Captured";
+  if (value === "paid") return "Paid";
+  if (value === "canceled" || value === "cancelled") return "Cancelled";
+  if (value === "authorization_expired") return "Authorisation Expired";
+  if (value === "payment_required" || value === "requires_payment_method") {
+    return "Payment Required";
+  }
+  if (value === "refund_required") return "Refund Required";
+  if (value === "manual_review") return "Manual Review";
+  return status;
+}
+
+function buildPaymentDetailsPayload(subscriptionDetails) {
+  const details = subscriptionDetails?.paymentDetails;
+  if (!details) return null;
+  const status = normalizePaymentStatusForDisplay(details.status);
+  return {
+    ...(typeof details.toObject === "function" ? details.toObject() : details),
+    status,
+  };
+}
+
 async function buildProfessionalPayload(
   professionalDetails,
   membershipCategory,
@@ -301,6 +327,10 @@ async function enrichApplicationsForList(applications) {
         joinDate: dateJoined != null ? formatDateOnly(dateJoined) : null,
         approvedBy: approvedByPayload,
         applicationStatus: app.applicationStatus,
+        paymentStatus: normalizePaymentStatusForDisplay(
+          subscription?.paymentDetails?.status,
+        ),
+        paymentDetails: buildPaymentDetailsPayload(subscription),
         executiveCouncilApprovalDetails: {
           ...(app.executiveCouncilApprovalDetails || {}),
           approvedBy: executiveApprovedByPayload,
@@ -477,6 +507,10 @@ exports.getApplicationWithDetails = (applicationId) =>
         personalDetails: personalDetails,
         professionalDetails: professionalPayload,
         subscriptionDetails: subscriptionPayload,
+        paymentDetails: buildPaymentDetailsPayload(subscriptionDetails),
+        paymentStatus: normalizePaymentStatusForDisplay(
+          subscriptionDetails?.paymentDetails?.status,
+        ),
         applicationStatus: personalDetails.applicationStatus,
         approvalDetails: personalDetails.approvalDetails,
         createdAt: personalDetails.createdAt,
@@ -562,6 +596,10 @@ exports.getAllApplicationsWithDetails = (
               personalDetails: application,
               professionalDetails: professionalPayload,
               subscriptionDetails: subscriptionPayload,
+              paymentDetails: buildPaymentDetailsPayload(subscriptionDetails),
+              paymentStatus: normalizePaymentStatusForDisplay(
+                subscriptionDetails?.paymentDetails?.status,
+              ),
               applicationStatus: application.applicationStatus,
               approvalDetails: application.approvalDetails,
               isPotentialDuplicate:
@@ -861,6 +899,10 @@ exports.getApplicationsWithTemplateFilters = (
               personalDetails: application,
               professionalDetails: professionalPayload,
               subscriptionDetails: subscriptionPayload,
+              paymentDetails: buildPaymentDetailsPayload(subscriptionDetails),
+              paymentStatus: normalizePaymentStatusForDisplay(
+                subscriptionDetails?.paymentDetails?.status,
+              ),
               applicationStatus: application.applicationStatus,
               approvalDetails: application.approvalDetails,
               isPotentialDuplicate:
