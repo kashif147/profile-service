@@ -16,6 +16,29 @@ router.post(
 router.get("/prefill", portalRead, controller.prefillPaymentForm);
 router.post("/", portalWrite, controller.createPaymentForm);
 router.get("/profile/:profileId", portalRead, controller.listProfilePaymentForms);
+
+const portalRouter = express.Router();
+portalRouter.get("/mine", portalRead, controller.portalListMine);
+portalRouter.get("/prefill", portalRead, controller.portalPrefill);
+portalRouter.post("/", portalWrite, controller.portalCreate);
+portalRouter.get("/:id", portalRead, controller.portalGetById);
+portalRouter.patch("/:id", portalWrite, controller.portalUpdate);
+portalRouter.post("/:id/submit", portalWrite, controller.portalSubmit);
+portalRouter.post(
+  "/:id/upload-signed",
+  portalWrite,
+  upload.single("file"),
+  controller.portalUploadSignedPdf
+);
+portalRouter.post(
+  "/:id/upload-signature",
+  portalWrite,
+  upload.single("file"),
+  controller.portalUploadSignature
+);
+
+router.use("/portal", portalRouter);
+
 router.get("/:id/pdf", portalRead, controller.downloadPaymentFormPdf);
 router.get("/:id", portalRead, controller.getPaymentFormById);
 router.patch("/:id", portalWrite, controller.updatePaymentForm);
@@ -43,27 +66,5 @@ router.post(
   controller.uploadSignature
 );
 router.post("/:id/send-email", portalWrite, controller.sendEmail);
-
-const portalRouter = express.Router();
-portalRouter.get("/mine", portalRead, controller.portalListMine);
-portalRouter.get("/prefill", portalRead, controller.portalPrefill);
-portalRouter.post("/", portalWrite, controller.portalCreate);
-portalRouter.get("/:id", portalRead, controller.portalGetById);
-portalRouter.patch("/:id", portalWrite, controller.portalUpdate);
-portalRouter.post("/:id/submit", portalWrite, controller.portalSubmit);
-portalRouter.post(
-  "/:id/upload-signed",
-  portalWrite,
-  upload.single("file"),
-  controller.portalUploadSignedPdf
-);
-portalRouter.post(
-  "/:id/upload-signature",
-  portalWrite,
-  upload.single("file"),
-  controller.portalUploadSignature
-);
-
-router.use("/portal", portalRouter);
 
 module.exports = router;
