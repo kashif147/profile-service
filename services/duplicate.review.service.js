@@ -3,6 +3,7 @@ const PersonalDetails = require("../models/personal.details.model.js");
 const Profile = require("../models/profile.model.js");
 const { AppError } = require("../errors/AppError.js");
 const {
+  APPLICATION_STATUS,
   DUPLICATE_REVIEW_STATUS,
   DUPLICATE_REVIEW_ACTION,
 } = require("../constants/enums.js");
@@ -31,6 +32,7 @@ const {
 } = require("./duplicate.merge.service.js");
 const {
   APPROVAL_ALLOWED_STATUSES,
+  APPLICATION_DUPLICATE_REVIEW_LOCKED_MESSAGE,
   DUPLICATE_REVIEW_REQUIRED_MESSAGE,
   isDuplicateReviewBlockingApproval,
 } = require("./duplicate.review.helpers.js");
@@ -55,6 +57,51 @@ function normalizeMergeFieldChoices(raw) {
 
 function activeMatchesFromSummary(matchSummary = []) {
   return (matchSummary || []).filter((m) => !m.ignored && m.score >= 40);
+}
+
+function isApplicationProcessed(personal) {
+  return (
+    String(personal?.applicationStatus || "").toLowerCase() ===
+    APPLICATION_STATUS.PROCESSED
+  );
+}
+
+function buildDuplicateReviewState(personal, extras = {}) {
+  const duplicateReview =
+    personal?.duplicateReview?.toObject?.() || personal?.duplicateReview || {};
+  const matchSummary = duplicateReview.matchSummary || [];
+  const includeIgnoredMatches = isApplicationProcessed(personal);
+
+  return {
+    matchingApplications: matchSummary.filter(
+      (m) =>
+        m.sourceType === "APPLICATION" && (includeIgnoredMatches || !m.ignored),
+    ),
+    matchingProfiles: matchSummary.filter(
+      (m) => m.sourceType === "PROFILE" && (includeIgnoredMatches || !m.ignored),
+    ),
+    matchSummary,
+    hasPotentialDuplicate: activeMatchesFromSummary(matchSummary).length > 0,
+    duplicateReview: {
+      status: DUPLICATE_REVIEW_STATUS.NOT_CHECKED,
+      ...duplicateReview,
+    },
+    applicationStatus: personal?.applicationStatus || null,
+    isReadOnly: isApplicationProcessed(personal),
+    ...extras,
+  };
+}
+
+function assertApplicationDuplicateReviewMutable(personal) {
+  if (isApplicationProcessed(personal)) {
+    throw AppError.unprocessableEntity(
+      APPLICATION_DUPLICATE_REVIEW_LOCKED_MESSAGE,
+      {
+        code: "APPLICATION_DUPLICATE_REVIEW_LOCKED",
+        applicationStatus: personal.applicationStatus,
+      },
+    );
+  }
 }
 
 async function getPersonalDetailsForReview(applicationId) {
@@ -87,12 +134,15 @@ function resolveApplicationTenantId(personal, requestTenantId) {
 async function runDuplicateDetection(applicationId, tenantId, actorId = null) {
   const personal = await getPersonalDetailsForReview(applicationId);
   const effectiveTenantId = resolveApplicationTenantId(personal, tenantId);
+  assertApplicationDuplicateReviewMutable(personal);
   const result = await detectDuplicates(applicationId, effectiveTenantId, actorId);
   const updatedPersonal = await getPersonalDetailsForReview(applicationId);
 
   return {
     ...result,
     duplicateReview: updatedPersonal.duplicateReview,
+    applicationStatus: updatedPersonal.applicationStatus || null,
+    isReadOnly: false,
     matchingApplications: result.matchingApplications.filter((m) => !m.ignored),
     matchingProfiles: result.matchingProfiles.filter((m) => !m.ignored),
   };
@@ -107,21 +157,19 @@ async function getDuplicateReviewState(applicationId, tenantId) {
     status === DUPLICATE_REVIEW_STATUS.NOT_CHECKED ||
     !personal.duplicateReview?.matchSummary?.length
   ) {
+    if (isApplicationProcessed(personal)) {
+      return buildDuplicateReviewState(personal, {
+        lockedMessage: APPLICATION_DUPLICATE_REVIEW_LOCKED_MESSAGE,
+      });
+    }
     return runDuplicateDetection(applicationId, tenantId);
   }
 
-  const matchSummary = personal.duplicateReview.matchSummary || [];
-  return {
-    matchingApplications: matchSummary.filter(
-      (m) => m.sourceType === "APPLICATION" && !m.ignored,
-    ),
-    matchingProfiles: matchSummary.filter(
-      (m) => m.sourceType === "PROFILE" && !m.ignored,
-    ),
-    matchSummary,
-    hasPotentialDuplicate: activeMatchesFromSummary(matchSummary).length > 0,
-    duplicateReview: personal.duplicateReview,
-  };
+  return buildDuplicateReviewState(personal, {
+    lockedMessage: isApplicationProcessed(personal)
+      ? APPLICATION_DUPLICATE_REVIEW_LOCKED_MESSAGE
+      : undefined,
+  });
 }
 
 function appendAuditEntry(personal, entry) {
@@ -146,6 +194,7 @@ async function recordDuplicateDecision({
   }
 
   const effectiveTenantId = resolveApplicationTenantId(personal, tenantId);
+  assertApplicationDuplicateReviewMutable(personal);
   const beforeReview = personal.duplicateReview?.toObject?.()
     ? personal.duplicateReview.toObject()
     : personal.duplicateReview
@@ -482,7 +531,10 @@ module.exports = {
   ensureDuplicateReviewAllowsApproval,
   resolveProfileForApproval,
   activeMatchesFromSummary,
+  assertApplicationDuplicateReviewMutable,
+  isApplicationProcessed,
   isDuplicateReviewBlockingApproval,
   APPROVAL_ALLOWED_STATUSES,
+  APPLICATION_DUPLICATE_REVIEW_LOCKED_MESSAGE,
   DUPLICATE_REVIEW_REQUIRED_MESSAGE,
 };
