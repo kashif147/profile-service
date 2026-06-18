@@ -44,16 +44,32 @@ function objectIdCandidate(value) {
   return new mongoose.Types.ObjectId(String(value));
 }
 
-async function findProfileForPortalUser(tenantId, userId) {
+function normalizeEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  return email || null;
+}
+
+function extractPortalEmail(req) {
+  return normalizeEmail(
+    req?.user?.email ||
+      req?.user?.userEmail ||
+      req?.headers?.["x-user-email"] ||
+      null
+  );
+}
+
+async function findProfileForPortalUser(tenantId, userId, req = null) {
   const legacyUserObjectId = objectIdCandidate(userId);
-  const portalUser = await User.findOne({
-    tenantId,
-    userId: String(userId),
-    userType: "PORTAL",
-    isActive: true,
-  })
-    .select("_id userEmail")
-    .lean();
+  const portalUser = userId
+    ? await User.findOne({
+        tenantId,
+        userId: String(userId),
+        userType: "PORTAL",
+        isActive: true,
+      })
+        .select("_id userEmail")
+        .lean()
+    : null;
 
   const candidates = [];
   if (portalUser?._id) candidates.push(portalUser._id);
@@ -67,7 +83,8 @@ async function findProfileForPortalUser(tenantId, userId) {
     if (profile) return profile;
   }
 
-  const normalizedEmail = portalUser?.userEmail?.trim()?.toLowerCase();
+  const normalizedEmail =
+    normalizeEmail(portalUser?.userEmail) || extractPortalEmail(req);
   if (!normalizedEmail) return null;
   return Profile.findOne({
     tenantId,
@@ -646,8 +663,12 @@ async function createForm({
     status: "draft",
     source,
     ...hydrated,
+    userId:
+      source === "portal"
+        ? req.userId || req.user?.id || hydrated.userId || null
+        : hydrated.userId || null,
     meta: { createdBy: req.user?.id || null },
-    visibility: { portalVisible: false },
+    visibility: { portalVisible: source === "portal" },
   });
 
   if (payload && Object.keys(payload).length > 0) {
@@ -1350,7 +1371,7 @@ async function listForProfile(profileId, tenantId, { portalUserId = null } = {})
 }
 
 async function listPortalForUser(tenantId, userId, req) {
-  const profile = await findProfileForPortalUser(tenantId, userId);
+  const profile = await findProfileForPortalUser(tenantId, userId, req);
   if (!profile) return [];
   return listForProfile(profile._id, tenantId, { portalUserId: userId });
 }

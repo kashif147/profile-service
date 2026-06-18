@@ -294,6 +294,7 @@ exports.portalPrefill = async (req, res, next) => {
     const profile = await paymentFormService.findProfileForPortalUser(
       tenantId,
       userId,
+      req,
     );
     if (!profile) return next(AppError.notFound("Member profile not found"));
     const data = await paymentFormService.prefillForm({
@@ -369,6 +370,7 @@ exports.portalCreate = async (req, res, next) => {
     const profile = await paymentFormService.findProfileForPortalUser(
       tenantId,
       userId,
+      req,
     );
     if (!profile) return next(AppError.notFound("Member profile not found"));
     const data = await paymentFormService.createForm({
