@@ -27,13 +27,13 @@ async function publishPostApprovalEvents({
     (isExistingProfile ? "Cancelled" : undefined);
 
   const sub = effective.subscriptionDetails || {};
-  const userIdForSubscription =
+  const userIdForPostApproval =
     updatedProfile?.userId != null
       ? String(updatedProfile.userId)
       : linkedUserId != null
         ? String(linkedUserId)
         : null;
-  const userEmailForSubscription =
+  const userEmailForPostApproval =
     effective.contactInfo?.personalEmail ||
     effective.contactInfo?.workEmail ||
     null;
@@ -49,7 +49,8 @@ async function publishPostApprovalEvents({
         ? String(updatedProfile.crmUserId)
         : null,
       memberId,
-      userId: updatedProfile?.userId ? String(updatedProfile.userId) : null,
+      userId: userIdForPostApproval,
+      userEmail: userEmailForPostApproval,
       effective: {
         personalInfo: effective.personalInfo,
         contactInfo: effective.contactInfo,
@@ -105,8 +106,8 @@ async function publishPostApprovalEvents({
       paymentType: sub.paymentType ?? null,
       payrollNo: sub.payrollNo ?? null,
       paymentFrequency: sub.paymentFrequency ?? null,
-      userId: userIdForSubscription,
-      userEmail: userEmailForSubscription,
+      userId: userIdForPostApproval,
+      userEmail: userEmailForPostApproval,
       reviewerId,
       deactivatePreviousSubscriptionStatus:
         resolvedDeactivatePreviousSubscriptionStatus,

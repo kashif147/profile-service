@@ -582,7 +582,16 @@ exports.approveApplication = async (req, res, next) => {
             ? String(profileDoc.crmUserId)
             : null,
           memberId: profileDoc?.membershipNumber || null,
-          userId: profileDoc?.userId ? String(profileDoc.userId) : null,
+          userId:
+            profileDoc?.userId != null
+              ? String(profileDoc.userId)
+              : personal?.userId != null
+                ? String(personal.userId)
+                : null,
+          userEmail:
+            personal?.contactInfo?.personalEmail ||
+            personal?.contactInfo?.workEmail ||
+            null,
           effective: {
             personalInfo: effective.personalInfo,
             contactInfo: effective.contactInfo,
