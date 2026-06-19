@@ -1,7 +1,63 @@
 const crypto = require("crypto");
 const Profile = require("../models/profile.model.js");
+const User = require("../models/user.model.js");
 const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const { publishProfileAudit } = require("./profile.audit.publisher.js");
+
+async function resolvePortalUserServiceId({
+  tenantId,
+  profileUserId,
+  linkedUserId,
+  userEmail,
+}) {
+  if (tenantId && profileUserId) {
+    const syncedUser = await User.findOne({
+      _id: profileUserId,
+      tenantId,
+      userType: "PORTAL",
+      isActive: true,
+    })
+      .select("userId")
+      .lean();
+    if (syncedUser?.userId) {
+      return String(syncedUser.userId);
+    }
+  }
+
+  if (tenantId && linkedUserId) {
+    const syncedUser = await User.findOne({
+      tenantId,
+      userId: String(linkedUserId),
+      userType: "PORTAL",
+      isActive: true,
+    })
+      .select("userId")
+      .lean();
+    if (syncedUser?.userId) {
+      return String(syncedUser.userId);
+    }
+  }
+
+  if (tenantId && userEmail) {
+    const syncedUser = await User.findOne({
+      tenantId,
+      userEmail: String(userEmail).trim().toLowerCase(),
+      userType: "PORTAL",
+      isActive: true,
+    })
+      .select("userId")
+      .lean();
+    if (syncedUser?.userId) {
+      return String(syncedUser.userId);
+    }
+  }
+
+  return linkedUserId != null
+    ? String(linkedUserId)
+    : profileUserId != null
+      ? String(profileUserId)
+      : null;
+}
 
 /**
  * Publish approval side-effects after the Mongo transaction commits so
@@ -27,16 +83,16 @@ async function publishPostApprovalEvents({
     (isExistingProfile ? "Cancelled" : undefined);
 
   const sub = effective.subscriptionDetails || {};
-  const userIdForPostApproval =
-    updatedProfile?.userId != null
-      ? String(updatedProfile.userId)
-      : linkedUserId != null
-        ? String(linkedUserId)
-        : null;
   const userEmailForPostApproval =
     effective.contactInfo?.personalEmail ||
     effective.contactInfo?.workEmail ||
     null;
+  const userIdForPostApproval = await resolvePortalUserServiceId({
+    tenantId,
+    profileUserId: updatedProfile?.userId,
+    linkedUserId,
+    userEmail: userEmailForPostApproval,
+  });
 
   try {
     await ApplicationApprovalEventPublisher.publishApplicationApproved({
