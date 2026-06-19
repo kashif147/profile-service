@@ -34,6 +34,9 @@ const {
 const {
   publishPostApprovalEvents,
 } = require("./publishPostApprovalEvents.js");
+const {
+  resolvePortalUserServiceId,
+} = require("../helpers/portalUserIdentity.js");
 const { publishProfileAudit } = require("./profile.audit.publisher.js");
 
 function deepClone(o) {
@@ -450,7 +453,7 @@ async function rejectApplication({
     const personalForEvent = await PersonalDetails.findOne({
       applicationId: applicationId,
     })
-      .select("userId")
+      .select("userId contactInfo")
       .session(session)
       .lean();
 
@@ -478,15 +481,23 @@ async function rejectApplication({
     await overlay.save({ session });
 
     try {
+      const userEmail =
+        personalForEvent?.contactInfo?.personalEmail ||
+        personalForEvent?.contactInfo?.workEmail ||
+        null;
+      const notificationUserId = await resolvePortalUserServiceId({
+        tenantId,
+        profileUserId: personalForEvent?.userId,
+        linkedUserId: personalForEvent?.userId,
+        userEmail,
+      });
       await ApplicationApprovalEventPublisher.publishApplicationRejected({
         applicationId,
         reviewerId,
         reason,
         notes,
         tenantId,
-        userId: personalForEvent?.userId
-          ? String(personalForEvent.userId)
-          : null,
+        userId: notificationUserId,
         correlationId: crypto.randomUUID(),
       });
     } catch (publishError) {

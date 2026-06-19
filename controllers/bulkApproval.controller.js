@@ -58,6 +58,9 @@ const {
   fetchLatestApplicationPayment,
   capturePaymentIntent,
 } = require("../services/account.service.client.js");
+const {
+  assertSalaryDeductionAllowedForWorkLocation,
+} = require("../helpers/workLocationPayment.helper.js");
 
 const {
   parseDateOnlyToUtcNoon,
@@ -174,30 +177,6 @@ async function approveSingleApplication({
       };
     }
 
-    const existingSubscriptionForPayment = await SubscriptionDetails.findOne({
-      applicationId,
-      tenantId: String(tenantId),
-    })
-      .select("paymentDetails")
-      .lean();
-    const latestPayment = await fetchLatestApplicationPayment(
-      applicationId,
-      tenantId,
-      req,
-    );
-    const paymentIntentId =
-      latestPayment?.paymentIntentId ||
-      resolvePaymentIntentId(existingSubscriptionForPayment);
-    let captureResult = null;
-    if (paymentIntentId) {
-      captureResult = await capturePaymentIntent(paymentIntentId, tenantId, req);
-      if (captureResult.status !== "succeeded") {
-        throw new Error(
-          "Payment capture did not succeed. Application was not processed.",
-        );
-      }
-    }
-
     try {
       await ensureDuplicateReviewAllowsApproval(applicationId, tenantId);
     } catch (duplicateError) {
@@ -259,6 +238,36 @@ async function approveSingleApplication({
       ...effective,
       subscriptionDetails: normalizedSubscriptionDetails,
     };
+
+    await assertSalaryDeductionAllowedForWorkLocation(
+      effective.subscriptionDetails,
+      effective.professionalDetails,
+      { req, tenantId },
+    );
+
+    const existingSubscriptionForPayment = await SubscriptionDetails.findOne({
+      applicationId,
+      tenantId: String(tenantId),
+    })
+      .select("paymentDetails")
+      .lean();
+    const latestPayment = await fetchLatestApplicationPayment(
+      applicationId,
+      tenantId,
+      req,
+    );
+    const paymentIntentId =
+      latestPayment?.paymentIntentId ||
+      resolvePaymentIntentId(existingSubscriptionForPayment);
+    let captureResult = null;
+    if (paymentIntentId) {
+      captureResult = await capturePaymentIntent(paymentIntentId, tenantId, req);
+      if (captureResult.status !== "succeeded") {
+        throw new Error(
+          "Payment capture did not succeed. Application was not processed.",
+        );
+      }
+    }
 
     // Flatten payload for profile storage
     const flattenedProfileFields = flattenProfilePayload(effective);

@@ -57,6 +57,18 @@ function matchesWorkLocationLookup(lookup, workLocationKey) {
   return candidates.includes(key);
 }
 
+function unwrapLookupPayload(payload) {
+  if (!payload || typeof payload !== "object") return payload;
+  if (payload.lookup && typeof payload.lookup === "object") {
+    return {
+      ...payload.lookup,
+      processSalaryDeduction:
+        payload.lookup.processSalaryDeduction ?? payload.processSalaryDeduction,
+    };
+  }
+  return payload;
+}
+
 async function fetchLookupById(id, headers) {
   const base = USER_SERVICE_URL.replace(/\/$/, "");
   const response = await axios.get(`${base}/api/lookup/${id}`, {
@@ -70,7 +82,7 @@ async function fetchLookupById(id, headers) {
   }
 
   const body = response.data;
-  return body?.data ?? body;
+  return unwrapLookupPayload(body?.data ?? body);
 }
 
 async function getWorkLocTypeId(headers) {
@@ -121,10 +133,10 @@ async function findWorkLocationLookupByName(workLocationKey, headers) {
   const results = Array.isArray(response.data?.results)
     ? response.data.results
     : [];
-  const match = results.find(({ lookup }) =>
-    matchesWorkLocationLookup(lookup, workLocationKey)
+  const match = results.find((item) =>
+    matchesWorkLocationLookup(unwrapLookupPayload(item), workLocationKey)
   );
-  return match?.lookup || null;
+  return unwrapLookupPayload(match) || null;
 }
 
 async function findWorkLocationLookup(workLocationKey, headers) {

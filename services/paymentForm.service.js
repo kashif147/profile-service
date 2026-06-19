@@ -32,6 +32,9 @@ const {
 const { encryptField, decryptField } = require("../helpers/paymentFormCrypto.js");
 const azureBlob = require("./azure.blob.service.js");
 const PaymentFormEventPublisher = require("../rabbitMQ/publishers/paymentForm.publisher.js");
+const {
+  resolvePortalUserServiceId,
+} = require("../helpers/portalUserIdentity.js");
 
 const FORM_TYPE_LABELS = {
   STANDING_ORDER: "Standing Order",
@@ -1126,10 +1129,20 @@ async function approveForm(id, tenantId, req) {
   await syncSubscriptionPaymentType(form, req);
 
   const profile = await Profile.findById(form.profileId).lean();
-  const memberUserId =
+  const storedMemberUserId =
     form.userId?.toString?.() || profile?.userId?.toString?.() || null;
-  if (!form.userId && memberUserId) {
-    form.userId = memberUserId;
+  const memberUserId = await resolvePortalUserServiceId({
+    tenantId,
+    profileUserId: storedMemberUserId,
+    linkedUserId: storedMemberUserId,
+    userEmail:
+      profile?.contactInfo?.personalEmail ||
+      profile?.contactInfo?.workEmail ||
+      profile?.normalizedEmail ||
+      null,
+  });
+  if (!form.userId && storedMemberUserId) {
+    form.userId = storedMemberUserId;
     await form.save();
   }
 
@@ -1312,9 +1325,21 @@ async function queueMemberNotificationEmail(
 
   // Approval push is sent via members.payment-form.approved.v1 (not gated on email).
   if (trigger !== "approval") {
+    const storedMemberUserId =
+      form.userId?.toString?.() || profile?.userId?.toString?.() || null;
+    const memberUserId = await resolvePortalUserServiceId({
+      tenantId: form.tenantId,
+      profileUserId: storedMemberUserId,
+      linkedUserId: storedMemberUserId,
+      userEmail:
+        profile?.contactInfo?.personalEmail ||
+        profile?.contactInfo?.workEmail ||
+        profile?.normalizedEmail ||
+        null,
+    });
     await PaymentFormEventPublisher.publishMemberNotificationRequested({
       tenantId: form.tenantId,
-      userId: form.userId || profile?.userId?.toString?.(),
+      userId: memberUserId,
       profileId: String(form.profileId),
       title: resolvedSubject,
       body: resolvedBody,

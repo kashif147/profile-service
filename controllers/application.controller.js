@@ -26,6 +26,9 @@ const {
   cancelPaymentIntent,
   normalizePaymentStatus,
 } = require("../services/account.service.client.js");
+const {
+  resolvePortalUserServiceId,
+} = require("../helpers/portalUserIdentity.js");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
 
 /** True if the client sent at least one non-empty filter entry (not `{}`). */
@@ -572,6 +575,16 @@ exports.approveApplication = async (req, res, next) => {
           subscriptionDetails: subscription?.subscriptionDetails,
         };
         const sub = subscription?.subscriptionDetails || {};
+        const userEmail =
+          personal?.contactInfo?.personalEmail ||
+          personal?.contactInfo?.workEmail ||
+          null;
+        const notificationUserId = await resolvePortalUserServiceId({
+          tenantId,
+          profileUserId: profileDoc?.userId,
+          linkedUserId: personal?.userId,
+          userEmail,
+        });
         await ApplicationApprovalEventPublisher.publishApplicationApproved({
           applicationId,
           reviewerId: creatorId,
@@ -582,16 +595,8 @@ exports.approveApplication = async (req, res, next) => {
             ? String(profileDoc.crmUserId)
             : null,
           memberId: profileDoc?.membershipNumber || null,
-          userId:
-            profileDoc?.userId != null
-              ? String(profileDoc.userId)
-              : personal?.userId != null
-                ? String(personal.userId)
-                : null,
-          userEmail:
-            personal?.contactInfo?.personalEmail ||
-            personal?.contactInfo?.workEmail ||
-            null,
+          userId: notificationUserId,
+          userEmail,
           effective: {
             personalInfo: effective.personalInfo,
             contactInfo: effective.contactInfo,
@@ -634,15 +639,25 @@ exports.approveApplication = async (req, res, next) => {
     } else if (decision === APPLICATION_STATUS.REJECTED) {
       try {
         const personal = await PersonalDetails.findOne({ applicationId })
-          .select("userId")
+          .select("userId contactInfo")
           .lean();
+        const userEmail =
+          personal?.contactInfo?.personalEmail ||
+          personal?.contactInfo?.workEmail ||
+          null;
+        const notificationUserId = await resolvePortalUserServiceId({
+          tenantId,
+          profileUserId: personal?.userId,
+          linkedUserId: personal?.userId,
+          userEmail,
+        });
         await ApplicationApprovalEventPublisher.publishApplicationRejected({
           applicationId,
           reviewerId: creatorId,
           reason: comments || null,
           notes: null,
           tenantId: tenantId != null ? String(tenantId) : null,
-          userId: personal?.userId ? String(personal.userId) : null,
+          userId: notificationUserId,
           correlationId: crypto.randomUUID(),
         });
       } catch (publishError) {

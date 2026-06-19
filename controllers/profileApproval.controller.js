@@ -22,6 +22,9 @@ const {
   publishPostApprovalEvents,
 } = require("../services/publishPostApprovalEvents.js");
 const {
+  resolvePortalUserServiceId,
+} = require("../helpers/portalUserIdentity.js");
+const {
   applyNoFeeMembershipPaymentDefaults,
   resolveSubscriptionPaymentFallbacks,
   hasPaymentTypeValue,
@@ -41,6 +44,9 @@ const {
   cancelPaymentIntent,
   normalizePaymentStatus,
 } = require("../services/account.service.client.js");
+const {
+  assertSalaryDeductionAllowedForWorkLocation,
+} = require("../helpers/workLocationPayment.helper.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -192,47 +198,6 @@ async function approveApplication(req, res, next) {
       return next(AppError.conflict("Application has already been processed."));
     }
 
-    const existingSubscription = await SubscriptionDetails.findOne({
-      applicationId,
-      tenantId: String(tenantId),
-    })
-      .select("paymentDetails")
-      .lean();
-    const { paymentIntentId, latestPayment } = await resolveLatestPaymentIntentId({
-      applicationId,
-      tenantId,
-      req,
-      fallbackSubscription: existingSubscription,
-    });
-    let captureResult = null;
-
-    if (paymentIntentId) {
-      try {
-        captureResult = await capturePaymentIntent(
-          paymentIntentId,
-          tenantId,
-          req,
-        );
-      } catch (captureError) {
-        await session.abortTransaction();
-        return next(
-          AppError.conflict(
-            captureError.message ||
-              "Payment capture failed. Application was not approved.",
-          ),
-        );
-      }
-
-      if (captureResult.status !== "succeeded") {
-        await session.abortTransaction();
-        return next(
-          AppError.conflict(
-            "Payment capture did not succeed. Application was not approved.",
-          ),
-        );
-      }
-    }
-
     const { submission: serverSubmission } = await loadSubmission(
       applicationId
     );
@@ -300,6 +265,53 @@ async function approveApplication(req, res, next) {
       tenantId,
     );
 
+    await assertSalaryDeductionAllowedForWorkLocation(
+      effective.subscriptionDetails,
+      effective.professionalDetails,
+      { req, tenantId },
+    );
+
+    const existingSubscription = await SubscriptionDetails.findOne({
+      applicationId,
+      tenantId: String(tenantId),
+    })
+      .select("paymentDetails")
+      .lean();
+    const { paymentIntentId, latestPayment } = await resolveLatestPaymentIntentId({
+      applicationId,
+      tenantId,
+      req,
+      fallbackSubscription: existingSubscription,
+    });
+    let captureResult = null;
+
+    if (paymentIntentId) {
+      try {
+        captureResult = await capturePaymentIntent(
+          paymentIntentId,
+          tenantId,
+          req,
+        );
+      } catch (captureError) {
+        await session.abortTransaction();
+        return next(
+          AppError.conflict(
+            captureError.message ||
+              "Payment capture failed. Application was not approved.",
+          ),
+        );
+      }
+
+      if (captureResult.status !== "succeeded") {
+        await session.abortTransaction();
+        return next(
+          AppError.conflict(
+            "Payment capture did not succeed. Application was not approved.",
+          ),
+        );
+      }
+    }
+
     const {
       profile,
       linkedUserId,
@@ -323,6 +335,11 @@ async function approveApplication(req, res, next) {
       ...approvalEffective,
       subscriptionDetails: approvalSubscriptionDetails,
     };
+    await assertSalaryDeductionAllowedForWorkLocation(
+      approvalEffective.subscriptionDetails,
+      approvalEffective.professionalDetails,
+      { req, tenantId },
+    );
 
     // Update main application models with approved data
     if (approvalEffective.personalInfo) {
@@ -531,7 +548,7 @@ async function rejectApplication(req, res, next) {
     const personalForEvent = await PersonalDetails.findOne({
       applicationId: applicationId,
     })
-      .select("userId")
+      .select("userId contactInfo")
       .session(session)
       .lean();
 
@@ -572,15 +589,23 @@ async function rejectApplication(req, res, next) {
     }
 
     try {
+      const userEmail =
+        personalForEvent?.contactInfo?.personalEmail ||
+        personalForEvent?.contactInfo?.workEmail ||
+        null;
+      const notificationUserId = await resolvePortalUserServiceId({
+        tenantId,
+        profileUserId: personalForEvent?.userId,
+        linkedUserId: personalForEvent?.userId,
+        userEmail,
+      });
       await ApplicationApprovalEventPublisher.publishApplicationRejected({
         applicationId,
         reviewerId,
         reason,
         notes,
         tenantId,
-        userId: personalForEvent?.userId
-          ? String(personalForEvent.userId)
-          : null,
+        userId: notificationUserId,
         correlationId: crypto.randomUUID(),
       });
     } catch (publishError) {
