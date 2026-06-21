@@ -1,8 +1,8 @@
 /**
  * membershipCategory is owned by subscription details, but the portal UI still
- * sends it on professional-details create/update. Joi strips the field from
- * validated payloads — these helpers capture it from the raw body and keep
- * subscription + professional reads in sync for portal flows.
+ * sends it on professional-details create/update. These helpers capture it
+ * from the raw body and keep subscription + professional reads in sync for
+ * portal flows.
  */
 
 function normalizeMembershipCategory(value) {

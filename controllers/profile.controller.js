@@ -226,6 +226,94 @@ const allowedUpdateFields = new Set([
   "deactivatedAt",
 ]);
 
+const FULL_MEMBERSHIP_UPDATE_ROLES = new Set([
+  "SU",
+  "SUPER USER",
+  "ASU",
+  "ASSISTANT SUPER USER",
+  "MO",
+  "MEMBERSHIP OFFICER",
+  "AMO",
+  "ASSISTANT MEMBERSHIP OFFICER",
+]);
+
+const LIMITED_MEMBERSHIP_UPDATE_FIELDS = new Set([
+  "personalInfo",
+  "contactInfo",
+  "preferences",
+  "normalizedEmail",
+]);
+
+function normalizeRoleValue(role) {
+  if (!role) return "";
+  const raw =
+    typeof role === "string"
+      ? role
+      : role.code || role.name || role.roleCode || role.roleName || "";
+  return String(raw).trim().toUpperCase();
+}
+
+function collectRequestRoles(req) {
+  const roles = [
+    ...(Array.isArray(req.roles) ? req.roles : []),
+    ...(Array.isArray(req.user?.roles) ? req.user.roles : []),
+    ...(Array.isArray(req.ctx?.roles) ? req.ctx.roles : []),
+  ];
+  return [...new Set(roles.map(normalizeRoleValue).filter(Boolean))];
+}
+
+function collectRequestPermissions(req) {
+  const permissions = [
+    ...(Array.isArray(req.permissions) ? req.permissions : []),
+    ...(Array.isArray(req.user?.permissions) ? req.user.permissions : []),
+    ...(Array.isArray(req.ctx?.permissions) ? req.ctx.permissions : []),
+  ];
+  return [...new Set(permissions.filter(Boolean))];
+}
+
+function hasFullMembershipUpdateRole(req) {
+  return collectRequestRoles(req).some((role) =>
+    FULL_MEMBERSHIP_UPDATE_ROLES.has(role),
+  );
+}
+
+function hasMembershipProfileWritePermission(req) {
+  const permissions = collectRequestPermissions(req);
+  return permissions.some((permission) =>
+    [
+      "*",
+      "admin",
+      "crm:member:write",
+      "crm:member:update",
+      "profile:write",
+      "profile:update",
+      "portal:write",
+    ].includes(permission),
+  );
+}
+
+function enforceMembershipProfileUpdateScope(req, updates) {
+  if (hasFullMembershipUpdateRole(req)) return null;
+
+  if (!hasMembershipProfileWritePermission(req)) {
+    return AppError.forbidden(
+      "Membership profile write permission required",
+    );
+  }
+
+  const disallowedFields = Object.keys(updates).filter(
+    (key) => !LIMITED_MEMBERSHIP_UPDATE_FIELDS.has(key),
+  );
+  if (disallowedFields.length > 0) {
+    return AppError.forbidden(
+      "Only Membership Officer and Assistant Membership Officer roles can update full membership details",
+      { disallowedFields },
+    );
+  }
+
+  return null;
+}
+
 function escapeRegex(value = "") {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -638,6 +726,11 @@ async function updateProfile(req, res, next) {
 
     if (Object.keys(updates).length === 0) {
       return next(AppError.badRequest("No valid fields provided for update"));
+    }
+
+    const scopeError = enforceMembershipProfileUpdateScope(req, updates);
+    if (scopeError) {
+      return next(scopeError);
     }
 
     const profile = await Profile.findOne({
