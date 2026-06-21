@@ -25,10 +25,6 @@ async function publishPostApprovalEvents({
   deactivatePreviousSubscriptionStatus,
   correlationId = crypto.randomUUID(),
 }) {
-  const resolvedDeactivatePreviousSubscriptionStatus =
-    deactivatePreviousSubscriptionStatus ??
-    (isExistingProfile ? "Cancelled" : undefined);
-
   const sub = effective.subscriptionDetails || {};
   const userEmailForPostApproval =
     effective.contactInfo?.personalEmail ||
@@ -112,8 +108,7 @@ async function publishPostApprovalEvents({
       userId: userIdForPostApproval,
       userEmail: userEmailForPostApproval,
       reviewerId,
-      deactivatePreviousSubscriptionStatus:
-        resolvedDeactivatePreviousSubscriptionStatus,
+      deactivatePreviousSubscriptionStatus,
       correlationId: crypto.randomUUID(),
     });
   } catch (err) {

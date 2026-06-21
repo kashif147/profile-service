@@ -67,6 +67,13 @@ async function submitDuplicateReviewDecision(req, res, next) {
     if (!action || !Object.values(DUPLICATE_REVIEW_ACTION).includes(action)) {
       return next(AppError.badRequest("A valid duplicate review action is required"));
     }
+    if (action === DUPLICATE_REVIEW_ACTION.IGNORE_MATCH) {
+      return next(
+        AppError.badRequest(
+          "Ignore is no longer available for application duplicate review. Use Create New Profile for false positive matches."
+        )
+      );
+    }
 
     const result = await recordDuplicateDecision({
       applicationId,

@@ -165,7 +165,7 @@ module.exports = {
   ExecutiveCouncilApprovalBody,
   BulkExecutiveCouncilApprovalBody,
   DuplicateReviewDecisionBody: z.object({
-    action: z.enum(["LINK", "MERGE", "MARKED_NEW", "IGNORE_MATCH"]),
+    action: z.enum(["LINK", "MERGE", "MARKED_NEW"]),
     sourceType: z.enum(["PROFILE", "APPLICATION"]).optional(),
     sourceId: z.string().optional(),
     decisionReason: z.string().max(2000).optional(),
@@ -174,7 +174,7 @@ module.exports = {
       .optional(),
   }).superRefine((data, ctx) => {
     if (
-      (data.action === "LINK" || data.action === "MERGE" || data.action === "IGNORE_MATCH") &&
+      (data.action === "LINK" || data.action === "MERGE") &&
       (!data.sourceType || !data.sourceId)
     ) {
       ctx.addIssue({

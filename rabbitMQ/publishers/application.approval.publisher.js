@@ -236,6 +236,10 @@ class ApplicationApprovalEventPublisher {
     correlationId,
     isCurrent, // optional override for subscription-service upsert (historical / non-current row)
     deactivatePreviousSubscriptionStatus, // e.g. Cancelled when tagging application to existing profile
+    membershipMovement,
+    previousSubscriptionId,
+    previousMembershipStatus,
+    movementResolvedAt,
   }) {
     try {
       console.log(
@@ -319,6 +323,21 @@ class ApplicationApprovalEventPublisher {
       if (deactivatePreviousSubscriptionStatus) {
         messageBody.deactivatePreviousSubscriptionStatus =
           deactivatePreviousSubscriptionStatus;
+      }
+      if (membershipMovement) {
+        messageBody.membershipMovement = membershipMovement;
+      }
+      if (previousSubscriptionId) {
+        messageBody.previousSubscriptionId = String(previousSubscriptionId);
+      }
+      if (previousMembershipStatus) {
+        messageBody.previousMembershipStatus = previousMembershipStatus;
+      }
+      if (movementResolvedAt) {
+        messageBody.movementResolvedAt =
+          movementResolvedAt instanceof Date
+            ? movementResolvedAt.toISOString()
+            : String(movementResolvedAt);
       }
 
       const result = await publisher.publish(

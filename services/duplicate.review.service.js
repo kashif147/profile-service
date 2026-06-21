@@ -188,6 +188,12 @@ async function recordDuplicateDecision({
   decisionReason,
   mergeFieldChoices,
 }) {
+  if (action === DUPLICATE_REVIEW_ACTION.IGNORE_MATCH) {
+    throw AppError.badRequest(
+      "Ignore is no longer available for application duplicate review. Use Create New Profile for false positive matches."
+    );
+  }
+
   const personal = await PersonalDetails.findOne({ applicationId });
   if (!personal) {
     throw AppError.notFound("Application not found");

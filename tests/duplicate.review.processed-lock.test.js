@@ -155,7 +155,7 @@ describe("application duplicate review processed lock", () => {
     });
   });
 
-  test("allows unprocessed applications to resolve duplicate decisions", async () => {
+  test("blocks ignore for new duplicate-review decisions", async () => {
     const save = jest.fn().mockResolvedValue();
     const personal = {
       applicationId: "app-1",
@@ -180,7 +180,7 @@ describe("application duplicate review processed lock", () => {
     };
     PersonalDetails.findOne.mockResolvedValue(personal);
 
-    const result = await recordDuplicateDecision({
+    await expect(recordDuplicateDecision({
       applicationId: "app-1",
       tenantId: "tenant-1",
       reviewerId,
@@ -188,21 +188,12 @@ describe("application duplicate review processed lock", () => {
       sourceType: "APPLICATION",
       sourceId: "app-2",
       decisionReason: "False positive",
+    })).rejects.toMatchObject({
+      status: 400,
+      code: "BAD_REQUEST",
     });
 
-    expect(save).toHaveBeenCalledTimes(1);
-    expect(result).toMatchObject({
-      duplicateReview: {
-        status: DUPLICATE_REVIEW_STATUS.IGNORED,
-        decisionReason: "False positive",
-      },
-      hasPotentialDuplicate: false,
-    });
-    expect(publishDuplicateReviewDecidedAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: DUPLICATE_REVIEW_ACTION.IGNORE_MATCH,
-        applicationId: "app-1",
-      }),
-    );
+    expect(save).not.toHaveBeenCalled();
+    expect(publishDuplicateReviewDecidedAudit).not.toHaveBeenCalled();
   });
 });

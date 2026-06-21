@@ -585,54 +585,94 @@ exports.approveApplication = async (req, res, next) => {
           linkedUserId: personal?.userId,
           userEmail,
         });
-        await ApplicationApprovalEventPublisher.publishApplicationApproved({
-          applicationId,
-          reviewerId: creatorId,
-          profileId: personal?.profileId ? String(personal.profileId) : null,
-          applicationStatus: APPLICATION_STATUS.PROCESSED,
-          isExistingProfile: !!profileDoc,
-          crmUserId: profileDoc?.crmUserId
-            ? String(profileDoc.crmUserId)
-            : null,
-          memberId: profileDoc?.membershipNumber || null,
-          userId: notificationUserId,
-          userEmail,
-          effective: {
-            personalInfo: effective.personalInfo,
-            contactInfo: effective.contactInfo,
-            professionalDetails: effective.professionalDetails,
-            subscriptionDetails: effective.subscriptionDetails,
-          },
-          subscriptionAttributes: {
-            payrollNo: sub?.payrollNo ?? null,
-            paymentFrequency: sub?.paymentFrequency ?? null,
-            otherIrishTradeUnion: !!sub?.otherIrishTradeUnion,
-            otherIrishTradeUnionName: sub?.otherIrishTradeUnionName ?? null,
-            otherScheme: !!sub?.otherScheme,
-            recuritedBy: sub?.recuritedBy ?? null,
-            recuritedByMembershipNo: sub?.recuritedByMembershipNo ?? null,
-            confirmedRecruiterProfileId: sub?.confirmedRecruiterProfileId ?? null,
-            primarySection: sub?.primarySection ?? null,
-            otherPrimarySection: sub?.otherPrimarySection ?? null,
-            secondarySection: sub?.secondarySection ?? null,
-            otherSecondarySection: sub?.otherSecondarySection ?? null,
-            incomeProtectionScheme: !!sub?.incomeProtectionScheme,
-            inmoRewards: !!sub?.inmoRewards,
-            valueAddedServices: !!sub?.valueAddedServices,
-            termsAndConditions: sub?.termsAndConditions !== false,
-            membershipCategory: sub?.membershipCategory ?? null,
-            membershipStatus: sub?.membershipStatus ?? null,
-            dateJoined: sub?.dateJoined ?? null,
-            submissionDate: sub?.submissionDate ?? null,
-            dateLeft: sub?.dateLeft ?? null,
-            reasonLeft: sub?.reasonLeft ?? null,
-          },
-          tenantId: tenantId != null ? String(tenantId) : null,
-          correlationId: crypto.randomUUID(),
-        });
+        try {
+          await ApplicationApprovalEventPublisher.publishApplicationApproved({
+            applicationId,
+            reviewerId: creatorId,
+            profileId: personal?.profileId ? String(personal.profileId) : null,
+            applicationStatus: APPLICATION_STATUS.PROCESSED,
+            isExistingProfile: !!profileDoc,
+            crmUserId: profileDoc?.crmUserId
+              ? String(profileDoc.crmUserId)
+              : null,
+            memberId: profileDoc?.membershipNumber || null,
+            userId: notificationUserId,
+            userEmail,
+            effective: {
+              personalInfo: effective.personalInfo,
+              contactInfo: effective.contactInfo,
+              professionalDetails: effective.professionalDetails,
+              subscriptionDetails: effective.subscriptionDetails,
+            },
+            subscriptionAttributes: {
+              payrollNo: sub?.payrollNo ?? null,
+              paymentFrequency: sub?.paymentFrequency ?? null,
+              otherIrishTradeUnion: !!sub?.otherIrishTradeUnion,
+              otherIrishTradeUnionName: sub?.otherIrishTradeUnionName ?? null,
+              otherScheme: !!sub?.otherScheme,
+              recuritedBy: sub?.recuritedBy ?? null,
+              recuritedByMembershipNo: sub?.recuritedByMembershipNo ?? null,
+              confirmedRecruiterProfileId: sub?.confirmedRecruiterProfileId ?? null,
+              primarySection: sub?.primarySection ?? null,
+              otherPrimarySection: sub?.otherPrimarySection ?? null,
+              secondarySection: sub?.secondarySection ?? null,
+              otherSecondarySection: sub?.otherSecondarySection ?? null,
+              incomeProtectionScheme: !!sub?.incomeProtectionScheme,
+              inmoRewards: !!sub?.inmoRewards,
+              valueAddedServices: !!sub?.valueAddedServices,
+              termsAndConditions: sub?.termsAndConditions !== false,
+              membershipCategory: sub?.membershipCategory ?? null,
+              membershipStatus: sub?.membershipStatus ?? null,
+              dateJoined: sub?.dateJoined ?? null,
+              submissionDate: sub?.submissionDate ?? null,
+              dateLeft: sub?.dateLeft ?? null,
+              reasonLeft: sub?.reasonLeft ?? null,
+            },
+            tenantId: tenantId != null ? String(tenantId) : null,
+            correlationId: crypto.randomUUID(),
+          });
+        } catch (publishError) {
+          console.error(
+            "[processApplication] Failed to publish application processed event:",
+            publishError.message,
+          );
+        }
+
+        if (personal?.profileId && subscription?.subscriptionDetails) {
+          try {
+            await ApplicationApprovalEventPublisher.publishSubscriptionUpsertRequested({
+              tenantId: tenantId != null ? String(tenantId) : null,
+              profileId: String(personal.profileId),
+              applicationId,
+              memberId: profileDoc?.membershipNumber || null,
+              membershipCategory:
+                sub?.membershipCategory ??
+                effective.professionalDetails?.membershipCategory ??
+                null,
+              dateJoined: sub?.dateJoined ?? new Date(),
+              submissionDate: sub?.submissionDate ?? null,
+              applicationDate: sub?.applicationDate ?? effective.applicationDate ?? null,
+              paymentType: sub?.paymentType ?? null,
+              payrollNo: sub?.payrollNo ?? null,
+              paymentFrequency: sub?.paymentFrequency ?? null,
+              userId: notificationUserId,
+              userEmail,
+              reviewerId: creatorId,
+              deactivatePreviousSubscriptionStatus: profileDoc
+                ? "Cancelled"
+                : undefined,
+              correlationId: crypto.randomUUID(),
+            });
+          } catch (publishError) {
+            console.error(
+              "[processApplication] Failed to publish subscription upsert event:",
+              publishError.message,
+            );
+          }
+        }
       } catch (publishError) {
         console.error(
-          "[processApplication] Failed to publish application processed event:",
+          "[processApplication] Failed to prepare processed-application side effects:",
           publishError.message,
         );
       }
