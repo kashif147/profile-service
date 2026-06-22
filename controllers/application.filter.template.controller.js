@@ -38,9 +38,42 @@ function canEditSystemDefaultTemplate(req) {
   );
 }
 
+function normalizeTemplateColumns(templateType, columns) {
+  const type = String(templateType || "application").trim().toLowerCase();
+  if (type !== "application" || !Array.isArray(columns)) return columns;
+
+  const normalized = [];
+  const seen = new Set();
+  columns.forEach((column) => {
+    const key =
+      column === "professionalDetails.membershipCategory" ||
+      column === "subscriptionDetails.membershipCategory"
+        ? "membershipCategory"
+        : column;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    normalized.push(key);
+  });
+  return normalized;
+}
+
 /** Map client payload; drop soft-delete meta — visible toolbar layout uses visibleFilters. */
-function normalizeTemplateRequestBody(body = {}) {
+function normalizeTemplateRequestBody(body = {}, fallbackTemplateType = "application") {
   const normalized = { ...body };
+  const templateType = normalized.templateType ?? fallbackTemplateType;
+  if (Array.isArray(normalized.columns)) {
+    normalized.columns = normalizeTemplateColumns(templateType, normalized.columns);
+  }
+  if (normalized.columnLabels && typeof normalized.columnLabels === "object") {
+    normalized.columnLabels = Object.entries(normalized.columnLabels).reduce(
+      (acc, [key, value]) => {
+        const [normalizedKey] = normalizeTemplateColumns(templateType, [key]);
+        if (normalizedKey) acc[normalizedKey] = value;
+        return acc;
+      },
+      {},
+    );
+  }
   if (
     normalized.visibleFilters == null &&
     Array.isArray(normalized.meta?.visibleToolbarFilters)
@@ -202,7 +235,10 @@ exports.updateTemplate = async (req, res, next) => {
     );
 
     const bodyForValidation = {
-      ...normalizeTemplateRequestBody(req.body),
+      ...normalizeTemplateRequestBody(
+        req.body,
+        existingTemplate?.templateType ?? "application",
+      ),
       templateType:
         req.body.templateType ?? existingTemplate?.templateType ?? "application",
     };
@@ -311,4 +347,3 @@ exports.getDefaultTemplate = async (req, res, next) => {
     return next(error);
   }
 };
-

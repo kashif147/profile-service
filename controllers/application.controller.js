@@ -31,6 +31,24 @@ const {
 } = require("../helpers/portalUserIdentity.js");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
 
+function normalizeApplicationTemplateColumns(columns = []) {
+  if (!Array.isArray(columns)) return [];
+
+  const normalized = [];
+  const seen = new Set();
+  columns.forEach((column) => {
+    const key =
+      column === "professionalDetails.membershipCategory" ||
+      column === "subscriptionDetails.membershipCategory"
+        ? "membershipCategory"
+        : column;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    normalized.push(key);
+  });
+  return normalized;
+}
+
 /** True if the client sent at least one non-empty filter entry (not `{}`). */
 function requestHasUsableFilters(bodyFilters) {
   if (
@@ -352,10 +370,11 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
     }
 
     // Use ad-hoc request columns when provided, else template columns.
-    const columns =
+    const columns = normalizeApplicationTemplateColumns(
       Array.isArray(req.body?.columns) && req.body.columns.length > 0
         ? req.body.columns
-        : template.columns || [];
+        : template.columns || [],
+    );
 
     // Get applications with filters using the NEW service method
     const result = await applicationService.getApplicationsWithTemplateFilters(

@@ -40,6 +40,22 @@ function buildSubscriptionPayload(subscriptionDetails, membershipCategory) {
   return subscriptionDetailsToPlain(subscriptionDetails.subscriptionDetails);
 }
 
+function resolveApplicationMembershipCategory(professionalDetails, subscriptionDetails) {
+  const subscriptionCategory =
+    subscriptionDetails?.subscriptionDetails?.membershipCategory;
+  if (subscriptionCategory != null && subscriptionCategory !== "") {
+    return subscriptionCategory;
+  }
+
+  const professionalCategory =
+    professionalDetails?.professionalDetails?.membershipCategory;
+  if (professionalCategory != null && professionalCategory !== "") {
+    return professionalCategory;
+  }
+
+  return null;
+}
+
 function normalizePaymentStatusForDisplay(status) {
   const value = String(status || "").trim().toLowerCase();
   if (!value) return null;
@@ -66,13 +82,9 @@ function buildPaymentDetailsPayload(subscriptionDetails) {
   };
 }
 
-async function buildProfessionalPayload(
-  professionalDetails,
-  membershipCategory,
-  subscriptionDetails,
-) {
+async function buildProfessionalPayload(professionalDetails, subscriptionDetails) {
   if (!professionalDetails) {
-    return membershipCategory !== null ? { membershipCategory } : null;
+    return null;
   }
   const profPlain = subscriptionDetailsToPlain(
     professionalDetails.professionalDetails,
@@ -85,10 +97,7 @@ async function buildProfessionalPayload(
     profPlain,
     legacyFields,
   );
-  return {
-    ...mergedProfessional,
-    ...(membershipCategory != null ? { membershipCategory } : {}),
-  };
+  return mergedProfessional;
 }
 
 /** Match documents where meta.deleted is false or unset (legacy rows). */
@@ -306,6 +315,9 @@ async function enrichApplicationsForList(applications) {
         applicationId: app.applicationId,
       }).lean();
 
+      const professional = await ProfessionalDetails.findOne({
+        applicationId: app.applicationId,
+      }).lean();
       const subscriptionData = subscription?.subscriptionDetails || {};
       const dateJoined = subscriptionData.dateJoined;
       const submissionDate = subscriptionData.submissionDate;
@@ -358,7 +370,7 @@ async function enrichApplicationsForList(applications) {
       return {
         applicationId: app.applicationId,
         membershipCategory:
-          subscription?.subscriptionDetails?.membershipCategory ?? null,
+          resolveApplicationMembershipCategory(professional, subscription),
         submissionDate:
           submissionDate != null
             ? (submissionDate.toISOString?.() ?? submissionDate)
@@ -528,12 +540,13 @@ exports.getApplicationWithDetails = (applicationId) =>
         findSubscriptionRecord(applicationId, tenantId),
       ]);
 
-      const membershipCategory =
-        subscriptionDetails?.subscriptionDetails?.membershipCategory ?? null;
+      const membershipCategory = resolveApplicationMembershipCategory(
+        professionalDetails,
+        subscriptionDetails,
+      );
 
       const professionalPayload = await buildProfessionalPayload(
         professionalDetails,
-        membershipCategory,
         subscriptionDetails,
       );
 
@@ -545,6 +558,7 @@ exports.getApplicationWithDetails = (applicationId) =>
       const applicationDetails = {
         applicationId: personalDetails.applicationId,
         userId: personalDetails.userId,
+        membershipCategory,
         membershipNumber: subscriptionDetails
           ? subscriptionDetails.membershipNumber
           : null,
@@ -616,13 +630,13 @@ exports.getAllApplicationsWithDetails = (
                 ),
               ]);
 
-            const membershipCategory =
-              subscriptionDetails?.subscriptionDetails?.membershipCategory ??
-              null;
+            const membershipCategory = resolveApplicationMembershipCategory(
+              professionalDetails,
+              subscriptionDetails,
+            );
 
             const professionalPayload = await buildProfessionalPayload(
               professionalDetails,
-              membershipCategory,
               subscriptionDetails,
             );
 
@@ -634,6 +648,7 @@ exports.getAllApplicationsWithDetails = (
             const row = {
               applicationId: application.applicationId,
               userId: application.userId,
+              membershipCategory,
               membershipNumber: subscriptionDetails
                 ? subscriptionDetails.membershipNumber
                 : null,
@@ -938,13 +953,13 @@ exports.getApplicationsWithTemplateFilters = (
                 ),
               ]);
 
-            const membershipCategory =
-              subscriptionDetails?.subscriptionDetails?.membershipCategory ??
-              null;
+            const membershipCategory = resolveApplicationMembershipCategory(
+              professionalDetails,
+              subscriptionDetails,
+            );
 
             const professionalPayload = await buildProfessionalPayload(
               professionalDetails,
-              membershipCategory,
               subscriptionDetails,
             );
 
@@ -956,6 +971,7 @@ exports.getApplicationsWithTemplateFilters = (
             const fullApplication = {
               applicationId: application.applicationId,
               userId: application.userId,
+              membershipCategory,
               membershipNumber: subscriptionDetails
                 ? subscriptionDetails.membershipNumber
                 : null,

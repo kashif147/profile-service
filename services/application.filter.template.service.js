@@ -7,6 +7,38 @@ const { APPLICATION_STATUS } = require("../constants/enums");
 function toTemplateResponse(doc) {
   const obj =
     doc && typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+  if (String(obj.templateType || "").trim().toLowerCase() === "application") {
+    const normalizedColumns = [];
+    const seenColumns = new Set();
+    (Array.isArray(obj.columns) ? obj.columns : []).forEach((column) => {
+      const key =
+        column === "professionalDetails.membershipCategory" ||
+        column === "subscriptionDetails.membershipCategory"
+          ? "membershipCategory"
+          : column;
+      if (!key || seenColumns.has(key)) return;
+      seenColumns.add(key);
+      normalizedColumns.push(key);
+    });
+    obj.columns = normalizedColumns;
+
+    if (obj.columnLabels && typeof obj.columnLabels === "object") {
+      obj.columnLabels = Object.entries(obj.columnLabels).reduce(
+        (acc, [key, value]) => {
+          const normalizedKey =
+            key === "professionalDetails.membershipCategory" ||
+            key === "subscriptionDetails.membershipCategory"
+              ? "membershipCategory"
+              : key;
+          if (normalizedKey && !Object.prototype.hasOwnProperty.call(acc, normalizedKey)) {
+            acc[normalizedKey] = value;
+          }
+          return acc;
+        },
+        {},
+      );
+    }
+  }
   delete obj.meta;
   delete obj.__v;
   return obj;
@@ -132,7 +164,8 @@ class TemplateService {
     try {
       const q = { userId, "meta.deleted": false };
       Object.assign(q, tenantOrLegacyMatch(tenantId));
-      return await Template.find(q).sort({ isDefault: -1, createdAt: -1 });
+      const templates = await Template.find(q).sort({ isDefault: -1, createdAt: -1 });
+      return templates.map(toTemplateResponse);
     } catch (error) {
       console.error("TemplateService [getUserTemplates] Error:", error);
       throw error;
@@ -163,7 +196,7 @@ class TemplateService {
         allTemplates.push(systemDefault);
       }
       allTemplates.push(...userTemplates);
-      return allTemplates;
+      return allTemplates.map(toTemplateResponse);
     } catch (error) {
       console.error(
         "TemplateService [getUserTemplatesWithSystemDefault] Error:",
@@ -207,7 +240,7 @@ class TemplateService {
         throw AppError.notFound("Filter template not found");
       }
 
-      return template;
+      return toTemplateResponse(template);
     } catch (error) {
       console.error("TemplateService [getTemplateById] Error:", error);
       throw error;
