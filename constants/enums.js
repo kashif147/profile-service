@@ -106,6 +106,10 @@ exports.TEMPLATE_FILTER_KEYS = {
  */
 exports.FILTER_FIELD_MAP = {
   applicationStatus: { source: "personalDetails", path: "applicationStatus" },
+  "executiveCouncilApprovalDetails.status": {
+    source: "personalDetails",
+    path: "executiveCouncilApprovalDetails.status",
+  },
   membershipCategory: {
     source: "both",
     pathSubs: "subscriptionDetails.membershipCategory",
@@ -121,6 +125,12 @@ exports.FILTER_FIELD_MAP = {
   submissionDate: {
     source: "subscriptionDetails",
     path: "subscriptionDetails.submissionDate",
+    valueType: "date",
+  },
+  joinDate: {
+    source: "subscriptionDetails",
+    path: "subscriptionDetails.dateJoined",
+    valueType: "date",
   },
   primarySection: {
     source: "subscriptionDetails",
@@ -222,6 +232,12 @@ exports.APPLICATION_RESPONSE_COLUMNS = [
   "applicationStatus",
   "createdAt",
   "updatedAt",
+  "submissionDate",
+  "joinDate",
+  "executiveCouncilApprovalDetails",
+  "executiveCouncilApprovalDetails.status",
+  "executiveCouncilApprovalDetails.decisionDate",
+  "executiveCouncilApprovalDetails.approvedBy",
   "personalDetails.applicationStatus",
   "personalDetails.personalInfo.title",
   "personalDetails.personalInfo.forename",

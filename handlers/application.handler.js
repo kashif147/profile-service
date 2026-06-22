@@ -99,6 +99,48 @@ const SYSTEM_DEFAULT_APPLICATION_FILTERS = {
   /** Only non-deleted applications (max relevant results). */
   ...NOT_DELETED_APPLICATION_FILTER,
 };
+
+function buildDateRangeQuery(filterEntry = {}) {
+  const values = Array.isArray(filterEntry.values) ? filterEntry.values : [];
+  const operator = filterEntry.operator;
+
+  if (operator === FILTER_OPERATOR.BETWEEN) {
+    const start = values[0] ? new Date(values[0]) : null;
+    const end = values[1] ? new Date(values[1]) : null;
+    const query = {};
+    if (start && !Number.isNaN(start.getTime())) {
+      query.$gte = start;
+    }
+    if (end && !Number.isNaN(end.getTime())) {
+      end.setHours(23, 59, 59, 999);
+      query.$lte = end;
+    }
+    return Object.keys(query).length ? query : null;
+  }
+
+  if (
+    operator === FILTER_OPERATOR.WITHIN ||
+    operator === FILTER_OPERATOR.MORE_THAN
+  ) {
+    const amount = Number(values[0]);
+    const unit = String(values[1] || "days").toLowerCase();
+    if (!Number.isFinite(amount)) return null;
+
+    const threshold = new Date();
+    const days =
+      unit.startsWith("week") ? amount * 7 :
+      unit.startsWith("month") ? amount * 30 :
+      unit.startsWith("year") ? amount * 365 :
+      amount;
+    threshold.setDate(threshold.getDate() - days);
+
+    return operator === FILTER_OPERATOR.WITHIN
+      ? { $gte: threshold }
+      : { $lt: threshold };
+  }
+
+  return null;
+}
 // membership number generation moved to Profile creation flow
 
 exports.getAllApplications = (statusFilters = []) =>
@@ -264,7 +306,9 @@ async function enrichApplicationsForList(applications) {
         applicationId: app.applicationId,
       }).lean();
 
-      const dateJoined = subscription?.subscriptionDetails?.dateJoined;
+      const subscriptionData = subscription?.subscriptionDetails || {};
+      const dateJoined = subscriptionData.dateJoined;
+      const submissionDate = subscriptionData.submissionDate;
       const approvedBy = app.approvalDetails?.approvedBy;
       const executiveApprovedBy =
         app.executiveCouncilApprovalDetails?.approvedBy;
@@ -316,8 +360,8 @@ async function enrichApplicationsForList(applications) {
         membershipCategory:
           subscription?.subscriptionDetails?.membershipCategory ?? null,
         submissionDate:
-          app.createdAt != null
-            ? (app.createdAt.toISOString?.() ?? app.createdAt)
+          submissionDate != null
+            ? (submissionDate.toISOString?.() ?? submissionDate)
             : null,
         approvalDate:
           app.approvalDetails?.approvedAt != null
@@ -741,8 +785,8 @@ exports.getApplicationsWithTemplateFilters = (
         const config = resolvedKey ? FILTER_FIELD_MAP[resolvedKey] : null;
         if (!config) continue;
 
-        const op =
-          filterEntry.operator === FILTER_OPERATOR.EQUAL_TO ? "$in" : "$nin";
+        const isEqual = filterEntry.operator === FILTER_OPERATOR.EQUAL_TO;
+        const op = isEqual ? "$in" : "$nin";
         // Normalize string values carefully:
         // - applicationStatus is stored/layered in lowercase -> lower it
         // - other fields (e.g. membershipCategory) must preserve case for exact matches
@@ -751,9 +795,28 @@ exports.getApplicationsWithTemplateFilters = (
         );
         if (resolvedKey === "applicationStatus") {
           values = values.map(normalizeApplicationStatusValue);
+        } else if (resolvedKey === "executiveCouncilApprovalDetails.status") {
+          values = values.map((v) =>
+            typeof v === "string" ? v.toLowerCase() : v,
+          );
         }
 
-        if (config.source === "personalDetails") {
+        if (config.valueType === "date") {
+          const dateQuery = buildDateRangeQuery(filterEntry);
+          if (!dateQuery) continue;
+
+          if (config.source === "personalDetails") {
+            query[config.path] = dateQuery;
+          } else if (config.source === "subscriptionDetails") {
+            const docs = await SubscriptionDetails.find({
+              [config.path]: dateQuery,
+            }).select("applicationId");
+            applicationIdSets.push({
+              ids: docs.map((d) => d.applicationId),
+              isEqual: true,
+            });
+          }
+        } else if (config.source === "personalDetails") {
           query[config.path] = { [op]: values };
         } else if (config.source === "both") {
           // membershipCategory: from SubscriptionDetails or ProfessionalDetails
@@ -772,7 +835,7 @@ exports.getApplicationsWithTemplateFilters = (
           ];
           applicationIdSets.push({
             ids,
-            isEqual: filterEntry.operator === FILTER_OPERATOR.EQUAL_TO,
+            isEqual,
           });
         } else if (config.source === "professionalDetails") {
           // Make grade filter value case-insensitive (match \"Grade\", \"grade\", etc.)
@@ -791,7 +854,7 @@ exports.getApplicationsWithTemplateFilters = (
             await ProfessionalDetails.find(q).select("applicationId");
           applicationIdSets.push({
             ids: docs.map((d) => d.applicationId),
-            isEqual: filterEntry.operator === FILTER_OPERATOR.EQUAL_TO,
+            isEqual,
           });
         } else if (config.source === "subscriptionDetails") {
           const q = { [config.path]: { [op]: values } };
@@ -799,7 +862,7 @@ exports.getApplicationsWithTemplateFilters = (
             await SubscriptionDetails.find(q).select("applicationId");
           applicationIdSets.push({
             ids: docs.map((d) => d.applicationId),
-            isEqual: filterEntry.operator === FILTER_OPERATOR.EQUAL_TO,
+            isEqual,
           });
         }
       }
@@ -903,6 +966,20 @@ exports.getApplicationsWithTemplateFilters = (
               paymentStatus: normalizePaymentStatusForDisplay(
                 subscriptionDetails?.paymentDetails?.status,
               ),
+              executiveCouncilApprovalDetails:
+                application.executiveCouncilApprovalDetails,
+              submissionDate:
+                subscriptionDetails?.subscriptionDetails?.submissionDate != null
+                  ? (subscriptionDetails.subscriptionDetails.submissionDate
+                      .toISOString?.() ??
+                    subscriptionDetails.subscriptionDetails.submissionDate)
+                  : null,
+              joinDate:
+                subscriptionDetails?.subscriptionDetails?.dateJoined != null
+                  ? formatDateOnly(
+                      subscriptionDetails.subscriptionDetails.dateJoined,
+                    )
+                  : null,
               applicationStatus: application.applicationStatus,
               approvalDetails: application.approvalDetails,
               isPotentialDuplicate:
