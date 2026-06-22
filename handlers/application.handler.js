@@ -999,6 +999,14 @@ exports.getApplicationsWithTemplateFilters = (
                     ...filtered,
                   }
                 : filtered;
+            row.applicationStatus =
+              row.applicationStatus ||
+              row.personalDetails?.applicationStatus ||
+              fullApplication.applicationStatus;
+            row.executiveCouncilApprovalDetails =
+              row.executiveCouncilApprovalDetails ||
+              fullApplication.executiveCouncilApprovalDetails ||
+              {};
             row.isPotentialDuplicate =
               !!fullApplication?.isPotentialDuplicate ||
               !!fullApplication?.personalDetails?.duplicateDetection
