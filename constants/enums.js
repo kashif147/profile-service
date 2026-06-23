@@ -110,6 +110,11 @@ exports.FILTER_FIELD_MAP = {
     source: "personalDetails",
     path: "executiveCouncilApprovalDetails.status",
   },
+  "executiveCouncilApprovalDetails.decisionDate": {
+    source: "personalDetails",
+    path: "executiveCouncilApprovalDetails.decisionDate",
+    valueType: "date",
+  },
   membershipCategory: {
     source: "both",
     pathSubs: "subscriptionDetails.membershipCategory",
