@@ -109,11 +109,52 @@ async function setupConsumers() {
     consumer.registerHandler(
       "profile.application.create",
       async (payload, context) => {
-        await handleProfileApplicationCreate(
-          payload,
-          context.routingKey,
-          context.message
-        );
+        const { data, eventType, eventId } = payload;
+        bizLogger.business("RabbitMQ profile application event consumed", {
+          eventType,
+          eventId,
+          correlationId: payload.correlationId || null,
+          tenantId: data?.tenantId || payload.tenantId || null,
+          applicationId: data?.applicationId || null,
+          membershipId: data?.memberId || data?.membershipId || null,
+          exchange: context.exchange,
+          routingKey: context.routingKey,
+          queue: PORTAL_QUEUE,
+          sourceService: payload.sourceService || payload.metadata?.service || null,
+        });
+        try {
+          await handleProfileApplicationCreate(
+            payload,
+            context.routingKey,
+            context.message
+          );
+          bizLogger.business("RabbitMQ profile application event processed", {
+            eventType,
+            eventId,
+            correlationId: payload.correlationId || null,
+            tenantId: data?.tenantId || payload.tenantId || null,
+            applicationId: data?.applicationId || null,
+            membershipId: data?.memberId || data?.membershipId || null,
+            exchange: context.exchange,
+            routingKey: context.routingKey,
+            queue: PORTAL_QUEUE,
+            sourceService: payload.sourceService || payload.metadata?.service || null,
+          });
+        } catch (error) {
+          bizLogger.error("RabbitMQ profile application handler failed", {
+            eventType,
+            eventId,
+            correlationId: payload.correlationId || null,
+            tenantId: data?.tenantId || payload.tenantId || null,
+            applicationId: data?.applicationId || null,
+            membershipId: data?.memberId || data?.membershipId || null,
+            exchange: context.exchange,
+            routingKey: context.routingKey,
+            queue: PORTAL_QUEUE,
+            error: error.message,
+          });
+          throw error;
+        }
       }
     );
 
