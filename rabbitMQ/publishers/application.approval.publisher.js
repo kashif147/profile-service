@@ -1,5 +1,6 @@
 // Application Approval Event Publisher
 const { publisher } = require("@projectShell/rabbitmq-middleware");
+const bizLogger = require("../../config/bizLogger.js");
 const {
   APPLICATION_REVIEW_EVENTS,
   MEMBERSHIP_EVENTS,
@@ -353,15 +354,52 @@ class ApplicationApprovalEventPublisher {
       );
 
       if (!result.success) {
+        bizLogger.error("RabbitMQ subscription upsert publish failed", {
+          eventType: MEMBERSHIP_EVENTS.SUBSCRIPTION_UPSERT_REQUESTED,
+          error: result.error,
+          correlationId,
+          tenantId,
+          profileId,
+          applicationId,
+          membershipId: memberId || null,
+          exchange: "membership.events",
+          routingKey: MEMBERSHIP_EVENTS.SUBSCRIPTION_UPSERT_REQUESTED,
+          sourceService: "profile-service",
+        });
         throw new Error(
           `Failed to publish subscription upsert requested: ${result.error}`
         );
       }
 
+      bizLogger.business("RabbitMQ subscription upsert published", {
+        eventType: MEMBERSHIP_EVENTS.SUBSCRIPTION_UPSERT_REQUESTED,
+        eventId: result.eventId,
+        correlationId: result.payload?.correlationId || correlationId || null,
+        tenantId,
+        profileId,
+        applicationId,
+        membershipId: memberId || null,
+        exchange: "membership.events",
+        routingKey: MEMBERSHIP_EVENTS.SUBSCRIPTION_UPSERT_REQUESTED,
+        sourceService: "profile-service",
+      });
+
       console.log(
         "✅ [APPLICATION_APPROVAL_PUBLISHER] Subscription upsert requested published successfully"
       );
     } catch (error) {
+      bizLogger.error("RabbitMQ subscription upsert publish threw", {
+        eventType: MEMBERSHIP_EVENTS.SUBSCRIPTION_UPSERT_REQUESTED,
+        error: error.message,
+        correlationId,
+        tenantId,
+        profileId,
+        applicationId,
+        membershipId: memberId || null,
+        exchange: "membership.events",
+        routingKey: MEMBERSHIP_EVENTS.SUBSCRIPTION_UPSERT_REQUESTED,
+        sourceService: "profile-service",
+      });
       console.error(
         "❌ [APPLICATION_APPROVAL_PUBLISHER] Error publishing subscription upsert requested:",
         { error: error.message, applicationId, profileId }
