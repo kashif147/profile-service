@@ -95,6 +95,8 @@ class ProfileApplicationCreateListener {
       const existingPersonal = await PersonalDetails.findOne({
         applicationId,
       }).lean();
+      const resolvedTenantId =
+        tenantId || personalDetails.tenantId || existingPersonal?.tenantId;
       const existingIsRejected = isRejectedStatus(
         existingPersonal?.applicationStatus
       );
@@ -137,10 +139,10 @@ class ProfileApplicationCreateListener {
         "📝 [PROFILE_CREATE_LISTENER] Creating/updating personal details..."
       );
       const resolvedPersonalUserId = await resolveLocalPortalUserIdForSync(
-        tenantId || personalDetails.tenantId || existingPersonal?.tenantId,
+        resolvedTenantId,
         resolveUserIdForSync(
-        personalDetails.userId,
-        existingPersonal?.userId
+          personalDetails.userId,
+          existingPersonal?.userId
         )
       );
       if (
@@ -156,8 +158,7 @@ class ProfileApplicationCreateListener {
         personalDetails.applicationStatus || status || APPLICATION_STATUS.IN_PROGRESS;
       const personalUpdate = {
         applicationId: applicationId,
-        tenantId:
-          tenantId || personalDetails.tenantId || existingPersonal?.tenantId,
+        tenantId: resolvedTenantId,
         userId: resolvedPersonalUserId,
         personalInfo: personalDetails.personalInfo,
         contactInfo: personalDetails.contactInfo,
@@ -203,7 +204,7 @@ class ProfileApplicationCreateListener {
           applicationId,
         }).lean();
         const resolvedProfessionalUserId = await resolveLocalPortalUserIdForSync(
-          tenantId || personalDetails.tenantId || existingPersonal?.tenantId,
+          resolvedTenantId,
           resolveUserIdForSync(
             professionalDetails.userId,
             existingProfessional?.userId ?? resolvedPersonalUserId
@@ -214,6 +215,7 @@ class ProfileApplicationCreateListener {
             { applicationId: applicationId },
             {
               applicationId: applicationId,
+              tenantId: resolvedTenantId,
               userId: resolvedProfessionalUserId,
               professionalDetails: professionalDetails.professionalDetails,
               meta: professionalDetails.meta,
@@ -313,7 +315,7 @@ class ProfileApplicationCreateListener {
       const portalMeta = subscriptionDetails?.meta || {};
       const existingSubUserId = existingSubscriptionDetails?.userId;
       const resolvedSubscriptionUserId = await resolveLocalPortalUserIdForSync(
-        tenantId || personalDetails.tenantId || existingPersonal?.tenantId,
+        resolvedTenantId,
         resolveUserIdForSync(
           subscriptionDetails?.userId,
           existingSubUserId ?? newPersonalDetails.userId
@@ -322,6 +324,7 @@ class ProfileApplicationCreateListener {
 
       const updateData = {
         applicationId: applicationId,
+        tenantId: resolvedTenantId,
         userId: resolvedSubscriptionUserId,
         subscriptionDetails: subscriptionDetailsData,
         meta: {
@@ -367,6 +370,7 @@ class ProfileApplicationCreateListener {
         const updateQuery = {
           $set: {
             applicationId: updateData.applicationId,
+            tenantId: updateData.tenantId,
             userId: updateData.userId,
             "subscriptionDetails": updateData.subscriptionDetails,
             "meta": updateData.meta,
