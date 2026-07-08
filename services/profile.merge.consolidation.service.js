@@ -1,7 +1,9 @@
 const mongoose = require("mongoose");
 const PersonalDetails = require("../models/personal.details.model.js");
 const Profile = require("../models/profile.model.js");
-const MemberPaymentForm = require("../models/memberPaymentForm.model.js");
+const {
+  MemberPaymentForm,
+} = require("../models/memberPaymentForm.model.js");
 const TransferRequest = require("../models/transfer.request.model.js");
 const Batch = require("../models/batch.model.js");
 const {
