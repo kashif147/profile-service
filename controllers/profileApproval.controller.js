@@ -49,6 +49,25 @@ const {
 } = require("../helpers/workLocationPayment.helper.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
+const APPROVAL_TRANSACTION_MAX_ATTEMPTS = 3;
+
+function isTransientTransactionError(error) {
+  if (!error) return false;
+  if (typeof error.hasErrorLabel === "function") {
+    return error.hasErrorLabel("TransientTransactionError");
+  }
+  if (Array.isArray(error.errorLabels)) {
+    return error.errorLabels.includes("TransientTransactionError");
+  }
+  return (
+    error.code === 112 ||
+    /write conflict/i.test(error.message || "")
+  );
+}
+
+function transactionRetryDelay(attempt) {
+  return new Promise((resolve) => setTimeout(resolve, 75 * attempt));
+}
 
 function resolvePaymentIntentId(subscriptionDetails) {
   return (
@@ -183,9 +202,14 @@ async function approveApplication(req, res, next) {
     console.log("[approveApplication] reviewerId (approver user ID):", reviewerId, "userType:", req.user?.userType);
   }
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  try {
+  let captureResult = null;
+  let capturedPaymentIntentId = null;
+  let capturedLatestPayment = null;
+
+  for (let attempt = 1; attempt <= APPROVAL_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
     const personalForStatus = await PersonalDetails.findOne({
       applicationId,
       tenantId: String(tenantId),
@@ -194,8 +218,7 @@ async function approveApplication(req, res, next) {
       .session(session);
 
     if (personalForStatus?.applicationStatus === APPLICATION_STATUS.PROCESSED) {
-      await session.abortTransaction();
-      return next(AppError.conflict("Application has already been processed."));
+      throw AppError.conflict("Application has already been processed.");
     }
 
     const { submission: serverSubmission } = await loadSubmission(
@@ -213,12 +236,10 @@ async function approveApplication(req, res, next) {
         status: "open",
       }).session(session);
       if (!overlay) {
-        await session.abortTransaction();
-        return next(AppError.notFound("Overlay not found"));
+        throw AppError.notFound("Overlay not found");
       }
       if (overlay.overlayVersion !== overlayVersion) {
-        await session.abortTransaction();
-        return next(AppError.conflict("Overlay version conflict"));
+        throw AppError.conflict("Overlay version conflict");
       }
       patchToApply = overlay.proposedPatch ?? [];
     } else if (submission) {
@@ -239,8 +260,7 @@ async function approveApplication(req, res, next) {
         true
       ).newDocument;
     } catch {
-      await session.abortTransaction();
-      return next(AppError.conflict("Submission changed; refresh and reapply changes."));
+      throw AppError.conflict("Submission changed; refresh and reapply changes.");
     }
 
     const normalizedSubscriptionDetails = normalizeSubscription(
@@ -276,6 +296,7 @@ async function approveApplication(req, res, next) {
       tenantId: String(tenantId),
     })
       .select("paymentDetails")
+      .session(session)
       .lean();
     const { paymentIntentId, latestPayment } = await resolveLatestPaymentIntentId({
       applicationId,
@@ -283,31 +304,28 @@ async function approveApplication(req, res, next) {
       req,
       fallbackSubscription: existingSubscription,
     });
-    let captureResult = null;
 
     if (paymentIntentId) {
-      try {
-        captureResult = await capturePaymentIntent(
-          paymentIntentId,
-          tenantId,
-          req,
-        );
-      } catch (captureError) {
-        await session.abortTransaction();
-        return next(
-          AppError.conflict(
+      if (!captureResult || capturedPaymentIntentId !== paymentIntentId) {
+        try {
+          captureResult = await capturePaymentIntent(
+            paymentIntentId,
+            tenantId,
+            req,
+          );
+          capturedPaymentIntentId = paymentIntentId;
+          capturedLatestPayment = latestPayment;
+        } catch (captureError) {
+          throw AppError.conflict(
             captureError.message ||
               "Payment capture failed. Application was not approved.",
-          ),
-        );
+          );
+        }
       }
 
       if (captureResult.status !== "succeeded") {
-        await session.abortTransaction();
-        return next(
-          AppError.conflict(
-            "Payment capture did not succeed. Application was not approved.",
-          ),
+        throw AppError.conflict(
+          "Payment capture did not succeed. Application was not approved.",
         );
       }
     }
@@ -393,7 +411,10 @@ async function approveApplication(req, res, next) {
           ...(existingSubscription?.paymentDetails || {}),
           paymentIntentId,
           status: "Captured",
-          attemptNumber: latestPayment?.attemptNumber,
+          attemptNumber:
+            (capturedPaymentIntentId === paymentIntentId
+              ? capturedLatestPayment?.attemptNumber
+              : latestPayment?.attemptNumber),
           updatedAt: new Date(),
         };
       }
@@ -450,19 +471,39 @@ async function approveApplication(req, res, next) {
       paymentStatus: captureResult ? "Captured" : undefined,
       proposedPatch: patchToApply,
     });
-  } catch (e) {
-    await session.abortTransaction();
-    console.error("[approveApplication] Error details:", {
-      message: e.message,
-      stack: e.stack,
-      name: e.name,
-      applicationId,
-      reviewerId,
-      tenantId,
-    });
-    next(e);
-  } finally {
-    session.endSession();
+    } catch (e) {
+      if (session.inTransaction()) {
+        await session.abortTransaction();
+      }
+
+      if (
+        isTransientTransactionError(e) &&
+        attempt < APPROVAL_TRANSACTION_MAX_ATTEMPTS
+      ) {
+        console.warn("[approveApplication] Retrying transient transaction error:", {
+          message: e.message,
+          applicationId,
+          tenantId,
+          attempt,
+          nextAttempt: attempt + 1,
+        });
+        await transactionRetryDelay(attempt);
+        continue;
+      }
+
+      console.error("[approveApplication] Error details:", {
+        message: e.message,
+        stack: e.stack,
+        name: e.name,
+        applicationId,
+        reviewerId,
+        tenantId,
+        attempt,
+      });
+      return next(e);
+    } finally {
+      session.endSession();
+    }
   }
 }
 
