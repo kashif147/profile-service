@@ -2,7 +2,15 @@ const { publisher } = require("@projectShell/rabbitmq-middleware");
 const {
   DUPLICATE_REVIEW_EVENTS,
 } = require("../rabbitMQ/events/duplicate.review.js");
-const { MERGE_FIELD_DEFINITIONS } = require("./duplicate.merge.service.js");
+
+function getMergeFieldDefinitions() {
+  try {
+    const { MERGE_FIELD_DEFINITIONS } = require("./duplicate.merge.service.js");
+    return Array.isArray(MERGE_FIELD_DEFINITIONS) ? MERGE_FIELD_DEFINITIONS : [];
+  } catch {
+    return [];
+  }
+}
 
 function cloneForAudit(value) {
   if (value == null) return null;
@@ -23,8 +31,9 @@ function summarizeMergeFieldChoices(mergeFieldChoices) {
   if (!mergeFieldChoices || typeof mergeFieldChoices !== "object") {
     return [];
   }
+  const mergeFieldDefinitions = getMergeFieldDefinitions();
   return Object.entries(mergeFieldChoices).map(([path, source]) => {
-    const definition = MERGE_FIELD_DEFINITIONS.find((field) => field.path === path);
+    const definition = mergeFieldDefinitions.find((field) => field.path === path);
     return {
       path,
       source,
