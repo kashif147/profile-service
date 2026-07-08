@@ -1155,6 +1155,7 @@ async function executeProfileDuplicateMerge({
 
   const session = await mongoose.startSession();
   session.startTransaction();
+  let transactionCommitted = false;
   try {
     const [masterProfile, absorbedProfile] = await Promise.all([
       loadProfileForTenant(masterProfileId, tenantId),
@@ -1198,6 +1199,7 @@ async function executeProfileDuplicateMerge({
     });
 
     await session.commitTransaction();
+    transactionCommitted = true;
 
     const remoteConsolidation = await consolidateProfileMergeHistory({
       tenantId,
@@ -1230,7 +1232,9 @@ async function executeProfileDuplicateMerge({
       },
     };
   } catch (error) {
-    await session.abortTransaction();
+    if (!transactionCommitted) {
+      await session.abortTransaction();
+    }
     throw error;
   } finally {
     session.endSession();
