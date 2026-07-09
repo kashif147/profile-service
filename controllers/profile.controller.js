@@ -381,7 +381,7 @@ async function getAllProfiles(req, res, next) {
     const limit = parseInt(req.query.limit) || 500;
     const skip = (page - 1) * limit;
 
-    const query = { tenantId };
+    const query = { tenantId, isActive: { $ne: false } };
 
     const [profiles, total] = await Promise.all([
       Profile.find(query)

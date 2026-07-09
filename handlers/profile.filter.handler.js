@@ -98,8 +98,9 @@ exports.getProfilesWithTemplateFilters = async (
   limit = 500,
 ) => {
   const conds = buildProfileFilterConditions(filters);
+  const baseQuery = { tenantId, isActive: { $ne: false } };
   const query =
-    conds.length > 0 ? { $and: [{ tenantId }, ...conds] } : { tenantId };
+    conds.length > 0 ? { $and: [baseQuery, ...conds] } : baseQuery;
 
   const skip = (page - 1) * limit;
 
