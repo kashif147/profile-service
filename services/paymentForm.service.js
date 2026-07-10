@@ -796,6 +796,29 @@ function formatListRow(doc) {
   };
 }
 
+function formatDetailedListRow(doc) {
+  const o = decryptFormForResponse(doc, { includeSensitive: false });
+  const standingOrder = o.standingOrder ? { ...o.standingOrder } : {};
+  if (standingOrder.beneficiaryReference && !standingOrder.debtorMessage) {
+    standingOrder.debtorMessage = standingOrder.beneficiaryReference;
+  }
+  return {
+    ...formatListRow(doc),
+    brandingSnapshot: o.brandingSnapshot || {},
+    organisationSnapshot: o.organisationSnapshot || {},
+    standingOrder,
+    salaryDeduction: o.salaryDeduction || {},
+    directDebitMandate: o.directDebitMandate || {},
+    generatedPdf: o.generatedPdf || {},
+    signedPdf: o.signedPdf || {},
+    paperUpload: o.paperUpload || {},
+    submissionAudit: o.submissionAudit || {},
+    approvalAudit: o.approvalAudit || {},
+    gdpr: o.gdpr || {},
+    visibility: o.visibility || {},
+  };
+}
+
 async function getById(id, tenantId, { includeSensitive = false, portalUserId = null }) {
   const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
   if (!form) throw AppError.notFound("Payment form not found");
@@ -1383,7 +1406,7 @@ async function listForProfile(profileId, tenantId, { portalUserId = null } = {})
   }
   const items = await MemberPaymentForm.find(query).sort({ updatedAt: -1 });
   return items.map((d) => {
-    const row = formatListRow(d);
+    const row = portalUserId ? formatDetailedListRow(d) : formatListRow(d);
     row.downloadUrls = buildDownloadUrls(d);
     row.formTypeLabel = FORM_TYPE_LABELS[d.formType] || d.formType;
     return row;
