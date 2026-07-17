@@ -23,6 +23,7 @@ class ApplicationApprovalEventPublisher {
     userEmail,
     effective,
     subscriptionAttributes,
+    gapLetter,
     tenantId,
     correlationId,
   }) {
@@ -58,6 +59,7 @@ class ApplicationApprovalEventPublisher {
             subscriptionDetails: effective.subscriptionDetails,
           },
           subscriptionAttributes,
+          gapLetter: gapLetter || null,
         },
         {
           tenantId,
@@ -88,6 +90,84 @@ class ApplicationApprovalEventPublisher {
           applicationId,
         }
       );
+      throw error;
+    }
+  }
+
+  async publishGapLetterRequested({
+    applicationId,
+    profileId,
+    memberId,
+    userId,
+    userEmail,
+    tenantId,
+    reviewerId,
+    effective,
+    gapLetter,
+    correlationId,
+  }) {
+    try {
+      if (!gapLetter?.sendGapLetter) return;
+
+      const result = await publisher.publish(
+        MEMBERSHIP_EVENTS.GAP_LETTER_REQUESTED,
+        {
+          applicationId,
+          profileId,
+          memberId: memberId || null,
+          userId: userId || null,
+          userEmail: userEmail || null,
+          reviewerId: reviewerId || null,
+          tenantId: tenantId || null,
+          effective: {
+            personalInfo: effective?.personalInfo,
+            contactInfo: effective?.contactInfo,
+            professionalDetails: effective?.professionalDetails,
+            subscriptionDetails: effective?.subscriptionDetails,
+          },
+          gapLetter,
+        },
+        {
+          tenantId,
+          correlationId,
+          exchange: "membership.events",
+          routingKey: MEMBERSHIP_EVENTS.GAP_LETTER_REQUESTED,
+          metadata: {
+            service: "profile-service",
+            version: "1.0",
+          },
+        }
+      );
+
+      if (!result.success) {
+        throw new Error(`Failed to publish GAP letter requested: ${result.error}`);
+      }
+
+      bizLogger.business("RabbitMQ GAP letter request published", {
+        eventType: MEMBERSHIP_EVENTS.GAP_LETTER_REQUESTED,
+        eventId: result.eventId,
+        correlationId: result.payload?.correlationId || correlationId || null,
+        tenantId,
+        profileId,
+        applicationId,
+        membershipId: memberId || null,
+        exchange: "membership.events",
+        routingKey: MEMBERSHIP_EVENTS.GAP_LETTER_REQUESTED,
+        sourceService: "profile-service",
+      });
+    } catch (error) {
+      bizLogger.error("RabbitMQ GAP letter request publish failed", {
+        eventType: MEMBERSHIP_EVENTS.GAP_LETTER_REQUESTED,
+        error: error.message,
+        correlationId,
+        tenantId,
+        profileId,
+        applicationId,
+        membershipId: memberId || null,
+        exchange: "membership.events",
+        routingKey: MEMBERSHIP_EVENTS.GAP_LETTER_REQUESTED,
+        sourceService: "profile-service",
+      });
       throw error;
     }
   }

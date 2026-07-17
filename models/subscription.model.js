@@ -49,6 +49,7 @@ const SubscriptionSchema = new mongoose.Schema(
       otherSecondarySection: { type: String, allowNull: true },
       valueAddedServices: { type: Boolean, default: false },
       termsAndConditions: { type: Boolean, default: true },
+      sendGapLetter: { type: Boolean, default: false },
       membershipCategory: { type: String, allowNull: true },
       dateJoined: { type: Date, allowNull: true },
       submissionDate: { type: Date, default: Date.now },

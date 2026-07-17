@@ -47,6 +47,12 @@ const {
 const {
   assertSalaryDeductionAllowedForWorkLocation,
 } = require("../helpers/workLocationPayment.helper.js");
+const {
+  fetchCurrentSubscriptionByProfileId,
+} = require("../services/subscription.service.client.js");
+const {
+  resolveGapLetterEligibility,
+} = require("../helpers/gapLetterEligibility.helper.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const APPROVAL_TRANSACTION_MAX_ATTEMPTS = 3;
@@ -158,6 +164,32 @@ const normalizeSubscription = (subscriptionDetails = {}, professional = {}) => {
   }
   return applyNoFeeMembershipPaymentDefaults(normalized);
 };
+
+async function resolveGapLetterForApproval({
+  approvalEffective,
+  profile,
+  tenantId,
+  req,
+}) {
+  const previousSubscription = profile?._id
+    ? await fetchCurrentSubscriptionByProfileId(
+        String(profile._id),
+        tenantId,
+        req,
+        profile.currentSubscriptionId || null,
+      )
+    : null;
+
+  return resolveGapLetterEligibility({
+    requestedSendGapLetter:
+      approvalEffective?.subscriptionDetails?.sendGapLetter,
+    membershipCategory:
+      approvalEffective?.subscriptionDetails?.membershipCategory ??
+      approvalEffective?.professionalDetails?.membershipCategory ??
+      null,
+    previousSubscription,
+  });
+}
 
 // Optional path whitelist, shared with overlay controller
 const ALLOWED_PREFIXES = [
@@ -359,6 +391,20 @@ async function approveApplication(req, res, next) {
       { req, tenantId },
     );
 
+    const gapLetter = await resolveGapLetterForApproval({
+      approvalEffective,
+      profile,
+      tenantId,
+      req,
+    });
+    approvalEffective = {
+      ...approvalEffective,
+      subscriptionDetails: {
+        ...approvalEffective.subscriptionDetails,
+        sendGapLetter: gapLetter.sendGapLetter,
+      },
+    };
+
     // Update main application models with approved data
     if (approvalEffective.personalInfo) {
       const personalSet = {
@@ -459,6 +505,7 @@ async function approveApplication(req, res, next) {
       },
       memberId,
       dateJoined,
+      gapLetter,
     };
 
     await session.commitTransaction();

@@ -61,6 +61,12 @@ const {
 const {
   assertSalaryDeductionAllowedForWorkLocation,
 } = require("../helpers/workLocationPayment.helper.js");
+const {
+  fetchCurrentSubscriptionByProfileId,
+} = require("../services/subscription.service.client.js");
+const {
+  resolveGapLetterEligibility,
+} = require("../helpers/gapLetterEligibility.helper.js");
 
 const {
   parseDateOnlyToUtcNoon,
@@ -140,6 +146,31 @@ const normalizeSubscription = (subscriptionDetails = {}, professional = {}) => {
   }
   return applyNoFeeMembershipPaymentDefaults(normalized);
 };
+
+async function resolveGapLetterForApproval({
+  effective,
+  profile,
+  tenantId,
+  req,
+}) {
+  const previousSubscription = profile?._id
+    ? await fetchCurrentSubscriptionByProfileId(
+        String(profile._id),
+        tenantId,
+        req,
+        profile.currentSubscriptionId || null,
+      )
+    : null;
+
+  return resolveGapLetterEligibility({
+    requestedSendGapLetter: effective?.subscriptionDetails?.sendGapLetter,
+    membershipCategory:
+      effective?.subscriptionDetails?.membershipCategory ??
+      effective?.professionalDetails?.membershipCategory ??
+      null,
+    previousSubscription,
+  });
+}
 
 /**
  * Approve a single application (extracted logic for reuse)
@@ -393,6 +424,20 @@ async function approveSingleApplication({
       });
     }
 
+    const gapLetter = await resolveGapLetterForApproval({
+      effective,
+      profile,
+      tenantId,
+      req,
+    });
+    effective = {
+      ...effective,
+      subscriptionDetails: {
+        ...effective.subscriptionDetails,
+        sendGapLetter: gapLetter.sendGapLetter,
+      },
+    };
+
     // Update main application models with approved data
     if (effective.personalInfo) {
       const personalSet = {
@@ -501,6 +546,7 @@ async function approveSingleApplication({
         memberId,
         dateJoined: dateJoinedForSub,
         processingDate: processingDateSerialized,
+        gapLetter,
       },
     };
   } catch (error) {

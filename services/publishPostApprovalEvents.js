@@ -23,6 +23,7 @@ async function publishPostApprovalEvents({
   dateJoined,
   processingDate,
   deactivatePreviousSubscriptionStatus,
+  gapLetter,
   correlationId = crypto.randomUUID(),
 }) {
   const sub = effective.subscriptionDetails || {};
@@ -57,6 +58,7 @@ async function publishPostApprovalEvents({
         subscriptionDetails: effective.subscriptionDetails,
       },
       subscriptionAttributes: effective.subscriptionAttributes,
+      gapLetter: gapLetter || null,
       tenantId,
       correlationId,
     });
@@ -65,6 +67,28 @@ async function publishPostApprovalEvents({
       "[publishPostApprovalEvents] application processed failed:",
       err.message,
     );
+  }
+
+  if (gapLetter?.sendGapLetter) {
+    try {
+      await ApplicationApprovalEventPublisher.publishGapLetterRequested({
+        applicationId,
+        reviewerId,
+        profileId: String(profileId),
+        memberId,
+        userId: userIdForPostApproval,
+        userEmail: userEmailForPostApproval,
+        tenantId,
+        effective,
+        gapLetter,
+        correlationId: crypto.randomUUID(),
+      });
+    } catch (err) {
+      console.error(
+        "[publishPostApprovalEvents] GAP letter request failed:",
+        err.message,
+      );
+    }
   }
 
   try {
