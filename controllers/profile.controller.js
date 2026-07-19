@@ -2102,6 +2102,65 @@ async function getProfilesByUserIds(req, res, next) {
   }
 }
 
+// Internal endpoint: find-or-create a Profile with no membership number, for
+// event/course attendee registration (portal, mobile, CRM). Never creates
+// PersonalDetails/ProfessionalDetails/SubscriptionDetails and never touches the
+// membership application/approval pipeline.
+async function findOrCreateAttendeeProfile(req, res, next) {
+  try {
+    const isInternalRequest =
+      req.headers["x-internal-request"] === "true" ||
+      req.headers["x-internal-request"] === "1";
+
+    if (!isInternalRequest) {
+      return res.status(403).json({
+        success: false,
+        message: "Internal endpoint: x-internal-request header required",
+      });
+    }
+
+    const { tenantId, email, firstName, lastName, phone } = req.body || {};
+    if (!tenantId || !email) {
+      return res.status(400).json({
+        success: false,
+        message: "tenantId and email are required",
+      });
+    }
+
+    const {
+      findOrCreateAttendeeProfile: findOrCreateAttendeeProfileHelper,
+    } = require("../helpers/attendeeProfileLookup.helper.js");
+
+    const { profile, created } = await findOrCreateAttendeeProfileHelper({
+      tenantId,
+      email,
+      firstName,
+      lastName,
+      phone,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        profileId: profile._id.toString(),
+        membershipNumber: profile.membershipNumber || null,
+        created,
+        isMember: !!profile.membershipNumber,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "ProfileController [findOrCreateAttendeeProfile] Error:",
+      error,
+    );
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to find or create attendee profile",
+      ),
+    );
+  }
+}
+
 module.exports = {
   getAllProfiles,
   getProfilesWithTemplate,
@@ -2123,4 +2182,5 @@ module.exports = {
   lookupProfilesByMembershipNumbers,
   getProfilesByUserIds,
   getProfileByEmailInternal,
+  findOrCreateAttendeeProfile,
 };

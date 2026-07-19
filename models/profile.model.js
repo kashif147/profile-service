@@ -25,11 +25,10 @@ const ProfileSchema = new mongoose.Schema(
     normalizedEmail: { type: String, required: true },
     membershipNumber: {
       type: String,
-      required: true,
       unique: true,
       sparse: true,
       trim: true,
-    }, // Auto-generated membership number
+    }, // Auto-generated membership number; absent for attendee-only (non-member) profiles
     firstJoinedDate: { type: Date, default: null }, // Date of first membership
     submissionDate: { type: Date, default: Date.now }, // Date of submission
     // NEW: Pointer to the current subscription
@@ -144,6 +143,12 @@ const ProfileSchema = new mongoose.Schema(
       ref: "Profile",
       default: null,
       index: true,
+    },
+    duplicateDetection: {
+      isPotentialDuplicate: { type: Boolean, default: false },
+      matchType: { type: String, default: null },
+      matchedProfileIds: [{ type: String }],
+      detectedAt: { type: Date, default: null },
     },
   },
   { timestamps: true, versionKey: "profileVersion" }

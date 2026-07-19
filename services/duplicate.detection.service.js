@@ -477,6 +477,32 @@ async function findProfileDuplicateMatches(sourceProfileId, tenantId) {
   };
 }
 
+/**
+ * Score a raw candidate (e.g. an event/course attendee being registered, who has
+ * no application and may not have a Profile yet) against existing Profiles only.
+ * Unlike findProfileDuplicateMatches, this does not require a Profile to already
+ * exist for the candidate - candidateFields is passed straight to buildMatchableRecord.
+ */
+async function findCandidateDuplicateMatches(candidateFields, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+  const source = buildMatchableRecord(candidateFields || {});
+
+  const profileCandidateIds = new Set([
+    ...(await findExactProfileCandidates(source, normalizedTenantId)),
+    ...(await findFuzzyProfileCandidates(source, normalizedTenantId)),
+  ]);
+
+  const matchSummary = (
+    await scoreProfileCandidates(source, [...profileCandidateIds], normalizedTenantId)
+  ).sort((a, b) => b.score - a.score);
+
+  return {
+    matchingProfiles: matchSummary,
+    matchSummary,
+    hasPotentialDuplicate: matchSummary.some((m) => !m.ignored && m.score >= 40),
+  };
+}
+
 async function detectProfileDuplicates(sourceProfileId, tenantId, actorId = null) {
   const result = await findProfileDuplicateMatches(sourceProfileId, tenantId);
   await publishProfileDuplicateDetectionRunAudit({
@@ -588,6 +614,9 @@ module.exports = {
   detectDuplicates,
   detectProfileDuplicates,
   findProfileDuplicateMatches,
+  findCandidateDuplicateMatches,
+  findExactProfileCandidates,
+  findFuzzyProfileCandidates,
   queueDuplicateDetection,
   findDuplicateMatches,
   loadApplicationBundle,

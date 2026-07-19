@@ -17,6 +17,10 @@ router.post("/validate", profileValidationController.validateProfile);
 // Internal endpoints for service-to-service calls (before authenticate)
 router.get("/internal/by-email", profileController.getProfileByEmailInternal);
 router.post("/internal/by-user-ids", profileController.getProfilesByUserIds);
+router.post(
+  "/internal/find-or-create-attendee",
+  profileController.findOrCreateAttendeeProfile,
+);
 
 router.post("/batch", profileController.getProfilesBatch);
 router.get("/batch", profileController.getProfilesBatch);
