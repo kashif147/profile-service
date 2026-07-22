@@ -2161,6 +2161,54 @@ async function findOrCreateAttendeeProfile(req, res, next) {
   }
 }
 
+// Internal endpoint: read-only duplicate check for a would-be new
+// event/course attendee (portal, mobile, CRM) - never creates a Profile. See
+// helpers/attendeeProfileLookup.helper.js's checkAttendeeDuplicates for the
+// exact-email vs fuzzy-review vs no-match resolution semantics.
+async function checkAttendeeDuplicates(req, res, next) {
+  try {
+    const isInternalRequest =
+      req.headers["x-internal-request"] === "true" ||
+      req.headers["x-internal-request"] === "1";
+
+    if (!isInternalRequest) {
+      return res.status(403).json({
+        success: false,
+        message: "Internal endpoint: x-internal-request header required",
+      });
+    }
+
+    const { tenantId, email, firstName, lastName, phone } = req.body || {};
+    if (!tenantId || !email) {
+      return res.status(400).json({
+        success: false,
+        message: "tenantId and email are required",
+      });
+    }
+
+    const {
+      checkAttendeeDuplicates: checkAttendeeDuplicatesHelper,
+    } = require("../helpers/attendeeProfileLookup.helper.js");
+
+    const result = await checkAttendeeDuplicatesHelper({
+      tenantId,
+      email,
+      firstName,
+      lastName,
+      phone,
+    });
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error("ProfileController [checkAttendeeDuplicates] Error:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to check attendee duplicates",
+      ),
+    );
+  }
+}
+
 module.exports = {
   getAllProfiles,
   getProfilesWithTemplate,
@@ -2183,4 +2231,5 @@ module.exports = {
   getProfilesByUserIds,
   getProfileByEmailInternal,
   findOrCreateAttendeeProfile,
+  checkAttendeeDuplicates,
 };

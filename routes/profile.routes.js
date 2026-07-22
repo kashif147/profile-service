@@ -21,6 +21,10 @@ router.post(
   "/internal/find-or-create-attendee",
   profileController.findOrCreateAttendeeProfile,
 );
+router.post(
+  "/internal/attendee-duplicate-check",
+  profileController.checkAttendeeDuplicates,
+);
 
 router.post("/batch", profileController.getProfilesBatch);
 router.get("/batch", profileController.getProfilesBatch);

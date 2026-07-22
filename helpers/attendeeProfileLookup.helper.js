@@ -77,4 +77,58 @@ async function findOrCreateAttendeeProfile({
   return { profile, created: true };
 }
 
-module.exports = { findOrCreateAttendeeProfile };
+/**
+ * Read-only duplicate check for a would-be new attendee - never creates a
+ * Profile. Same exact-email fast path as findOrCreateAttendeeProfile, but
+ * when there's no exact email match it surfaces fuzzy candidates (via the
+ * same scoring engine used for membership-application duplicate review)
+ * instead of silently letting the caller create a new Profile:
+ *   - "exact": an existing Profile with this exact email - reuse it.
+ *   - "review": no exact email match, but one or more Profiles scored as a
+ *     likely match (score >= 40) - the caller must resolve this (pick one of
+ *     the candidates, or explicitly confirm creating a new Profile) before
+ *     registering the attendee.
+ *   - "none": no match at all - safe to create a new Profile.
+ */
+async function checkAttendeeDuplicates({ tenantId, email, firstName, lastName, phone }) {
+  if (!tenantId) throw new Error("tenantId is required");
+  if (!email) throw new Error("email is required");
+
+  const nEmail = normalizeEmail(email);
+  const existing = await Profile.findOne({ tenantId, normalizedEmail: nEmail });
+  if (existing) {
+    return {
+      resolution: "exact",
+      profileId: existing._id.toString(),
+      membershipNumber: existing.membershipNumber || null,
+    };
+  }
+
+  const candidateFields = {
+    personalInfo: { forename: firstName || null, surname: lastName || null },
+    contactInfo: {
+      personalEmail: email,
+      mobileNumber: phone || null,
+      preferredEmail: "PERSONAL",
+    },
+  };
+  const result = await findCandidateDuplicateMatches(candidateFields, tenantId);
+  const candidates = (result.matchSummary || []).filter((m) => m.score >= 40);
+  if (!candidates.length) {
+    return { resolution: "none" };
+  }
+
+  return {
+    resolution: "review",
+    candidates: candidates.map((m) => ({
+      profileId: m.sourceId,
+      membershipNumber: m.membershipNumber || null,
+      name: m.name,
+      email: m.email,
+      score: m.score,
+      classification: m.classification,
+    })),
+  };
+}
+
+module.exports = { findOrCreateAttendeeProfile, checkAttendeeDuplicates };
