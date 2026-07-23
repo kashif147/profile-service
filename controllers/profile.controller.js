@@ -2247,6 +2247,50 @@ async function checkAttendeeDuplicates(req, res, next) {
   }
 }
 
+// Internal endpoint: compensating rollback for a Profile created moments ago
+// via findOrCreateAttendeeProfile, when a later step of the same event/course
+// registration attempt fails (e.g. payment intent creation) - so a failed
+// registration never leaves a half-created Profile behind. See
+// helpers/attendeeProfileLookup.helper.js's deleteAttendeeProfile for the
+// membershipNumber safety guard.
+async function rollbackAttendeeProfile(req, res, next) {
+  try {
+    const isInternalRequest =
+      req.headers["x-internal-request"] === "true" ||
+      req.headers["x-internal-request"] === "1";
+
+    if (!isInternalRequest) {
+      return res.status(403).json({
+        success: false,
+        message: "Internal endpoint: x-internal-request header required",
+      });
+    }
+
+    const { tenantId, profileId } = req.body || {};
+    if (!tenantId || !profileId) {
+      return res.status(400).json({
+        success: false,
+        message: "tenantId and profileId are required",
+      });
+    }
+
+    const {
+      deleteAttendeeProfile: deleteAttendeeProfileHelper,
+    } = require("../helpers/attendeeProfileLookup.helper.js");
+
+    const result = await deleteAttendeeProfileHelper({ tenantId, profileId });
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error("ProfileController [rollbackAttendeeProfile] Error:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to roll back attendee profile",
+      ),
+    );
+  }
+}
+
 module.exports = {
   getAllProfiles,
   getProfilesWithTemplate,
@@ -2270,4 +2314,5 @@ module.exports = {
   getProfileByEmailInternal,
   findOrCreateAttendeeProfile,
   checkAttendeeDuplicates,
+  rollbackAttendeeProfile,
 };

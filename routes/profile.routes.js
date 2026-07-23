@@ -25,6 +25,10 @@ router.post(
   "/internal/attendee-duplicate-check",
   profileController.checkAttendeeDuplicates,
 );
+router.post(
+  "/internal/rollback-attendee-profile",
+  profileController.rollbackAttendeeProfile,
+);
 
 router.post("/batch", profileController.getProfilesBatch);
 router.get("/batch", profileController.getProfilesBatch);

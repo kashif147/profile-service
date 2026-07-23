@@ -232,4 +232,21 @@ async function checkAttendeeDuplicates({
   };
 }
 
-module.exports = { findOrCreateAttendeeProfile, checkAttendeeDuplicates };
+/**
+ * Compensating rollback for a Profile this same request just created via
+ * findOrCreateAttendeeProfile - used when a LATER step of the same
+ * registration attempt fails (e.g. payment intent creation), so a failed
+ * registration never leaves a half-created Profile behind. Refuses to touch
+ * any profile that has a membershipNumber - a real member profile must never
+ * be deleted by this path, even if called with a stale/wrong id.
+ */
+async function deleteAttendeeProfile({ tenantId, profileId }) {
+  if (!tenantId || !profileId) return { deleted: false, reason: "missing_params" };
+  const profile = await Profile.findOne({ _id: profileId, tenantId });
+  if (!profile) return { deleted: false, reason: "not_found" };
+  if (profile.membershipNumber) return { deleted: false, reason: "has_membership_number" };
+  await Profile.deleteOne({ _id: profileId, tenantId });
+  return { deleted: true };
+}
+
+module.exports = { findOrCreateAttendeeProfile, checkAttendeeDuplicates, deleteAttendeeProfile };
