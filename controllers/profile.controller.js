@@ -2119,7 +2119,21 @@ async function findOrCreateAttendeeProfile(req, res, next) {
       });
     }
 
-    const { tenantId, email, firstName, lastName, phone } = req.body || {};
+    const {
+      tenantId,
+      email,
+      firstName,
+      lastName,
+      phone,
+      workLocation,
+      grade,
+      addressLine1,
+      addressLine2,
+      townCity,
+      countyState,
+      eircode,
+      country,
+    } = req.body || {};
     if (!tenantId || !email) {
       return res.status(400).json({
         success: false,
@@ -2137,6 +2151,14 @@ async function findOrCreateAttendeeProfile(req, res, next) {
       firstName,
       lastName,
       phone,
+      workLocation,
+      grade,
+      addressLine1,
+      addressLine2,
+      townCity,
+      countyState,
+      eircode,
+      country,
     });
 
     return res.status(200).json({
@@ -2178,7 +2200,18 @@ async function checkAttendeeDuplicates(req, res, next) {
       });
     }
 
-    const { tenantId, email, firstName, lastName, phone } = req.body || {};
+    const {
+      tenantId,
+      email,
+      firstName,
+      lastName,
+      phone,
+      addressLine1,
+      townCity,
+      countyState,
+      eircode,
+      country,
+    } = req.body || {};
     if (!tenantId || !email) {
       return res.status(400).json({
         success: false,
@@ -2196,6 +2229,11 @@ async function checkAttendeeDuplicates(req, res, next) {
       firstName,
       lastName,
       phone,
+      addressLine1,
+      townCity,
+      countyState,
+      eircode,
+      country,
     });
 
     return res.status(200).json({ success: true, data: result });

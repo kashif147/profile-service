@@ -12,12 +12,55 @@ const {
  * findOrCreateProfileByEmail, which are coupled to the full application payload,
  * a Mongo transaction/session, and reviewer/portal-user linking.
  */
+// Builds the contactInfo/professionalDetails sub-documents shared by the
+// create path and the duplicate-detection candidate record, so an attendee's
+// work location, grade, and address (collected on the CRM form) actually
+// land on the Profile instead of being silently dropped.
+function buildAttendeeProfileFields({
+  email,
+  phone,
+  workLocation,
+  grade,
+  addressLine1,
+  addressLine2,
+  townCity,
+  countyState,
+  eircode,
+  country,
+}) {
+  return {
+    contactInfo: {
+      personalEmail: email,
+      mobileNumber: phone || null,
+      preferredEmail: "PERSONAL",
+      buildingOrHouse: addressLine1 || null,
+      streetOrRoad: addressLine2 || null,
+      areaOrTown: townCity || null,
+      countyCityOrPostCode: countyState || null,
+      eircode: eircode || null,
+      country: country || null,
+    },
+    professionalDetails: {
+      workLocation: workLocation || null,
+      grade: grade || null,
+    },
+  };
+}
+
 async function findOrCreateAttendeeProfile({
   tenantId,
   email,
   firstName,
   lastName,
   phone,
+  workLocation,
+  grade,
+  addressLine1,
+  addressLine2,
+  townCity,
+  countyState,
+  eircode,
+  country,
 }) {
   if (!tenantId) throw new Error("tenantId is required");
   if (!email) throw new Error("email is required");
@@ -29,16 +72,61 @@ async function findOrCreateAttendeeProfile({
     normalizedEmail: nEmail,
   });
   if (existing) {
+    // Backfill only the blanks - an existing profile's own data always wins,
+    // but attendee-only profiles often have no contactInfo/professionalDetails
+    // yet, so what's collected on this registration form shouldn't be dropped.
+    const { contactInfo: newContactInfo, professionalDetails: newProfessionalDetails } =
+      buildAttendeeProfileFields({
+        email,
+        phone,
+        workLocation,
+        grade,
+        addressLine1,
+        addressLine2,
+        townCity,
+        countyState,
+        eircode,
+        country,
+      });
+    let changed = false;
+    existing.contactInfo = existing.contactInfo || {};
+    existing.professionalDetails = existing.professionalDetails || {};
+    for (const [key, value] of Object.entries(newContactInfo)) {
+      if (value && !existing.contactInfo[key]) {
+        existing.contactInfo[key] = value;
+        changed = true;
+      }
+    }
+    for (const [key, value] of Object.entries(newProfessionalDetails)) {
+      if (value && !existing.professionalDetails[key]) {
+        existing.professionalDetails[key] = value;
+        changed = true;
+      }
+    }
+    if (changed) {
+      existing.markModified("contactInfo");
+      existing.markModified("professionalDetails");
+      await existing.save();
+    }
     return { profile: existing, created: false };
   }
 
+  const { contactInfo, professionalDetails } = buildAttendeeProfileFields({
+    email,
+    phone,
+    workLocation,
+    grade,
+    addressLine1,
+    addressLine2,
+    townCity,
+    countyState,
+    eircode,
+    country,
+  });
   const candidateFields = {
     personalInfo: { forename: firstName || null, surname: lastName || null },
-    contactInfo: {
-      personalEmail: email,
-      mobileNumber: phone || null,
-      preferredEmail: "PERSONAL",
-    },
+    contactInfo,
+    professionalDetails,
   };
 
   let duplicateDetection;
@@ -64,11 +152,8 @@ async function findOrCreateAttendeeProfile({
     normalizedEmail: nEmail,
     // membershipNumber intentionally omitted - this is a non-member (attendee-only) profile
     personalInfo: { forename: firstName || null, surname: lastName || null },
-    contactInfo: {
-      personalEmail: email,
-      mobileNumber: phone || null,
-      preferredEmail: "PERSONAL",
-    },
+    contactInfo,
+    professionalDetails,
     submissionDate: new Date(),
     isActive: true,
     ...(duplicateDetection ? { duplicateDetection } : {}),
@@ -90,7 +175,18 @@ async function findOrCreateAttendeeProfile({
  *     registering the attendee.
  *   - "none": no match at all - safe to create a new Profile.
  */
-async function checkAttendeeDuplicates({ tenantId, email, firstName, lastName, phone }) {
+async function checkAttendeeDuplicates({
+  tenantId,
+  email,
+  firstName,
+  lastName,
+  phone,
+  addressLine1,
+  townCity,
+  countyState,
+  eircode,
+  country,
+}) {
   if (!tenantId) throw new Error("tenantId is required");
   if (!email) throw new Error("email is required");
 
@@ -104,13 +200,18 @@ async function checkAttendeeDuplicates({ tenantId, email, firstName, lastName, p
     };
   }
 
+  const { contactInfo } = buildAttendeeProfileFields({
+    email,
+    phone,
+    addressLine1,
+    townCity,
+    countyState,
+    eircode,
+    country,
+  });
   const candidateFields = {
     personalInfo: { forename: firstName || null, surname: lastName || null },
-    contactInfo: {
-      personalEmail: email,
-      mobileNumber: phone || null,
-      preferredEmail: "PERSONAL",
-    },
+    contactInfo,
   };
   const result = await findCandidateDuplicateMatches(candidateFields, tenantId);
   const candidates = (result.matchSummary || []).filter((m) => m.score >= 40);
