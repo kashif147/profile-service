@@ -21,6 +21,7 @@ function buildAttendeeProfileFields({
   phone,
   workLocation,
   grade,
+  nmbiNumber,
   addressLine1,
   addressLine2,
   townCity,
@@ -43,6 +44,7 @@ function buildAttendeeProfileFields({
     professionalDetails: {
       workLocation: workLocation || null,
       grade: grade || null,
+      nmbiNumber: nmbiNumber || null,
     },
   };
 }
@@ -55,6 +57,7 @@ async function findOrCreateAttendeeProfile({
   phone,
   workLocation,
   grade,
+  nmbiNumber,
   addressLine1,
   addressLine2,
   townCity,
@@ -81,6 +84,7 @@ async function findOrCreateAttendeeProfile({
         phone,
         workLocation,
         grade,
+        nmbiNumber,
         addressLine1,
         addressLine2,
         townCity,
@@ -116,6 +120,7 @@ async function findOrCreateAttendeeProfile({
     phone,
     workLocation,
     grade,
+    nmbiNumber,
     addressLine1,
     addressLine2,
     townCity,
@@ -233,6 +238,34 @@ async function checkAttendeeDuplicates({
 }
 
 /**
+ * Fill in a blank professionalDetails.nmbiNumber on an ALREADY-RESOLVED
+ * profile (the CRM "search and select an existing profile" attendee-
+ * registration path, which never goes through findOrCreateAttendeeProfile's
+ * own by-email backfill above since it already has a profileId). Never
+ * overwrites a value that's already set - the query only matches when the
+ * field is currently null/empty/missing, so this can't clobber the
+ * canonical NMBI register number even under a concurrent call.
+ */
+async function syncAttendeeProfileFields({ tenantId, profileId, nmbiNumber }) {
+  if (!tenantId || !profileId || !nmbiNumber) {
+    return { updated: false, reason: "missing_params" };
+  }
+  const result = await Profile.findOneAndUpdate(
+    {
+      _id: profileId,
+      tenantId,
+      $or: [
+        { "professionalDetails.nmbiNumber": null },
+        { "professionalDetails.nmbiNumber": "" },
+        { "professionalDetails.nmbiNumber": { $exists: false } },
+      ],
+    },
+    { $set: { "professionalDetails.nmbiNumber": nmbiNumber } },
+  );
+  return { updated: !!result };
+}
+
+/**
  * Compensating rollback for a Profile this same request just created via
  * findOrCreateAttendeeProfile - used when a LATER step of the same
  * registration attempt fails (e.g. payment intent creation), so a failed
@@ -249,4 +282,9 @@ async function deleteAttendeeProfile({ tenantId, profileId }) {
   return { deleted: true };
 }
 
-module.exports = { findOrCreateAttendeeProfile, checkAttendeeDuplicates, deleteAttendeeProfile };
+module.exports = {
+  findOrCreateAttendeeProfile,
+  checkAttendeeDuplicates,
+  syncAttendeeProfileFields,
+  deleteAttendeeProfile,
+};

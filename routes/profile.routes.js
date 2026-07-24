@@ -29,6 +29,10 @@ router.post(
   "/internal/rollback-attendee-profile",
   profileController.rollbackAttendeeProfile,
 );
+router.post(
+  "/internal/attendee-profile-fields-sync",
+  profileController.syncAttendeeProfileFields,
+);
 
 router.post("/batch", profileController.getProfilesBatch);
 router.get("/batch", profileController.getProfilesBatch);

@@ -2291,6 +2291,50 @@ async function rollbackAttendeeProfile(req, res, next) {
   }
 }
 
+// Internal endpoint: fill in a blank professionalDetails.nmbiNumber on an
+// already-resolved attendee profile (the CRM "search and select an existing
+// profile" registration path, which has a profileId directly and never goes
+// through findOrCreateAttendeeProfile's own by-email backfill). See
+// helpers/attendeeProfileLookup.helper.js's syncAttendeeProfileFields for the
+// "only write if currently blank" guard.
+async function syncAttendeeProfileFields(req, res, next) {
+  try {
+    const isInternalRequest =
+      req.headers["x-internal-request"] === "true" ||
+      req.headers["x-internal-request"] === "1";
+
+    if (!isInternalRequest) {
+      return res.status(403).json({
+        success: false,
+        message: "Internal endpoint: x-internal-request header required",
+      });
+    }
+
+    const { tenantId, profileId, nmbiNumber } = req.body || {};
+    if (!tenantId || !profileId) {
+      return res.status(400).json({
+        success: false,
+        message: "tenantId and profileId are required",
+      });
+    }
+
+    const {
+      syncAttendeeProfileFields: syncAttendeeProfileFieldsHelper,
+    } = require("../helpers/attendeeProfileLookup.helper.js");
+
+    const result = await syncAttendeeProfileFieldsHelper({ tenantId, profileId, nmbiNumber });
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error("ProfileController [syncAttendeeProfileFields] Error:", error);
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to sync attendee profile fields",
+      ),
+    );
+  }
+}
+
 module.exports = {
   getAllProfiles,
   getProfilesWithTemplate,
@@ -2314,5 +2358,6 @@ module.exports = {
   getProfileByEmailInternal,
   findOrCreateAttendeeProfile,
   checkAttendeeDuplicates,
+  syncAttendeeProfileFields,
   rollbackAttendeeProfile,
 };
