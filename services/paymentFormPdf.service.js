@@ -20,19 +20,18 @@ const FILENAMES = {
 };
 
 function loadTemplatePdfBuilder() {
-  const candidates = [
-    path.join(__dirname, "paymentFormPdf/membershipFormPdf.js"),
-    path.join(__dirname, "../../notification-service/services/membershipFormPdf.js"),
-  ];
-  for (const candidate of candidates) {
-    try {
-      if (fs.existsSync(candidate)) {
-        // eslint-disable-next-line import/no-dynamic-require, global-require
-        return require(candidate).buildPrefilledMembershipFormPdf;
-      }
-    } catch {
-      /* try next */
+  // Own copy under services/paymentFormPdf/ — see payment-forms.md for why this is a copy
+  // rather than a shared package (this used to reach across into notification-service's source
+  // tree via a relative path, which only worked in a local monorepo checkout and threw in any
+  // real container deployment since each service's Dockerfile only copies its own repo).
+  const templatePath = path.join(__dirname, "paymentFormPdf/membershipFormPdf.js");
+  try {
+    if (fs.existsSync(templatePath)) {
+      // eslint-disable-next-line import/no-dynamic-require, global-require
+      return require(templatePath).buildPrefilledMembershipFormPdf;
     }
+  } catch {
+    /* fall through to null */
   }
   return null;
 }
