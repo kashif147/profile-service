@@ -186,6 +186,7 @@ async function checkAttendeeDuplicates({
   firstName,
   lastName,
   phone,
+  nmbiNumber,
   addressLine1,
   townCity,
   countyState,
@@ -205,9 +206,10 @@ async function checkAttendeeDuplicates({
     };
   }
 
-  const { contactInfo } = buildAttendeeProfileFields({
+  const { contactInfo, professionalDetails } = buildAttendeeProfileFields({
     email,
     phone,
+    nmbiNumber,
     addressLine1,
     townCity,
     countyState,
@@ -217,6 +219,7 @@ async function checkAttendeeDuplicates({
   const candidateFields = {
     personalInfo: { forename: firstName || null, surname: lastName || null },
     contactInfo,
+    professionalDetails,
   };
   const result = await findCandidateDuplicateMatches(candidateFields, tenantId);
   const candidates = (result.matchSummary || []).filter((m) => m.score >= 40);
