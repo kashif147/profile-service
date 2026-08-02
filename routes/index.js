@@ -14,5 +14,6 @@ router.use("/recruit-list", require("./recruit.a.friend.routes"));
 router.use("/universal", require("./universal.search.routes"));
 router.use("/batches", require("./batch.routes"));
 router.use("/payment-forms", require("./paymentForm.routes"));
+router.use("/groups", require("./group.routes"));
 
 module.exports = router;
