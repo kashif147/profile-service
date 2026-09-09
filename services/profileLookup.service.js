@@ -189,6 +189,23 @@ async function findOrCreateProfileByEmail({
       $set.normalizedEmail = normalizeEmail(primaryEmail);
     }
 
+    // This branch also runs for a pre-existing membershipNumber-less Profile
+    // (e.g. events-service's find-or-create-attendee Profile - attending an
+    // event never made someone a member, so that Profile was created with no
+    // membership number) that is only now, via this application approval,
+    // actually becoming a member. Without this, approveApplication's
+    // memberId (= profile.membershipNumber) stays null downstream, which
+    // breaks the member-created/subscription-upsert events - mirrors the
+    // same check bulkApproval.controller.js already has for its own
+    // "existing profile" branch.
+    if (!profile.membershipNumber) {
+      const membershipNumber = await generateMembershipNumber();
+      $set.membershipNumber = membershipNumber;
+      console.log(
+        `✅ Generated membership number ${membershipNumber} for existing profile ${profile._id}`,
+      );
+    }
+
     await Profile.updateOne({ _id: profile._id }, { $set }, { session });
     // profile.updated for reporting is published after commit via publishPostApprovalEvents
   }

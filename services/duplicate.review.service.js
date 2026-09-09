@@ -19,6 +19,9 @@ const {
   resolveLinkedPortalUserIdForProfile,
 } = require("./profileLookup.service.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
+const {
+  generateMembershipNumber,
+} = require("../helpers/membership.number.generator.js");
 const { loadSubmission } = require("./submission.service.js");
 const {
   getReviewerIdForDb,
@@ -423,6 +426,23 @@ async function applyEffectiveToProfile({ profile, effective, reviewerId, session
   });
   if (primaryEmail) {
     $set.normalizedEmail = normalizeEmail(primaryEmail);
+  }
+
+  // A profile linked here can be a pre-existing membershipNumber-less record
+  // (e.g. events-service's find-or-create-attendee Profile, created with no
+  // membership number since attending an event never made someone a member -
+  // see events-service's registration-flow.md) that is only now, via this
+  // application approval, actually becoming a member. Without this, memberId
+  // stays null downstream (approveApplication's memberId = profile.membershipNumber),
+  // which breaks the member-created/subscription-upsert events - mirrors the
+  // same check bulkApproval.controller.js already has for its own "existing
+  // profile" branch.
+  if (!profile.membershipNumber) {
+    const membershipNumber = await generateMembershipNumber();
+    $set.membershipNumber = membershipNumber;
+    console.log(
+      `✅ Generated membership number ${membershipNumber} for existing profile ${profile._id} (duplicate-review LINK)`,
+    );
   }
 
   await Profile.updateOne({ _id: profile._id }, { $set }, { session });
