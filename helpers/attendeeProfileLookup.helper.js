@@ -52,8 +52,11 @@ function buildAttendeeProfileFields({
 async function findOrCreateAttendeeProfile({
   tenantId,
   email,
+  title,
   firstName,
   lastName,
+  gender,
+  dateOfBirth,
   phone,
   workLocation,
   grade,
@@ -76,8 +79,9 @@ async function findOrCreateAttendeeProfile({
   });
   if (existing) {
     // Backfill only the blanks - an existing profile's own data always wins,
-    // but attendee-only profiles often have no contactInfo/professionalDetails
-    // yet, so what's collected on this registration form shouldn't be dropped.
+    // but attendee-only profiles often have no contactInfo/professionalDetails/
+    // personalInfo yet, so what's collected on this registration form
+    // shouldn't be dropped.
     const { contactInfo: newContactInfo, professionalDetails: newProfessionalDetails } =
       buildAttendeeProfileFields({
         email,
@@ -92,9 +96,11 @@ async function findOrCreateAttendeeProfile({
         eircode,
         country,
       });
+    const newPersonalInfo = { title: title || null, gender: gender || null, dateOfBirth: dateOfBirth || null };
     let changed = false;
     existing.contactInfo = existing.contactInfo || {};
     existing.professionalDetails = existing.professionalDetails || {};
+    existing.personalInfo = existing.personalInfo || {};
     for (const [key, value] of Object.entries(newContactInfo)) {
       if (value && !existing.contactInfo[key]) {
         existing.contactInfo[key] = value;
@@ -107,9 +113,16 @@ async function findOrCreateAttendeeProfile({
         changed = true;
       }
     }
+    for (const [key, value] of Object.entries(newPersonalInfo)) {
+      if (value && !existing.personalInfo[key]) {
+        existing.personalInfo[key] = value;
+        changed = true;
+      }
+    }
     if (changed) {
       existing.markModified("contactInfo");
       existing.markModified("professionalDetails");
+      existing.markModified("personalInfo");
       await existing.save();
     }
     return { profile: existing, created: false };
@@ -128,8 +141,15 @@ async function findOrCreateAttendeeProfile({
     eircode,
     country,
   });
+  const personalInfo = {
+    title: title || null,
+    forename: firstName || null,
+    surname: lastName || null,
+    gender: gender || null,
+    dateOfBirth: dateOfBirth || null,
+  };
   const candidateFields = {
-    personalInfo: { forename: firstName || null, surname: lastName || null },
+    personalInfo,
     contactInfo,
     professionalDetails,
   };
@@ -156,7 +176,7 @@ async function findOrCreateAttendeeProfile({
     tenantId,
     normalizedEmail: nEmail,
     // membershipNumber intentionally omitted - this is a non-member (attendee-only) profile
-    personalInfo: { forename: firstName || null, surname: lastName || null },
+    personalInfo,
     contactInfo,
     professionalDetails,
     submissionDate: new Date(),
@@ -187,6 +207,7 @@ async function checkAttendeeDuplicates({
   lastName,
   phone,
   nmbiNumber,
+  dateOfBirth,
   addressLine1,
   townCity,
   countyState,
@@ -217,7 +238,7 @@ async function checkAttendeeDuplicates({
     country,
   });
   const candidateFields = {
-    personalInfo: { forename: firstName || null, surname: lastName || null },
+    personalInfo: { forename: firstName || null, surname: lastName || null, dateOfBirth: dateOfBirth || null },
     contactInfo,
     professionalDetails,
   };
