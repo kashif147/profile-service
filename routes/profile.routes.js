@@ -33,6 +33,10 @@ router.post(
   "/internal/attendee-profile-fields-sync",
   profileController.syncAttendeeProfileFields,
 );
+router.post(
+  "/internal/attendee-profile-fields-update",
+  profileController.updateAttendeeProfileFields,
+);
 
 router.post("/batch", profileController.getProfilesBatch);
 router.get("/batch", profileController.getProfilesBatch);

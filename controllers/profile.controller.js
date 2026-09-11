@@ -2322,7 +2322,7 @@ async function syncAttendeeProfileFields(req, res, next) {
       });
     }
 
-    const { tenantId, profileId, nmbiNumber } = req.body || {};
+    const { tenantId, profileId, nmbiNumber, title, gender, dateOfBirth } = req.body || {};
     if (!tenantId || !profileId) {
       return res.status(400).json({
         success: false,
@@ -2334,7 +2334,7 @@ async function syncAttendeeProfileFields(req, res, next) {
       syncAttendeeProfileFields: syncAttendeeProfileFieldsHelper,
     } = require("../helpers/attendeeProfileLookup.helper.js");
 
-    const result = await syncAttendeeProfileFieldsHelper({ tenantId, profileId, nmbiNumber });
+    const result = await syncAttendeeProfileFieldsHelper({ tenantId, profileId, nmbiNumber, title, gender, dateOfBirth });
 
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
@@ -2342,6 +2342,97 @@ async function syncAttendeeProfileFields(req, res, next) {
     return next(
       AppError.internalServerError(
         error.message || "Failed to sync attendee profile fields",
+      ),
+    );
+  }
+}
+
+// Internal endpoint: real (overwrite, not blank-only) edit of an
+// already-linked attendee Profile's personalInfo/contactInfo/
+// professionalDetails, used when a CRM user edits an existing event/course
+// registration's attendee details from events-service. See
+// helpers/attendeeProfileLookup.helper.js's updateAttendeeProfileFields.
+async function updateAttendeeProfileFields(req, res, next) {
+  try {
+    const isInternalRequest =
+      req.headers["x-internal-request"] === "true" ||
+      req.headers["x-internal-request"] === "1";
+
+    if (!isInternalRequest) {
+      return res.status(403).json({
+        success: false,
+        message: "Internal endpoint: x-internal-request header required",
+      });
+    }
+
+    const {
+      tenantId,
+      profileId,
+      title,
+      firstName,
+      lastName,
+      gender,
+      dateOfBirth,
+      email,
+      phone,
+      workLocation,
+      grade,
+      nmbiNumber,
+      addressLine1,
+      addressLine2,
+      townCity,
+      countyState,
+      eircode,
+      country,
+    } = req.body || {};
+    if (!tenantId || !profileId) {
+      return res.status(400).json({
+        success: false,
+        message: "tenantId and profileId are required",
+      });
+    }
+
+    const {
+      updateAttendeeProfileFields: updateAttendeeProfileFieldsHelper,
+    } = require("../helpers/attendeeProfileLookup.helper.js");
+
+    const result = await updateAttendeeProfileFieldsHelper({
+      tenantId,
+      profileId,
+      title,
+      firstName,
+      lastName,
+      gender,
+      dateOfBirth,
+      email,
+      phone,
+      workLocation,
+      grade,
+      nmbiNumber,
+      addressLine1,
+      addressLine2,
+      townCity,
+      countyState,
+      eircode,
+      country,
+    });
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error("ProfileController [updateAttendeeProfileFields] Error:", error);
+    if (error.code === "ATTENDEE_EMAIL_CONFLICT") {
+      return res.status(409).json({ success: false, message: error.message });
+    }
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Duplicate value for unique field",
+        duplicateKey: error.keyValue,
+      });
+    }
+    return next(
+      AppError.internalServerError(
+        error.message || "Failed to update attendee profile fields",
       ),
     );
   }
@@ -2371,5 +2462,6 @@ module.exports = {
   findOrCreateAttendeeProfile,
   checkAttendeeDuplicates,
   syncAttendeeProfileFields,
+  updateAttendeeProfileFields,
   rollbackAttendeeProfile,
 };

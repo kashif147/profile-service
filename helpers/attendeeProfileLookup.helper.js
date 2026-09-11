@@ -262,31 +262,143 @@ async function checkAttendeeDuplicates({
 }
 
 /**
- * Fill in a blank professionalDetails.nmbiNumber on an ALREADY-RESOLVED
- * profile (the CRM "search and select an existing profile" attendee-
- * registration path, which never goes through findOrCreateAttendeeProfile's
- * own by-email backfill above since it already has a profileId). Never
- * overwrites a value that's already set - the query only matches when the
- * field is currently null/empty/missing, so this can't clobber the
- * canonical NMBI register number even under a concurrent call.
+ * Fill in blank professionalDetails.nmbiNumber / personalInfo.title,gender,
+ * dateOfBirth on an ALREADY-RESOLVED profile (the CRM "search and select an
+ * existing profile", or a registration whose email exactly matched an
+ * existing profile, attendee-registration paths - both go straight to a
+ * known profileId and never go through findOrCreateAttendeeProfile's own
+ * by-email backfill above). Never overwrites a value that's already set -
+ * each field is only written when it's currently null/empty/missing on the
+ * profile, so this can't clobber real data even under a concurrent call.
  */
-async function syncAttendeeProfileFields({ tenantId, profileId, nmbiNumber }) {
-  if (!tenantId || !profileId || !nmbiNumber) {
+async function syncAttendeeProfileFields({ tenantId, profileId, nmbiNumber, title, gender, dateOfBirth }) {
+  if (!tenantId || !profileId) {
     return { updated: false, reason: "missing_params" };
   }
-  const result = await Profile.findOneAndUpdate(
-    {
-      _id: profileId,
-      tenantId,
-      $or: [
-        { "professionalDetails.nmbiNumber": null },
-        { "professionalDetails.nmbiNumber": "" },
-        { "professionalDetails.nmbiNumber": { $exists: false } },
-      ],
-    },
-    { $set: { "professionalDetails.nmbiNumber": nmbiNumber } },
-  );
-  return { updated: !!result };
+  if (!nmbiNumber && !title && !gender && !dateOfBirth) {
+    return { updated: false, reason: "missing_params" };
+  }
+
+  const profile = await Profile.findOne({ _id: profileId, tenantId });
+  if (!profile) {
+    return { updated: false, reason: "not_found" };
+  }
+
+  profile.professionalDetails = profile.professionalDetails || {};
+  profile.personalInfo = profile.personalInfo || {};
+
+  let changed = false;
+  if (nmbiNumber && !profile.professionalDetails.nmbiNumber) {
+    profile.professionalDetails.nmbiNumber = nmbiNumber;
+    changed = true;
+  }
+  if (title && !profile.personalInfo.title) {
+    profile.personalInfo.title = title;
+    changed = true;
+  }
+  if (gender && !profile.personalInfo.gender) {
+    profile.personalInfo.gender = gender;
+    changed = true;
+  }
+  if (dateOfBirth && !profile.personalInfo.dateOfBirth) {
+    profile.personalInfo.dateOfBirth = dateOfBirth;
+    changed = true;
+  }
+
+  if (!changed) {
+    return { updated: false, reason: "no_blank_fields" };
+  }
+
+  profile.markModified("professionalDetails");
+  profile.markModified("personalInfo");
+  await profile.save();
+  return { updated: true };
+}
+
+/**
+ * Real, unconditional edit of an already-linked attendee Profile's
+ * personalInfo/contactInfo/professionalDetails fields - used when a CRM user
+ * edits an existing registration's attendee details (unlike
+ * syncAttendeeProfileFields above, which only ever fills in a currently-blank
+ * value, this OVERWRITES whatever the CRM user submitted). Only touches a
+ * field when its key is present in the call (`!== undefined`), so a caller
+ * can send a partial edit without wiping out fields it didn't intend to
+ * touch. An email edit that would collide with another profile's
+ * normalizedEmail in the same tenant throws rather than silently failing at
+ * save time with an opaque Mongo E11000.
+ */
+async function updateAttendeeProfileFields({
+  tenantId,
+  profileId,
+  title,
+  firstName,
+  lastName,
+  gender,
+  dateOfBirth,
+  email,
+  phone,
+  workLocation,
+  grade,
+  nmbiNumber,
+  addressLine1,
+  addressLine2,
+  townCity,
+  countyState,
+  eircode,
+  country,
+}) {
+  if (!tenantId || !profileId) throw new Error("tenantId and profileId are required");
+
+  const profile = await Profile.findOne({ _id: profileId, tenantId });
+  if (!profile) {
+    return { updated: false, reason: "not_found" };
+  }
+
+  profile.personalInfo = profile.personalInfo || {};
+  profile.contactInfo = profile.contactInfo || {};
+  profile.professionalDetails = profile.professionalDetails || {};
+
+  if (title !== undefined) profile.personalInfo.title = title || null;
+  if (firstName !== undefined) profile.personalInfo.forename = firstName || null;
+  if (lastName !== undefined) profile.personalInfo.surname = lastName || null;
+  if (gender !== undefined) profile.personalInfo.gender = gender || null;
+  if (dateOfBirth !== undefined) profile.personalInfo.dateOfBirth = dateOfBirth || null;
+
+  if (email !== undefined && email) {
+    const nEmail = normalizeEmail(email);
+    if (nEmail && nEmail !== profile.normalizedEmail) {
+      const collision = await Profile.findOne({
+        tenantId,
+        normalizedEmail: nEmail,
+        _id: { $ne: profile._id },
+      });
+      if (collision) {
+        const err = new Error("Another profile already uses this email address");
+        err.code = "ATTENDEE_EMAIL_CONFLICT";
+        throw err;
+      }
+      profile.normalizedEmail = nEmail;
+    }
+    profile.contactInfo.personalEmail = email;
+  }
+  if (phone !== undefined) profile.contactInfo.mobileNumber = phone || null;
+  if (addressLine1 !== undefined) profile.contactInfo.buildingOrHouse = addressLine1 || null;
+  if (addressLine2 !== undefined) profile.contactInfo.streetOrRoad = addressLine2 || null;
+  if (townCity !== undefined) profile.contactInfo.areaOrTown = townCity || null;
+  if (countyState !== undefined) profile.contactInfo.countyCityOrPostCode = countyState || null;
+  if (eircode !== undefined) profile.contactInfo.eircode = eircode || null;
+  if (country !== undefined) profile.contactInfo.country = country || null;
+
+  if (workLocation !== undefined) profile.professionalDetails.workLocation = workLocation || null;
+  if (grade !== undefined) profile.professionalDetails.grade = grade || null;
+  if (nmbiNumber !== undefined) profile.professionalDetails.nmbiNumber = nmbiNumber || null;
+
+  profile.markModified("personalInfo");
+  profile.markModified("contactInfo");
+  profile.markModified("professionalDetails");
+  await profile.save();
+
+  return { updated: true, profileId: profile._id.toString() };
 }
 
 /**
@@ -310,5 +422,6 @@ module.exports = {
   findOrCreateAttendeeProfile,
   checkAttendeeDuplicates,
   syncAttendeeProfileFields,
+  updateAttendeeProfileFields,
   deleteAttendeeProfile,
 };
