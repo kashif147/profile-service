@@ -42,12 +42,17 @@ const {
   handleSubscriptionResignationUndoneActive,
   handleSubscriptionCancellationUndoneActive,
 } = require("./listeners/subscription.personal.details.listener.js");
+const { handleCertificateIssued } = require("./listeners/certificateIssued.listener.js");
 // Initialize event system
 async function initEventSystem() {
   try {
     await init({
       url: process.env.RABBIT_URL,
       logger: console,
+      // events.events is owned by events-service, not one of the shared
+      // middleware's default exchanges - declared explicitly here the same
+      // way communication-service does for the same exchange.
+      exchanges: [{ name: "events.events", type: "topic", options: { durable: true } }],
       structuredLog: createRabbitStructuredLogHandlers(bizLogger),
       prefetch: 10,
       connectionName: "profile-service",
@@ -386,6 +391,20 @@ async function setupConsumers() {
 
     await consumer.consume(USER_QUEUE, { prefetch: 10 });
     console.log("✅ User events consumer ready:", USER_QUEUE);
+
+    // Events/courses certificate issuance (events.events exchange, owned by
+    // events-service) - creates a Qualification record automatically, for
+    // both manually-issued and auto-issued certificates.
+    const EVENTS_QUEUE = "profile.events.events";
+    await consumer.createQueue(EVENTS_QUEUE, { durable: true, messageTtl: 3600000 });
+    await consumer.bindQueue(EVENTS_QUEUE, "events.events", ["events.certificate.issued.v1"]);
+
+    consumer.registerHandler("events.certificate.issued.v1", async (payload) => {
+      await handleCertificateIssued(payload);
+    });
+
+    await consumer.consume(EVENTS_QUEUE, { prefetch: 10 });
+    console.log("✅ Events/courses certificate consumer ready:", EVENTS_QUEUE);
 
     console.log("✅ All consumers set up successfully");
   } catch (error) {
