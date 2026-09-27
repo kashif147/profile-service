@@ -1,6 +1,26 @@
 const jwt = require("jsonwebtoken");
 const { AppError } = require("../errors/AppError");
 const { validateGatewayRequest } = require("@membership/policy-middleware/security");
+const bizLogger = require("../config/bizLogger.js");
+
+// Emit a structured, correlation-tagged record for the authenticated request
+// context. logging-lib fills correlationId/userId/tenantId from `req`
+// (correlationId comes from correlationIdMiddleware). Safe metadata only —
+// never the JWT, Authorization header, cookies, body or PII.
+function logRequestContext(req, source) {
+  bizLogger.business(
+    "Request context set",
+    {
+      eventType: "RequestContextSet",
+      authSource: source || req.headers["x-auth-source"] || null,
+      userType: req.user && req.user.userType ? req.user.userType : null,
+      method: (req.method || "").toUpperCase(),
+      path: req.originalUrl || req.url,
+      environment: process.env.NODE_ENV || null,
+    },
+    req
+  );
+}
 
 /**
  * AUTHENTICATION MIDDLEWARE ONLY
@@ -117,11 +137,7 @@ const authenticate = async (req, res, next) => {
       req.permissions = permissions;
 
       console.log("=== AUTH MIDDLEWARE SUCCESS (Gateway) ===");
-      console.log("Request context set:", {
-        userId: req.userId,
-        tenantId: req.tenantId,
-        userType: req.user?.userType,
-      });
+      logRequestContext(req, req.headers["x-auth-source"]);
       return next();
     }
 
@@ -319,11 +335,7 @@ const authenticate = async (req, res, next) => {
     req.permissions = decoded.permissions || [];
 
     console.log("=== AUTH MIDDLEWARE SUCCESS ===");
-    console.log("Request context set:", {
-      userId: req.userId,
-      tenantId: req.tenantId,
-      userType: req.user?.userType,
-    });
+    logRequestContext(req, req.headers["x-auth-source"]);
     next();
   } catch (error) {
     console.error("JWT Verification Error:", error.message);
