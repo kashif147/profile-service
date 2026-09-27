@@ -31,7 +31,7 @@ services:
       LOG_ROOT: /var/log/projectshell
 
     volumes:
-      - /home/deploy/logs:/var/log/projectshell
+      - ../../logs:/var/log/projectshell
 
     restart: always
 

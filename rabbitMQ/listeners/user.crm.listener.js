@@ -6,6 +6,7 @@ const ProfessionalDetails = require("../../models/professional.details.model.js"
 const SubscriptionDetails = require("../../models/subscription.model.js");
 const ApplicationApprovalEventPublisher = require("../publishers/application.approval.publisher.js");
 const crypto = require("crypto");
+const { resolveCorrelationId } = require("../correlation.util.js");
 
 /**
  * Handle CRM user created event
@@ -73,7 +74,7 @@ async function handleCrmUserCreated(payload) {
           paymentType: null,
           payrollNo: null,
           paymentFrequency: null,
-          correlationId: crypto.randomUUID(),
+          correlationId: resolveCorrelationId(payload),
         });
 
         console.log(
@@ -237,7 +238,7 @@ async function handleCrmUserUpdated(payload) {
           paymentType: null,
           payrollNo: null,
           paymentFrequency: null,
-          correlationId: crypto.randomUUID(),
+          correlationId: resolveCorrelationId(payload),
         });
 
         console.log(
