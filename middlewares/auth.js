@@ -1,7 +1,23 @@
 const jwt = require("jsonwebtoken");
 const { AppError } = require("../errors/AppError");
 const { validateGatewayRequest } = require("@membership/policy-middleware/security");
+const { tenantContextMiddleware } = require("@membership/policy-middleware");
 const bizLogger = require("../config/bizLogger.js");
+
+/**
+ * Phase 1A canonical tenant-context guard — WARN MODE ONLY (non-blocking).
+ *
+ * Mount immediately AFTER `authenticate` on authenticated route groups so the
+ * trusted tenant (gateway `x-tenant-id` when `x-jwt-verified===true`, or the
+ * cryptographically-verified JWT claim on the legacy/bypass paths) is already on
+ * req.ctx/req.user/req.tenantId. In "warn" mode it re-pins req.tenantId to the
+ * trusted tenant and LOGS any caller-supplied (body/query/params) tenantId that
+ * disagrees, as a non-blocking TenantContextMismatch event — it never returns 403.
+ * Do NOT mount it on the pre-auth routes (/profile/validate, /profile/internal/*,
+ * /profile/batch) or the /api/system-logs ingest router, which establish no
+ * trusted tenant.
+ */
+const tenantContextWarn = tenantContextMiddleware({ mode: "warn" });
 
 // Emit a structured, correlation-tagged record for the authenticated request
 // context. logging-lib fills correlationId/userId/tenantId from `req`
@@ -435,6 +451,10 @@ module.exports = {
 
   // Tenant enforcement (authentication context, not authorization)
   requireTenant,
+
+  // Phase 1A canonical tenant-context guard (WARN MODE). Pair it with
+  // `authenticate`: app.use(authenticate, tenantContextWarn) / router.use(...).
+  tenantContextWarn,
 
   // Utility functions (for backward compatibility, but prefer policy-middleware)
   hasRole,

@@ -66,7 +66,7 @@ const session = require("express-session");
 
 const loggerMiddleware = require("./middlewares/logger.mw");
 const responseMiddleware = require("./middlewares/response.mw");
-const { authenticate } = require("./middlewares/auth");
+const { authenticate, tenantContextWarn } = require("./middlewares/auth");
 const { defaultPolicyMiddleware } = require("./middlewares/policy.middleware");
 
 // require("message-bus/src/index");
@@ -193,6 +193,11 @@ app.get("/api", (req, res) => {
 // Initialize authentication middleware for protected routes
 app.use("/api/profile", require("./routes/profile.routes"));
 app.use(authenticate);
+// Phase 1A: canonical tenant-context guard (WARN MODE, non-blocking) for all
+// globally-authenticated routers mounted below. Runs after authenticate so the
+// trusted tenant is established. The pre-auth /api/profile mount above and the
+// /api/system-logs ingest router are intentionally NOT covered.
+app.use(tenantContextWarn);
 
 app.use("/api", require("./routes/index"));
 

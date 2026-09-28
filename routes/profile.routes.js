@@ -9,7 +9,7 @@ const {
   submitProfileDuplicateMerge,
 } = require("../controllers/profile.duplicateReview.controller.js");
 const aggregatedUserDetailsController = require("../controllers/aggregated.user.details.controller.js");
-const { authenticate } = require("../middlewares/auth");
+const { authenticate, tenantContextWarn } = require("../middlewares/auth");
 const { defaultPolicyMiddleware } = require("../middlewares/policy.middleware");
 
 router.post("/validate", profileValidationController.validateProfile);
@@ -41,7 +41,7 @@ router.post(
 router.post("/batch", profileController.getProfilesBatch);
 router.get("/batch", profileController.getProfilesBatch);
 
-router.use(authenticate);
+router.use(authenticate, tenantContextWarn);
 
 // Literal paths first so they are not matched by /:profileId (which would return "Invalid profileId")
 router.get(
