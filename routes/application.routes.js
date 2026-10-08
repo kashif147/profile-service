@@ -30,6 +30,12 @@ router.get(
 );
 
 router.get(
+  "/user",
+  defaultPolicyMiddleware.requirePermission("portal", "read"),
+  applicationController.getApplicationsByUserId
+);
+
+router.get(
   "/:applicationId",
   defaultPolicyMiddleware.requirePermission("portal", "read"),
   applicationController.getApplicationById

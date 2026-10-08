@@ -426,6 +426,29 @@ exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
     }
   });
 
+exports.getApplicationsByCreator = (createdBy, tenantId, statusFilters = []) =>
+  new Promise(async (resolve, reject) => {
+    try {
+      const query = applyApplicationStatusFilters(
+        {
+          tenantId: String(tenantId),
+          "meta.createdBy": new mongoose.Types.ObjectId(createdBy),
+          ...NOT_DELETED_APPLICATION_FILTER,
+        },
+        statusFilters,
+      );
+
+      const applications = await fetchApplicationsForList(query);
+      resolve(await enrichApplicationsForList(applications));
+    } catch (error) {
+      console.error(
+        "ApplicationHandler [getApplicationsByCreator] Error:",
+        error,
+      );
+      reject(error);
+    }
+  });
+
 exports.getApplicationsForPortalUser = ({
   userId,
   tenantId,

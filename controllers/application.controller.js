@@ -820,6 +820,46 @@ exports.getApplicationsByProfileId = async (req, res, next) => {
   }
 };
 
+exports.getApplicationsByUserId = async (req, res, next) => {
+  try {
+    // userId comes from the authenticated token, never from the request
+    const { userType, creatorId, tenantId } = extractUserAndCreatorContext(req);
+    const userId = creatorId ? String(creatorId) : null;
+
+    if (userType !== "CRM" && userType !== "PORTAL") {
+      return next(AppError.forbidden("Access denied."));
+    }
+
+    if (!userId || !tenantId) {
+      return next(AppError.forbidden("Access denied."));
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return next(AppError.badRequest("Invalid user ID in token"));
+    }
+
+    const statusFilters = parseStatusFilters(req.query.type);
+    const applications = await applicationService.getApplicationsByCreator(
+      userId,
+      tenantId,
+      statusFilters,
+    );
+
+    return res.success({
+      userId,
+      count: applications.length,
+      applications,
+    });
+  } catch (error) {
+    console.error(
+      "ApplicationController [getApplicationsByUserId] Error:",
+      error?.message || error,
+    );
+    if (error?.stack) console.error(error.stack);
+    return next(error);
+  }
+};
+
 exports.getMyApplications = async (req, res, next) => {
   try {
     const { userType, userId, tenantId } = extractUserAndCreatorContext(req);

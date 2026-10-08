@@ -196,6 +196,36 @@ class ApplicationService {
   }
 
   /**
+   * Applications whose personal details were created by the given user (meta.createdBy).
+   * @param {string} createdBy - User ID stored in personalDetails.meta.createdBy
+   * @param {string} tenantId - Tenant ID
+   * @param {Array} [statusFilters] - Optional application status filters
+   * @returns {Promise<Array>} Array of applications with summary details
+   */
+  async getApplicationsByCreator(createdBy, tenantId, statusFilters = []) {
+    try {
+      if (!createdBy) {
+        throw AppError.badRequest("User ID is required");
+      }
+      if (!tenantId) {
+        throw AppError.badRequest("Tenant ID is required");
+      }
+
+      return await applicationHandler.getApplicationsByCreator(
+        createdBy,
+        tenantId,
+        statusFilters,
+      );
+    } catch (error) {
+      console.error(
+        "ApplicationService [getApplicationsByCreator] Error:",
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Portal user application history — active and inactive (meta.isActive true/false).
    * @param {Object} options
    * @param {string} options.userId - Portal user ID
