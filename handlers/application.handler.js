@@ -13,6 +13,7 @@ const {
 const {
   stampPersonalInfoFullName,
   enrichApplicationRowPersonalFullName,
+  enrichPersonalInfoFullNameOnDocument,
 } = require("../helpers/personal.info.fullName.js");
 const {
   findSubscriptionRecord,
@@ -308,7 +309,39 @@ async function fetchApplicationsForList(query) {
   }
 }
 
-async function enrichApplicationsForList(applications) {
+/**
+ * personalDetails for a list row. By default only meta.isActive; with includeFull, an explicit
+ * allow-list of the record's own fields. Never spread the raw document: it carries other
+ * members' data (duplicateReview.matchSummary), audit fields and undeclared legacy fields.
+ */
+function buildListPersonalDetails(app, includeFull) {
+  const isActive =
+    typeof app.meta?.isActive === "boolean" ? app.meta.isActive : true;
+  if (!includeFull) return { meta: { isActive } };
+
+  const personalDetails = {
+    _id: app._id ?? null,
+    applicationId: app.applicationId ?? null,
+    applicationStatus: app.applicationStatus ?? null,
+    profileId: app.profileId ?? null,
+    personalInfo: app.personalInfo ? { ...app.personalInfo } : null,
+    contactInfo: app.contactInfo ? { ...app.contactInfo } : null,
+    meta: {
+      createdBy: app.meta?.createdBy ?? null,
+      userType: app.meta?.userType ?? null,
+      isActive,
+    },
+    createdAt: app.createdAt ?? null,
+    updatedAt: app.updatedAt ?? null,
+  };
+  enrichPersonalInfoFullNameOnDocument(personalDetails);
+  return personalDetails;
+}
+
+async function enrichApplicationsForList(
+  applications,
+  { includePersonalDetails = false } = {},
+) {
   return Promise.all(
     applications.map(async (app) => {
       const subscription = await SubscriptionDetails.findOne({
@@ -391,14 +424,7 @@ async function enrichApplicationsForList(applications) {
           ...(app.executiveCouncilApprovalDetails || {}),
           approvedBy: executiveApprovedByPayload,
         },
-        personalDetails: {
-          meta: {
-            isActive:
-              typeof app.meta?.isActive === "boolean"
-                ? app.meta.isActive
-                : true,
-          },
-        },
+        personalDetails: buildListPersonalDetails(app, includePersonalDetails),
       };
     }),
   );
@@ -439,7 +465,11 @@ exports.getApplicationsByCreator = (createdBy, tenantId, statusFilters = []) =>
       );
 
       const applications = await fetchApplicationsForList(query);
-      resolve(await enrichApplicationsForList(applications));
+      resolve(
+        await enrichApplicationsForList(applications, {
+          includePersonalDetails: true,
+        }),
+      );
     } catch (error) {
       console.error(
         "ApplicationHandler [getApplicationsByCreator] Error:",
