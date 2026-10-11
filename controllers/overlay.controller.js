@@ -76,9 +76,16 @@ async function saveOverlayDraft(req, res, next) {
     console.log(
       `[saveOverlayDraft] Loading submission for applicationId: ${applicationId}`
     );
-    const { submission: serverSubmission } = await loadSubmission(
-      applicationId
-    );
+    if (!tenantId) {
+      throw AppError.forbidden("Tenant context is required");
+    }
+    const { submission: serverSubmission, meta: submissionMeta } =
+      await loadSubmission(applicationId, tenantId);
+    // The application must exist in the trusted tenant: never stage an overlay
+    // against another tenant's (or a non-existent) application.
+    if (!submissionMeta?.found) {
+      throw AppError.notFound("Application not found");
+    }
     console.log(
       `[saveOverlayDraft] Loaded server submission:`,
       !!serverSubmission
@@ -184,6 +191,7 @@ async function saveOverlayDraft(req, res, next) {
     // Upsert single open overlay per application
     let overlay = await ReviewOverlay.findOne({
       applicationId,
+      tenantId,
       status: "open",
     });
 

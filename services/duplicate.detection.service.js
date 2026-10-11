@@ -31,11 +31,20 @@ function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function loadApplicationBundle(applicationId) {
+function requireTenant(tenantId) {
+  const t = String(tenantId || "").trim();
+  if (!t) {
+    throw AppError.forbidden("Tenant context is required");
+  }
+  return t;
+}
+
+async function loadApplicationBundle(applicationId, tenantId) {
+  const scopedTenantId = requireTenant(tenantId);
   const [personal, professional, subscription] = await Promise.all([
-    PersonalDetails.findOne({ applicationId }).lean(),
-    ProfessionalDetails.findOne({ applicationId }).lean(),
-    SubscriptionDetails.findOne({ applicationId }).lean(),
+    PersonalDetails.findOne({ applicationId, tenantId: scopedTenantId }).lean(),
+    ProfessionalDetails.findOne({ applicationId, tenantId: scopedTenantId }).lean(),
+    SubscriptionDetails.findOne({ applicationId, tenantId: scopedTenantId }).lean(),
   ]);
 
   if (!personal) return null;
@@ -77,9 +86,10 @@ function profileToRecord(profile, membershipCategory = null) {
   });
 }
 
-async function filterNonApprovedApplicationIds(applicationIds) {
+async function filterNonApprovedApplicationIds(applicationIds, tenantId) {
   if (!applicationIds.length) return [];
   const rows = await PersonalDetails.find({
+    tenantId,
     applicationId: { $in: applicationIds },
     applicationStatus: { $in: NON_PROCESSED_STATUSES },
     "meta.deleted": { $ne: true },
@@ -89,7 +99,7 @@ async function filterNonApprovedApplicationIds(applicationIds) {
   return rows.map((row) => row.applicationId);
 }
 
-async function findExactApplicationCandidates(source, excludeApplicationId) {
+async function findExactApplicationCandidates(source, excludeApplicationId, tenantId) {
   const ids = new Set();
   const orConditions = [];
 
@@ -107,6 +117,7 @@ async function findExactApplicationCandidates(source, excludeApplicationId) {
 
   if (orConditions.length > 0) {
     const emailMobileMatches = await PersonalDetails.find({
+      tenantId,
       applicationId: { $ne: excludeApplicationId },
       applicationStatus: { $in: NON_PROCESSED_STATUSES },
       "meta.deleted": { $ne: true },
@@ -119,6 +130,7 @@ async function findExactApplicationCandidates(source, excludeApplicationId) {
 
   if (source.nmbiNumber) {
     const nmbiMatches = await ProfessionalDetails.find({
+      tenantId,
       applicationId: { $ne: excludeApplicationId },
       "professionalDetails.nmbiNumber": new RegExp(
         `^${escapeRegex(source.nmbiNumber)}$`,
@@ -132,6 +144,7 @@ async function findExactApplicationCandidates(source, excludeApplicationId) {
 
   if (source.payrollNo) {
     const payrollMatches = await SubscriptionDetails.find({
+      tenantId,
       applicationId: { $ne: excludeApplicationId },
       "subscriptionDetails.payrollNo": new RegExp(
         `^${escapeRegex(source.payrollNo)}$`,
@@ -151,12 +164,14 @@ async function findExactApplicationCandidates(source, excludeApplicationId) {
     const [professionalPrevMatches, subscriptionPrevMatches] =
       await Promise.all([
         ProfessionalDetails.find({
+          tenantId,
           applicationId: { $ne: excludeApplicationId },
           "professionalDetails.previousMembershipNo": prevRegex,
         })
           .select("applicationId")
           .lean(),
         SubscriptionDetails.find({
+          tenantId,
           applicationId: { $ne: excludeApplicationId },
           "subscriptionDetails.previousMembershipNo": prevRegex,
         })
@@ -167,10 +182,10 @@ async function findExactApplicationCandidates(source, excludeApplicationId) {
     subscriptionPrevMatches.forEach((row) => ids.add(row.applicationId));
   }
 
-  return filterNonApprovedApplicationIds([...ids]);
+  return filterNonApprovedApplicationIds([...ids], tenantId);
 }
 
-async function findFuzzyApplicationCandidates(source, excludeApplicationId) {
+async function findFuzzyApplicationCandidates(source, excludeApplicationId, tenantId) {
   const conditions = [];
 
   if (source.surname) {
@@ -216,6 +231,7 @@ async function findFuzzyApplicationCandidates(source, excludeApplicationId) {
   if (conditions.length === 0) return [];
 
   const rows = await PersonalDetails.find({
+    tenantId,
     applicationId: { $ne: excludeApplicationId },
     applicationStatus: { $in: NON_PROCESSED_STATUSES },
     "meta.deleted": { $ne: true },
@@ -343,10 +359,10 @@ async function findFuzzyProfileCandidates(source, tenantId) {
   return rows.map((row) => String(row._id));
 }
 
-async function scoreApplicationCandidates(source, applicationIds) {
+async function scoreApplicationCandidates(source, applicationIds, tenantId) {
   const matches = [];
   for (const applicationId of applicationIds) {
-    const bundle = await loadApplicationBundle(applicationId);
+    const bundle = await loadApplicationBundle(applicationId, tenantId);
     if (!bundle) continue;
     const record = bundleToRecord(bundle);
     const result = scorePair(source, record);
@@ -358,11 +374,12 @@ async function scoreApplicationCandidates(source, applicationIds) {
 
 async function scoreProfileCandidates(source, profileIds, tenantId) {
   const matches = [];
-  const normalizedTenantId = String(tenantId || "").trim();
+  const normalizedTenantId = requireTenant(tenantId);
   for (const profileId of profileIds) {
-    const profile = normalizedTenantId
-      ? await Profile.findOne({ _id: profileId, tenantId: normalizedTenantId }).lean()
-      : await Profile.findById(profileId).lean();
+    const profile = await Profile.findOne({
+      _id: profileId,
+      tenantId: normalizedTenantId,
+    }).lean();
     if (!profile) continue;
 
     let membershipCategory = null;
@@ -384,8 +401,9 @@ async function scoreProfileCandidates(source, profileIds, tenantId) {
   return matches;
 }
 
-async function findDuplicateMatches(applicationId, tenantId) {
-  const bundle = await loadApplicationBundle(applicationId);
+async function findDuplicateMatches(applicationId, requestTenantId) {
+  const tenantId = requireTenant(requestTenantId);
+  const bundle = await loadApplicationBundle(applicationId, tenantId);
   if (!bundle) {
     return {
       matchingApplications: [],
@@ -398,8 +416,8 @@ async function findDuplicateMatches(applicationId, tenantId) {
   const source = bundleToRecord(bundle);
 
   const applicationCandidateIds = new Set([
-    ...(await findExactApplicationCandidates(source, applicationId)),
-    ...(await findFuzzyApplicationCandidates(source, applicationId)),
+    ...(await findExactApplicationCandidates(source, applicationId, tenantId)),
+    ...(await findFuzzyApplicationCandidates(source, applicationId, tenantId)),
   ]);
 
   const profileCandidateIds = new Set([
@@ -408,7 +426,7 @@ async function findDuplicateMatches(applicationId, tenantId) {
   ]);
 
   const [applicationMatches, profileMatches] = await Promise.all([
-    scoreApplicationCandidates(source, [...applicationCandidateIds]),
+    scoreApplicationCandidates(source, [...applicationCandidateIds], tenantId),
     scoreProfileCandidates(source, [...profileCandidateIds], tenantId),
   ]);
 
@@ -425,10 +443,11 @@ async function findDuplicateMatches(applicationId, tenantId) {
 }
 
 async function findProfileDuplicateMatches(sourceProfileId, tenantId) {
-  const normalizedTenantId = String(tenantId || "").trim();
-  const sourceProfile = normalizedTenantId
-    ? await Profile.findOne({ _id: sourceProfileId, tenantId: normalizedTenantId }).lean()
-    : await Profile.findById(sourceProfileId).lean();
+  const normalizedTenantId = requireTenant(tenantId);
+  const sourceProfile = await Profile.findOne({
+    _id: sourceProfileId,
+    tenantId: normalizedTenantId,
+  }).lean();
 
   if (!sourceProfile) {
     throw AppError.notFound("Profile not found");
@@ -484,7 +503,7 @@ async function findProfileDuplicateMatches(sourceProfileId, tenantId) {
  * exist for the candidate - candidateFields is passed straight to buildMatchableRecord.
  */
 async function findCandidateDuplicateMatches(candidateFields, tenantId) {
-  const normalizedTenantId = String(tenantId || "").trim();
+  const normalizedTenantId = requireTenant(tenantId);
   const source = buildMatchableRecord(candidateFields || {});
 
   const profileCandidateIds = new Set([
@@ -515,7 +534,8 @@ async function detectProfileDuplicates(sourceProfileId, tenantId, actorId = null
   return result;
 }
 
-async function detectDuplicates(applicationId, tenantId, actorId = null) {
+async function detectDuplicates(applicationId, requestTenantId, actorId = null) {
+  const tenantId = requireTenant(requestTenantId);
   try {
     const result = await findDuplicateMatches(applicationId, tenantId);
     const activeMatches = result.matchSummary.filter((m) => !m.ignored);
@@ -527,7 +547,7 @@ async function detectDuplicates(applicationId, tenantId, actorId = null) {
       : DUPLICATE_REVIEW_STATUS.NO_MATCH;
 
     await PersonalDetails.updateOne(
-      { applicationId },
+      { applicationId, tenantId },
       {
         $set: {
           "duplicateDetection.isPotentialDuplicate": isDuplicate,
@@ -550,12 +570,12 @@ async function detectDuplicates(applicationId, tenantId, actorId = null) {
       },
     );
 
-    const updatedPersonal = await PersonalDetails.findOne({ applicationId })
+    const updatedPersonal = await PersonalDetails.findOne({ applicationId, tenantId })
       .select("duplicateReview tenantId")
       .lean();
 
     await publishDuplicateDetectionRunAudit({
-      tenantId: tenantId || updatedPersonal?.tenantId,
+      tenantId,
       applicationId,
       actorId,
       matchSummary: updatedPersonal?.duplicateReview?.matchSummary || result.matchSummary,

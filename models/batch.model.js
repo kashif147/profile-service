@@ -2,6 +2,14 @@ const mongoose = require("mongoose");
 
 const BatchSchema = new mongoose.Schema(
   {
+    // Owning tenant, stamped from the trusted request tenant on create. Every
+    // batch query is scoped by it (see scripts/backfill-batch-tenant.js for
+    // pre-existing rows).
+    tenantId: {
+      type: String,
+      required: true,
+      index: true,
+    },
     name: {
       type: String,
       required: true,
@@ -107,6 +115,7 @@ const BatchSchema = new mongoose.Schema(
 BatchSchema.index({ createdBy: 1 });
 BatchSchema.index({ isActive: 1, isDeleted: 1 });
 BatchSchema.index({ type: 1 });
+BatchSchema.index({ tenantId: 1, isDeleted: 1, createdAt: -1 });
 
 // Virtual to get profile count
 BatchSchema.virtual("profileCount").get(function () {

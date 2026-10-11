@@ -596,22 +596,21 @@ async function resolveProfileForDuplicateMerge(
   }
 
   const normalizedRequestTenantId = normalizeTenantId(requestTenantId);
+  if (!normalizedRequestTenantId) {
+    throw AppError.forbidden("Tenant context is required");
+  }
 
-  const personal = await PersonalDetails.findOne({ applicationId }).lean();
+  // Trusted request tenant is authoritative; an application in another tenant
+  // is indistinguishable from a missing one.
+  const personal = await PersonalDetails.findOne({
+    applicationId,
+    tenantId: normalizedRequestTenantId,
+  }).lean();
   if (!personal) {
     throw AppError.notFound("Application not found");
   }
 
-  const applicationTenantId = normalizeTenantId(personal.tenantId);
-  if (
-    normalizedRequestTenantId &&
-    applicationTenantId &&
-    normalizedRequestTenantId !== applicationTenantId
-  ) {
-    throw AppError.notFound("Application not found");
-  }
-
-  const tenantId = applicationTenantId || normalizedRequestTenantId;
+  const tenantId = normalizedRequestTenantId;
   const matchRow = findAuthorizedProfileMatch(
     personal.duplicateReview?.matchSummary,
     idStr,
@@ -689,7 +688,7 @@ async function getDuplicateMergeCompare(
   req = null,
 ) {
   const [{ submission }, { profile, matchRow }] = await Promise.all([
-    loadSubmission(applicationId),
+    loadSubmission(applicationId, tenantId),
     resolveProfileForDuplicateMerge(applicationId, profileId, tenantId),
   ]);
 
@@ -939,9 +938,13 @@ async function applyMergedEffectiveToApplication({
   session = null,
 }) {
   const writeOptions = session ? { session } : {};
+  const scopedTenantId = normalizeTenantId(tenantId);
+  if (!scopedTenantId) {
+    throw AppError.forbidden("Tenant context is required");
+  }
 
   await PersonalDetails.updateOne(
-    { applicationId },
+    { applicationId, tenantId: scopedTenantId },
     {
       $set: {
         personalInfo: effective.personalInfo || {},
@@ -955,10 +958,10 @@ async function applyMergedEffectiveToApplication({
   delete professionalDetails.membershipCategory;
 
   await ProfessionalDetails.updateOne(
-    { applicationId },
+    { applicationId, tenantId: scopedTenantId },
     {
       $set: {
-        tenantId,
+        tenantId: scopedTenantId,
         professionalDetails,
       },
     },
@@ -967,10 +970,10 @@ async function applyMergedEffectiveToApplication({
 
   const subscriptionDetails = { ...(effective.subscriptionDetails || {}) };
   await SubscriptionDetails.findOneAndUpdate(
-    { applicationId },
+    { applicationId, tenantId: scopedTenantId },
     {
       $set: {
-        tenantId,
+        tenantId: scopedTenantId,
         subscriptionDetails,
       },
     },

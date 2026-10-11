@@ -8,7 +8,17 @@ const {
   readLegacyProfessionalFieldsFromSubscriptionRecord,
 } = require("../helpers/membershipCategory.helper.js");
 
-async function loadSubmission(applicationId) {
+/**
+ * Load the authoritative staging submission for an application, scoped to the
+ * trusted tenant. `tenantId` is required: without it nothing is loaded (an empty
+ * submission is returned and `meta.found` is false) rather than reading another
+ * tenant's application.
+ */
+async function loadSubmission(applicationId, tenantId) {
+  const scopedTenantId = tenantId == null ? "" : String(tenantId).trim();
+  if (!scopedTenantId) {
+    throw AppError.forbidden("Tenant context is required");
+  }
   try {
     console.log(
       `[loadSubmission] Starting load for applicationId: ${applicationId}`
@@ -17,9 +27,9 @@ async function loadSubmission(applicationId) {
     // Load all related data for the application
     const [personalDetails, professionalDetails, subscriptionDetails] =
       await Promise.all([
-        PersonalDetails.findOne({ applicationId: applicationId }).lean(),
-        ProfessionalDetails.findOne({ applicationId: applicationId }).lean(),
-        SubscriptionDetails.findOne({ applicationId: applicationId }).lean(),
+        PersonalDetails.findOne({ applicationId, tenantId: scopedTenantId }).lean(),
+        ProfessionalDetails.findOne({ applicationId, tenantId: scopedTenantId }).lean(),
+        SubscriptionDetails.findOne({ applicationId, tenantId: scopedTenantId }).lean(),
       ]);
 
     console.log(
@@ -69,6 +79,7 @@ async function loadSubmission(applicationId) {
     };
 
     const meta = {
+      found: !!personalDetails,
       personalDetailsId: personalDetails?._id,
       professionalDetailsId: professionalDetails?._id,
       subscriptionDetailsId: subscriptionDetails?._id,
@@ -89,15 +100,7 @@ async function loadSubmission(applicationId) {
     console.error(`[loadSubmission] Error stack:`, error.stack);
     console.error(`[loadSubmission] Error name:`, error.name);
     console.error(`[loadSubmission] Error message:`, error.message);
-    throw AppError.internalServerError(
-      `Failed to load submission for application ${applicationId}`,
-      {
-        originalError: error.message,
-        applicationId: applicationId,
-        errorName: error.name,
-        errorStack: error.stack,
-      }
-    );
+    throw AppError.internalServerError("Failed to load submission");
   }
 }
 

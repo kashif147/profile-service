@@ -31,6 +31,9 @@ async function updateExecutiveCouncilApproval(req, res, next) {
 
     if (!result.success) {
       await session.abortTransaction();
+      if (result.error === "Application not found") {
+        return next(AppError.notFound(result.error));
+      }
       return next(AppError.badRequest(result.error));
     }
 

@@ -186,8 +186,10 @@ async function approveSingleApplication({
 }) {
   try {
     // First check if application exists in database
+    // Tenant-scoped: an application from another tenant reads as not found.
     const personalDetails = await PersonalDetails.findOne({
       applicationId: applicationId,
+      tenantId,
     }).session(session);
 
     if (!personalDetails) {
@@ -221,7 +223,8 @@ async function approveSingleApplication({
     }
 
     const { submission: serverSubmission } = await loadSubmission(
-      applicationId
+      applicationId,
+      tenantId,
     );
 
     // Determine patch source - same logic as single approval
@@ -232,6 +235,7 @@ async function approveSingleApplication({
     // Check if there's an open overlay for this application
     overlay = await ReviewOverlay.findOne({
       applicationId,
+      tenantId,
       status: "open",
     }).session(session);
 
@@ -371,7 +375,7 @@ async function approveSingleApplication({
 
       const beforeLean = existingProfile.toObject({ depopulate: true });
       await Profile.updateOne(
-        { _id: existingProfile._id },
+        { _id: existingProfile._id, tenantId },
         {
           $set: updateFields,
         },
@@ -406,9 +410,11 @@ async function approveSingleApplication({
       // Set crmUserId (the user who approved this profile)
       updateFields.crmUserId = getReviewerIdForDb(reviewerId);
 
-      const beforeSecond = await Profile.findById(profile._id).session(session).lean();
+      const beforeSecond = await Profile.findOne({ _id: profile._id, tenantId })
+        .session(session)
+        .lean();
       await Profile.updateOne(
-        { _id: profile._id },
+        { _id: profile._id, tenantId },
         {
           $set: updateFields,
         },
@@ -453,9 +459,9 @@ async function approveSingleApplication({
         personalSet.userId = linkedUserDocumentId;
       }
       await PersonalDetails.updateOne(
-        { applicationId: applicationId },
+        { applicationId: applicationId, tenantId },
         { $set: personalSet },
-        { upsert: true, session }
+        { session }
       );
     }
 
@@ -465,7 +471,7 @@ async function approveSingleApplication({
         profSet.userId = linkedUserDocumentId;
       }
       await ProfessionalDetails.updateOne(
-        { applicationId: applicationId },
+        { applicationId: applicationId, tenantId },
         { $set: profSet },
         { upsert: true, session }
       );
@@ -496,7 +502,7 @@ async function approveSingleApplication({
         subSet.userId = linkedUserDocumentId;
       }
       await SubscriptionDetails.findOneAndUpdate(
-        { applicationId: applicationId },
+        { applicationId: applicationId, tenantId },
         { $set: subSet },
         { upsert: true, new: true, runValidators: true, session }
       );
@@ -515,7 +521,10 @@ async function approveSingleApplication({
       await overlay.save({ session });
     }
 
-    const updatedProfile = await Profile.findById(profile._id).session(session);
+    const updatedProfile = await Profile.findOne({
+      _id: profile._id,
+      tenantId,
+    }).session(session);
     const memberId = updatedProfile?.membershipNumber || null;
     const sub = effective.subscriptionDetails || {};
     const dateJoinedForSub = parseDateOnlyToUtcNoon(sub.dateJoined, true);
@@ -561,7 +570,10 @@ async function approveSingleApplication({
 
 async function bulkApproveApplications(req, res, next) {
   const { applicationIds, processingDate } = req.body;
-  const tenantId = req.tenantId;
+  const tenantId = req.tenantId ? String(req.tenantId) : null;
+  if (!tenantId) {
+    return next(AppError.forbidden("Tenant context is required"));
+  }
   // Get reviewerId from req.user.id or fallback to req.userId (set by auth middleware)
   const reviewerId = req.user?.id || req.userId;
 

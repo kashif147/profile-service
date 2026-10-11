@@ -11,9 +11,9 @@ class ApplicationService {
    * @param {Array} statusFilters - Array of status values to filter by
    * @returns {Promise<Array>} Array of applications
    */
-  async getAllApplications(statusFilters = []) {
+  async getAllApplications(statusFilters = [], tenantId) {
     try {
-      return await applicationHandler.getAllApplications(statusFilters);
+      return await applicationHandler.getAllApplications(statusFilters, tenantId);
     } catch (error) {
       console.error("ApplicationService [getAllApplications] Error:", error);
       throw error;
@@ -25,13 +25,13 @@ class ApplicationService {
    * @param {string} applicationId - Application ID
    * @returns {Promise<Object>} Application details
    */
-  async getApplicationById(applicationId) {
+  async getApplicationById(applicationId, tenantId) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
       }
 
-      return await applicationHandler.getApplicationById(applicationId);
+      return await applicationHandler.getApplicationById(applicationId, tenantId);
     } catch (error) {
       console.error("ApplicationService [getApplicationById] Error:", error);
       throw error;
@@ -51,6 +51,7 @@ class ApplicationService {
     newStatus,
     approvedBy,
     comments,
+    tenantId,
   ) {
     try {
       if (!applicationId) {
@@ -81,6 +82,7 @@ class ApplicationService {
         normalizedStatus,
         approvedBy,
         comments,
+        tenantId,
       );
     } catch (error) {
       console.error(
@@ -102,12 +104,14 @@ class ApplicationService {
     statusFilters = [],
     page = 1,
     limit = 500,
+    tenantId,
   ) {
     try {
       return await applicationHandler.getAllApplicationsWithDetails(
         statusFilters,
         page,
         limit,
+        tenantId,
       );
     } catch (error) {
       console.error(
@@ -132,6 +136,7 @@ class ApplicationService {
     page = 1,
     limit = 500,
     columns = [],
+    tenantId,
   ) {
     try {
       return await applicationHandler.getApplicationsWithTemplateFilters(
@@ -139,6 +144,7 @@ class ApplicationService {
         page,
         limit,
         columns,
+        tenantId,
       );
     } catch (error) {
       console.error(
@@ -154,13 +160,16 @@ class ApplicationService {
    * @param {string} applicationId - Application ID
    * @returns {Promise<Object>} Application with complete details
    */
-  async getApplicationWithDetails(applicationId) {
+  async getApplicationWithDetails(applicationId, tenantId) {
     try {
       if (!applicationId) {
         throw AppError.badRequest("Application ID is required");
       }
 
-      return await applicationHandler.getApplicationWithDetails(applicationId);
+      return await applicationHandler.getApplicationWithDetails(
+        applicationId,
+        tenantId,
+      );
     } catch (error) {
       console.error(
         "ApplicationService [getApplicationWithDetails] Error:",
@@ -176,7 +185,7 @@ class ApplicationService {
    * @param {Array} [statusFilters] - Optional array of application status values to filter by (e.g. ["processed", "submitted"])
    * @returns {Promise<Array>} Array of applications with summary details
    */
-  async getApplicationsByProfileId(profileId, statusFilters = []) {
+  async getApplicationsByProfileId(profileId, statusFilters = [], tenantId) {
     try {
       if (!profileId) {
         throw AppError.badRequest("Profile ID is required");
@@ -185,6 +194,7 @@ class ApplicationService {
       return await applicationHandler.getApplicationsByProfileId(
         profileId,
         statusFilters,
+        tenantId,
       );
     } catch (error) {
       console.error(

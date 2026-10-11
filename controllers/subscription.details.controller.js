@@ -42,6 +42,7 @@ exports.createSubscriptionDetails = async (req, res, next) => {
       body: req.body,
       userId,
       userType,
+      tenantId,
       professionalDetailsHandler,
       subscriptionDetailsHandler,
     });
@@ -124,6 +125,7 @@ exports.updateSubscriptionDetails = async (req, res, next) => {
       body: req.body,
       userId,
       userType,
+      tenantId,
       professionalDetailsHandler,
       subscriptionDetailsHandler,
     });

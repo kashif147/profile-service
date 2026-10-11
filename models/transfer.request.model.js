@@ -2,11 +2,12 @@ const mongoose = require("mongoose");
 
 const TransferRequestSchema = new mongoose.Schema(
   {
+    // Stamped from the trusted request tenant on create. No default: a missing
+    // tenant must fail validation rather than silently land in a fixed tenant.
     tenantId: {
       type: String,
       required: true,
       index: true,
-      default: "39866a06-30bc-4a89-80c6-9dd9357dd453", // Default tenant
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -50,6 +51,7 @@ const TransferRequestSchema = new mongoose.Schema(
 // Indexes for efficient queries
 TransferRequestSchema.index({ tenantId: 1, status: 1 });
 TransferRequestSchema.index({ userId: 1, status: 1 });
+TransferRequestSchema.index({ tenantId: 1, userId: 1, status: 1 });
 
 module.exports = mongoose.model(
   "TransferRequest",

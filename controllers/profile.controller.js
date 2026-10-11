@@ -31,6 +31,11 @@ const {
   publishProfileAfterUpdateOne,
 } = require("../services/profile.audit.publisher.js");
 const bizLogger = require("../config/bizLogger.js");
+const { resolveInternalCallerTenant } = require("../middlewares/internalTenant.js");
+
+function rejectInternal(res, result) {
+  return res.status(result.status).json({ success: false, message: result.message });
+}
 
 function objectIdCandidate(value) {
   if (!value || !mongoose.Types.ObjectId.isValid(value)) return null;
@@ -1103,7 +1108,13 @@ async function getCornMarketNew(req, res, next) {
     const skip = (page - 1) * limit;
 
     // Find subscriptions with membershipStatus = "new"
+    const tenantId = req.tenantId;
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
+
     const subscriptions = await Subscription.find({
+      tenantId,
       "subscriptionDetails.membershipStatus": "new",
       deleted: false,
       isActive: true,
@@ -1133,6 +1144,7 @@ async function getCornMarketNew(req, res, next) {
 
     // Find profiles matching these userIds
     const query = {
+      tenantId,
       userId: { $in: userIds },
     };
 
@@ -1159,7 +1171,7 @@ async function getCornMarketNew(req, res, next) {
   } catch (error) {
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch corn market new profiles",
+        "Failed to fetch corn market new profiles",
       ),
     );
   }
@@ -1181,7 +1193,13 @@ async function getCornMarketGraduate(req, res, next) {
     const skip = (page - 1) * limit;
 
     // Find subscriptions with membershipStatus = "graduate"
+    const tenantId = req.tenantId;
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
+
     const subscriptions = await Subscription.find({
+      tenantId,
       "subscriptionDetails.membershipStatus": "graduate",
       deleted: false,
       isActive: true,
@@ -1211,6 +1229,7 @@ async function getCornMarketGraduate(req, res, next) {
 
     // Find profiles matching these userIds
     const query = {
+      tenantId,
       userId: { $in: userIds },
     };
 
@@ -1237,7 +1256,7 @@ async function getCornMarketGraduate(req, res, next) {
   } catch (error) {
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch corn market graduate profiles",
+        "Failed to fetch corn market graduate profiles",
       ),
     );
   }
@@ -1269,8 +1288,14 @@ async function checkEmailExists(req, res, next) {
     // Example: "John.Doe@EXAMPLE.COM" -> "john.doe@example.com"
     const normalizedEmail = normalizeEmail(email);
 
-    // Check if profile exists by normalizedEmail (searches across all tenants)
+    const tenantId = req.tenantId;
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
+
+    // Tenant-scoped: never reveals profiles belonging to another tenant.
     const existingProfile = await Profile.findOne({
+      tenantId,
       normalizedEmail: normalizedEmail,
     }).lean();
 
@@ -1322,7 +1347,7 @@ async function checkEmailExists(req, res, next) {
     console.error("ProfileController [checkEmailExists] Error:", error);
     return next(
       AppError.internalServerError(
-        error.message || "Failed to check email existence",
+        "Failed to check email existence",
       ),
     );
   }
@@ -1583,11 +1608,8 @@ function profileIdsToObjectIds(profileIds) {
 }
 
 async function findProfilesByObjectIds(objectIds, tenantId) {
-  if (!objectIds.length) return [];
-  const query = { _id: { $in: objectIds } };
-  if (tenantId) {
-    query.tenantId = tenantId;
-  }
+  if (!objectIds.length || !tenantId) return [];
+  const query = { _id: { $in: objectIds }, tenantId };
   const profiles = await Profile.find(query)
     .select(BATCH_PROFILE_LOOKUP_SELECT)
     .lean();
@@ -1615,6 +1637,9 @@ async function getProfilesBatchAuthenticated(req, res, next) {
     );
   }
 
+    if (!req.tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
     const objectIds = profileIdsToObjectIds(profileIds);
     const profiles = await findProfilesByObjectIds(objectIds, req.tenantId);
 
@@ -1627,11 +1652,7 @@ async function getProfilesBatchAuthenticated(req, res, next) {
       "ProfileController [getProfilesBatchAuthenticated] Error:",
       error,
     );
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to fetch profiles by IDs",
-      ),
-    );
+    return next(AppError.internalServerError("Failed to fetch profiles by IDs"));
   }
 }
 
@@ -1662,10 +1683,12 @@ async function lookupProfilesByMembershipNumbers(req, res, next) {
     }
 
     const tenantId = req.tenantId;
-    const tenantFilter = tenantId ? { tenantId } : {};
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
 
     let profiles = await Profile.find({
-      ...tenantFilter,
+      tenantId,
       membershipNumber: { $in: membershipNumbers },
     })
       .select(BATCH_PROFILE_LOOKUP_SELECT)
@@ -1678,7 +1701,7 @@ async function lookupProfilesByMembershipNumbers(req, res, next) {
       (n) => !foundKeys.has(n.toLowerCase()),
     );
 
-    if (missingExact.length && tenantId) {
+    if (missingExact.length) {
       for (const mn of missingExact) {
         const ci = await Profile.findOne({
           tenantId,
@@ -1699,50 +1722,9 @@ async function lookupProfilesByMembershipNumbers(req, res, next) {
 
     const diagnose =
       req.body?.diagnose === true && membershipNumbers.length === 1;
-    if (diagnose && profiles.length === 0 && tenantId) {
-      const mn = membershipNumbers[0];
-      const byNumber = await Profile.findOne({ membershipNumber: mn })
-        .select("tenantId membershipNumber")
-        .lean();
-      const byNumberCi =
-        byNumber ||
-        (await Profile.findOne({
-          membershipNumber: {
-            $regex: new RegExp(`^${escapeRegex(mn)}$`, "i"),
-          },
-        })
-          .select("tenantId membershipNumber")
-          .lean());
-
-      if (byNumberCi) {
-        const pt = byNumberCi.tenantId;
-        if (pt != null && pt !== "" && pt !== tenantId) {
-          return res.status(200).json({
-            success: true,
-            data: [],
-            lookupError:
-              "A profile exists for this membership number but under a different tenant than your session. Align profile.tenantId with the gateway x-tenant-id (or use the correct CRM tenant).",
-          });
-        }
-        if (pt == null || pt === "") {
-          return res.status(200).json({
-            success: true,
-            data: [],
-            lookupError:
-              "A profile exists for this membership number but it has no tenantId set; batch resolution requires tenantId on the profile to match your session.",
-          });
-        }
-        if (pt === tenantId) {
-          const full = await Profile.findById(byNumberCi._id)
-            .select(BATCH_PROFILE_LOOKUP_SELECT)
-            .lean();
-          if (full) {
-            enrichPersonalInfoFullNameOnDocument(full);
-            return res.status(200).json({ success: true, data: [full] });
-          }
-        }
-      }
-
+    if (diagnose && profiles.length === 0) {
+      // Diagnose is tenant-scoped: it never reveals whether a membership number
+      // exists under another tenant.
       return res.status(200).json({
         success: true,
         data: [],
@@ -1758,9 +1740,7 @@ async function lookupProfilesByMembershipNumbers(req, res, next) {
       error,
     );
     return next(
-      AppError.internalServerError(
-        error.message || "Failed to lookup profiles by membership number",
-      ),
+      AppError.internalServerError("Failed to lookup profiles by membership number"),
     );
   }
 }
@@ -1774,40 +1754,11 @@ async function lookupProfilesByMembershipNumbers(req, res, next) {
  */
 async function getProfilesBatch(req, res, next) {
   try {
-    // Accept either JWT or internal request (when gateway doesn't forward JWT to profile-service)
-    const isInternalRequest =
-      req.headers["x-internal-request"] === "true" ||
-      req.headers["x-internal-request"] === "1";
-    const tenantIdHeader = req.headers["x-tenant-id"];
-
-    let hasValidJWT = false;
-    const authHeader = req.headers.authorization || req.headers.Authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      try {
-        const token = authHeader.substring(7);
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded;
-        req.userId = decoded.sub || decoded.id;
-        req.tenantId =
-          decoded.tenantId || decoded.tid || decoded.extension_tenantId;
-        hasValidJWT = true;
-      } catch (err) {
-        // JWT invalid; will allow if internal header present
-      }
-    }
-
-    if (!hasValidJWT) {
-      if (isInternalRequest && tenantIdHeader) {
-        req.tenantId = tenantIdHeader;
-        req.user = req.user || { tenantId: tenantIdHeader };
-      } else {
-        return res.status(401).json({
-          success: false,
-          message:
-            "Batch endpoint requires Authorization (Bearer) or internal request (x-internal-request: true and x-tenant-id)",
-        });
-      }
-    }
+    // Gateway identity / verified JWT (user tenant wins) or internal service
+    // call (x-internal-request + x-tenant-id). Body/query tenantId never decides
+    // the scope; a mismatching one is rejected.
+    const auth = resolveInternalCallerTenant(req, { requireInternalFlag: false });
+    if (!auth.ok) return rejectInternal(res, auth);
 
     // Accept profileIds from POST body or GET query (gateway-safe when proxy strips body or converts to GET)
     let profileIds = req.body?.profileIds;
@@ -1849,13 +1800,9 @@ async function getProfilesBatch(req, res, next) {
       return res.status(200).json({ success: true, data: [] });
     }
 
-    const query = { _id: { $in: objectIds } };
-    const relaxTenant =
-      isInternalRequest &&
-      (req.query?.relaxTenant === "true" || req.query?.relaxTenant === "1");
-    if (req.tenantId && !relaxTenant) {
-      query.tenantId = req.tenantId;
-    }
+    // relaxTenant is no longer honoured: every batch lookup is scoped to the
+    // resolved (trusted or internal-caller) tenant.
+    const query = { _id: { $in: objectIds }, tenantId: auth.tenantId };
     const profiles = await Profile.find(query).lean();
 
     enrichPersonalInfoFullNameOnDocuments(profiles);
@@ -1866,33 +1813,22 @@ async function getProfilesBatch(req, res, next) {
     });
   } catch (error) {
     console.error("ProfileController [getProfilesBatch] Error:", error);
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to fetch profiles by IDs",
-      ),
-    );
+    return next(AppError.internalServerError("Failed to fetch profiles by IDs"));
   }
 }
 
 // Internal endpoint: Get profile by email and tenantId (for membership check by user-service)
 async function getProfileByEmailInternal(req, res, next) {
   try {
-    const isInternalRequest =
-      req.headers["x-internal-request"] === "true" ||
-      req.headers["x-internal-request"] === "1";
+    const auth = resolveInternalCallerTenant(req);
+    if (!auth.ok) return rejectInternal(res, auth);
+    const tenantId = auth.tenantId;
 
-    if (!isInternalRequest) {
-      return res.status(403).json({
-        success: false,
-        message: "Internal endpoint: x-internal-request header required",
-      });
-    }
-
-    const { email, tenantId } = req.query;
-    if (!email || !tenantId) {
+    const { email } = req.query;
+    if (!email || typeof email !== "string") {
       return res.status(400).json({
         success: false,
-        message: "email and tenantId query params are required",
+        message: "email query param is required",
       });
     }
 
@@ -1914,54 +1850,18 @@ async function getProfileByEmailInternal(req, res, next) {
       "ProfileController [getProfileByEmailInternal] Error:",
       error,
     );
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to fetch profile by email",
-      ),
-    );
+    return next(AppError.internalServerError("Failed to fetch profile by email"));
   }
 }
 
 // Internal endpoint: Get profiles by user IDs (for service-to-service calls)
 async function getProfilesByUserIds(req, res, next) {
   try {
-    // Accept either JWT token OR internal request header
-    const isInternalRequest =
-      req.headers["x-internal-request"] === "true" ||
-      req.headers["x-internal-request"] === "1";
-
-    // Manually validate JWT token if present (since route is before authenticate middleware)
-    let hasValidJWT = false;
-    const authHeader = req.headers.authorization || req.headers.Authorization;
-
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      try {
-        const token = authHeader.substring(7);
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-        // Set user context if JWT is valid
-        req.user = decoded;
-        req.userId = decoded.sub || decoded.id;
-        req.tenantId =
-          decoded.tenantId || decoded.tid || decoded.extension_tenantId;
-        hasValidJWT = true;
-      } catch (error) {
-        // JWT validation failed, but we'll still allow if internal header is present
-        console.warn(
-          "JWT validation failed for internal endpoint:",
-          error.message,
-        );
-      }
-    }
-
-    // If neither JWT token (valid) nor internal header is present, reject
-    if (!hasValidJWT && !isInternalRequest) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "This endpoint requires either a valid JWT token (Authorization header) or internal request header (x-internal-request)",
-      });
-    }
+    // Gateway identity / verified JWT (user tenant) or internal call with
+    // x-tenant-id. A tenant is always required; both lookups are scoped to it.
+    const auth = resolveInternalCallerTenant(req, { requireInternalFlag: false });
+    if (!auth.ok) return rejectInternal(res, auth);
+    const tenantId = auth.tenantId;
 
     const { userIds } = req.body;
 
@@ -1978,7 +1878,7 @@ async function getProfilesByUserIds(req, res, next) {
 
     const syncedUsers = await User.find({
       userId: { $in: normalizedUserIds },
-      ...(req.tenantId ? { tenantId: req.tenantId } : {}),
+      tenantId,
       userType: "PORTAL",
       isActive: true,
     })
@@ -2018,6 +1918,7 @@ async function getProfilesByUserIds(req, res, next) {
 
     // Fetch profiles by userIds (using ObjectIds)
     const profiles = await Profile.find({
+      tenantId,
       userId: { $in: objectIdUserIds },
     })
       .select(
@@ -2033,8 +1934,8 @@ async function getProfilesByUserIds(req, res, next) {
 
     if (emailFallbackUsers.length > 0) {
       const fallbackProfiles = await Profile.find({
+        tenantId,
         $or: emailFallbackUsers.map((user) => ({
-          tenantId: user.tenantId,
           normalizedEmail: normalizeEmail(user.userEmail),
           isActive: { $ne: false },
         })),
@@ -2094,11 +1995,7 @@ async function getProfilesByUserIds(req, res, next) {
     });
   } catch (error) {
     console.error("ProfileController [getProfilesByUserIds] Error:", error);
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to fetch profiles by user IDs",
-      ),
-    );
+    return next(AppError.internalServerError("Failed to fetch profiles by user IDs"));
   }
 }
 
@@ -2108,19 +2005,11 @@ async function getProfilesByUserIds(req, res, next) {
 // membership application/approval pipeline.
 async function findOrCreateAttendeeProfile(req, res, next) {
   try {
-    const isInternalRequest =
-      req.headers["x-internal-request"] === "true" ||
-      req.headers["x-internal-request"] === "1";
-
-    if (!isInternalRequest) {
-      return res.status(403).json({
-        success: false,
-        message: "Internal endpoint: x-internal-request header required",
-      });
-    }
+    const auth = resolveInternalCallerTenant(req);
+    if (!auth.ok) return rejectInternal(res, auth);
+    const tenantId = auth.tenantId;
 
     const {
-      tenantId,
       email,
       title,
       firstName,
@@ -2138,10 +2027,10 @@ async function findOrCreateAttendeeProfile(req, res, next) {
       eircode,
       country,
     } = req.body || {};
-    if (!tenantId || !email) {
+    if (!email) {
       return res.status(400).json({
         success: false,
-        message: "tenantId and email are required",
+        message: "email is required",
       });
     }
 
@@ -2183,11 +2072,7 @@ async function findOrCreateAttendeeProfile(req, res, next) {
       "ProfileController [findOrCreateAttendeeProfile] Error:",
       error,
     );
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to find or create attendee profile",
-      ),
-    );
+    return next(AppError.internalServerError("Failed to find or create attendee profile"));
   }
 }
 
@@ -2197,19 +2082,11 @@ async function findOrCreateAttendeeProfile(req, res, next) {
 // exact-email vs fuzzy-review vs no-match resolution semantics.
 async function checkAttendeeDuplicates(req, res, next) {
   try {
-    const isInternalRequest =
-      req.headers["x-internal-request"] === "true" ||
-      req.headers["x-internal-request"] === "1";
-
-    if (!isInternalRequest) {
-      return res.status(403).json({
-        success: false,
-        message: "Internal endpoint: x-internal-request header required",
-      });
-    }
+    const auth = resolveInternalCallerTenant(req);
+    if (!auth.ok) return rejectInternal(res, auth);
+    const tenantId = auth.tenantId;
 
     const {
-      tenantId,
       email,
       firstName,
       lastName,
@@ -2222,10 +2099,10 @@ async function checkAttendeeDuplicates(req, res, next) {
       eircode,
       country,
     } = req.body || {};
-    if (!tenantId || !email) {
+    if (!email) {
       return res.status(400).json({
         success: false,
-        message: "tenantId and email are required",
+        message: "email is required",
       });
     }
 
@@ -2251,11 +2128,7 @@ async function checkAttendeeDuplicates(req, res, next) {
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     console.error("ProfileController [checkAttendeeDuplicates] Error:", error);
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to check attendee duplicates",
-      ),
-    );
+    return next(AppError.internalServerError("Failed to check attendee duplicates"));
   }
 }
 
@@ -2267,22 +2140,15 @@ async function checkAttendeeDuplicates(req, res, next) {
 // membershipNumber safety guard.
 async function rollbackAttendeeProfile(req, res, next) {
   try {
-    const isInternalRequest =
-      req.headers["x-internal-request"] === "true" ||
-      req.headers["x-internal-request"] === "1";
+    const auth = resolveInternalCallerTenant(req);
+    if (!auth.ok) return rejectInternal(res, auth);
+    const tenantId = auth.tenantId;
 
-    if (!isInternalRequest) {
-      return res.status(403).json({
-        success: false,
-        message: "Internal endpoint: x-internal-request header required",
-      });
-    }
-
-    const { tenantId, profileId } = req.body || {};
-    if (!tenantId || !profileId) {
+    const { profileId } = req.body || {};
+    if (!profileId) {
       return res.status(400).json({
         success: false,
-        message: "tenantId and profileId are required",
+        message: "profileId is required",
       });
     }
 
@@ -2295,11 +2161,7 @@ async function rollbackAttendeeProfile(req, res, next) {
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     console.error("ProfileController [rollbackAttendeeProfile] Error:", error);
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to roll back attendee profile",
-      ),
-    );
+    return next(AppError.internalServerError("Failed to roll back attendee profile"));
   }
 }
 
@@ -2311,22 +2173,15 @@ async function rollbackAttendeeProfile(req, res, next) {
 // "only write if currently blank" guard.
 async function syncAttendeeProfileFields(req, res, next) {
   try {
-    const isInternalRequest =
-      req.headers["x-internal-request"] === "true" ||
-      req.headers["x-internal-request"] === "1";
+    const auth = resolveInternalCallerTenant(req);
+    if (!auth.ok) return rejectInternal(res, auth);
+    const tenantId = auth.tenantId;
 
-    if (!isInternalRequest) {
-      return res.status(403).json({
-        success: false,
-        message: "Internal endpoint: x-internal-request header required",
-      });
-    }
-
-    const { tenantId, profileId, nmbiNumber, title, gender, dateOfBirth } = req.body || {};
-    if (!tenantId || !profileId) {
+    const { profileId, nmbiNumber, title, gender, dateOfBirth } = req.body || {};
+    if (!profileId) {
       return res.status(400).json({
         success: false,
-        message: "tenantId and profileId are required",
+        message: "profileId is required",
       });
     }
 
@@ -2339,11 +2194,7 @@ async function syncAttendeeProfileFields(req, res, next) {
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     console.error("ProfileController [syncAttendeeProfileFields] Error:", error);
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to sync attendee profile fields",
-      ),
-    );
+    return next(AppError.internalServerError("Failed to sync attendee profile fields"));
   }
 }
 
@@ -2354,19 +2205,11 @@ async function syncAttendeeProfileFields(req, res, next) {
 // helpers/attendeeProfileLookup.helper.js's updateAttendeeProfileFields.
 async function updateAttendeeProfileFields(req, res, next) {
   try {
-    const isInternalRequest =
-      req.headers["x-internal-request"] === "true" ||
-      req.headers["x-internal-request"] === "1";
-
-    if (!isInternalRequest) {
-      return res.status(403).json({
-        success: false,
-        message: "Internal endpoint: x-internal-request header required",
-      });
-    }
+    const auth = resolveInternalCallerTenant(req);
+    if (!auth.ok) return rejectInternal(res, auth);
+    const tenantId = auth.tenantId;
 
     const {
-      tenantId,
       profileId,
       title,
       firstName,
@@ -2385,10 +2228,10 @@ async function updateAttendeeProfileFields(req, res, next) {
       eircode,
       country,
     } = req.body || {};
-    if (!tenantId || !profileId) {
+    if (!profileId) {
       return res.status(400).json({
         success: false,
-        message: "tenantId and profileId are required",
+        message: "profileId is required",
       });
     }
 
@@ -2430,11 +2273,7 @@ async function updateAttendeeProfileFields(req, res, next) {
         duplicateKey: error.keyValue,
       });
     }
-    return next(
-      AppError.internalServerError(
-        error.message || "Failed to update attendee profile fields",
-      ),
-    );
+    return next(AppError.internalServerError("Failed to update attendee profile fields"));
   }
 }
 

@@ -4,6 +4,7 @@ const Profile = require("../../models/profile.model.js");
 const PersonalDetails = require("../../models/personal.details.model.js");
 const ProfessionalDetails = require("../../models/professional.details.model.js");
 const SubscriptionDetails = require("../../models/subscription.model.js");
+const { resolveEventTenantId, exactEmailRegex } = require("../eventTenant.js");
 const ApplicationApprovalEventPublisher = require("../publishers/application.approval.publisher.js");
 const crypto = require("crypto");
 const { resolveCorrelationId } = require("../correlation.util.js");
@@ -14,7 +15,17 @@ const { resolveCorrelationId } = require("../correlation.util.js");
  */
 async function handleCrmUserCreated(payload) {
   const { data } = payload;
-  const { userId, userEmail, userFullName, tenantId } = data;
+  const { userId, userEmail, userFullName } = data;
+
+  const tenantResolution = resolveEventTenantId(payload);
+  if (!tenantResolution.ok) {
+    console.warn(
+      `Refusing CRM user event: tenantId ${tenantResolution.reason} (envelope vs data)`,
+      { userId, reason: tenantResolution.reason }
+    );
+    return;
+  }
+  const tenantId = tenantResolution.tenantId;
 
   if (!userId || !tenantId) {
     console.warn(
@@ -88,9 +99,10 @@ async function handleCrmUserCreated(payload) {
 
       // 4. Find PersonalDetails by email and update userId
       const personalDetails = await PersonalDetails.findOne({
+        tenantId,
         $or: [
-          { "contactInfo.personalEmail": new RegExp(`^${normalizedEmail}$`, "i") },
-          { "contactInfo.workEmail": new RegExp(`^${normalizedEmail}$`, "i") },
+          { "contactInfo.personalEmail": exactEmailRegex(normalizedEmail) },
+          { "contactInfo.workEmail": exactEmailRegex(normalizedEmail) },
         ],
         "meta.deleted": { $ne: true },
       });
@@ -103,7 +115,7 @@ async function handleCrmUserCreated(payload) {
         // Update PersonalDetails with userId if not already set
         if (!personalDetails.userId || String(personalDetails.userId) !== String(userId)) {
           await PersonalDetails.updateOne(
-            { _id: personalDetails._id },
+            { _id: personalDetails._id, tenantId },
             { $set: { userId: userId } }
           );
           console.log(
@@ -120,12 +132,13 @@ async function handleCrmUserCreated(payload) {
         if (personalDetails.applicationId) {
           const professionalDetails = await ProfessionalDetails.findOne({
             applicationId: personalDetails.applicationId,
+            tenantId,
           });
 
           if (professionalDetails) {
             if (!professionalDetails.userId || String(professionalDetails.userId) !== String(userId)) {
               await ProfessionalDetails.updateOne(
-                { _id: professionalDetails._id },
+                { _id: professionalDetails._id, tenantId },
                 { $set: { userId: userId } }
               );
               console.log(
@@ -141,12 +154,13 @@ async function handleCrmUserCreated(payload) {
           // 6. Update SubscriptionDetails by applicationId
           const subscriptionDetails = await SubscriptionDetails.findOne({
             applicationId: personalDetails.applicationId,
+            tenantId,
           });
 
           if (subscriptionDetails) {
             if (!subscriptionDetails.userId || String(subscriptionDetails.userId) !== String(userId)) {
               await SubscriptionDetails.updateOne(
-                { _id: subscriptionDetails._id },
+                { _id: subscriptionDetails._id, tenantId },
                 { $set: { userId: userId } }
               );
               console.log(
@@ -181,7 +195,17 @@ async function handleCrmUserCreated(payload) {
  */
 async function handleCrmUserUpdated(payload) {
   const { data } = payload;
-  const { userId, userEmail, userFullName, tenantId } = data;
+  const { userId, userEmail, userFullName } = data;
+
+  const tenantResolution = resolveEventTenantId(payload);
+  if (!tenantResolution.ok) {
+    console.warn(
+      `Refusing CRM user event: tenantId ${tenantResolution.reason} (envelope vs data)`,
+      { userId, reason: tenantResolution.reason }
+    );
+    return;
+  }
+  const tenantId = tenantResolution.tenantId;
 
   if (!userId || !tenantId) {
     console.warn(
@@ -252,9 +276,10 @@ async function handleCrmUserUpdated(payload) {
 
       // 4. Find PersonalDetails by email and update userId
       const personalDetails = await PersonalDetails.findOne({
+        tenantId,
         $or: [
-          { "contactInfo.personalEmail": new RegExp(`^${normalizedEmail}$`, "i") },
-          { "contactInfo.workEmail": new RegExp(`^${normalizedEmail}$`, "i") },
+          { "contactInfo.personalEmail": exactEmailRegex(normalizedEmail) },
+          { "contactInfo.workEmail": exactEmailRegex(normalizedEmail) },
         ],
         "meta.deleted": { $ne: true },
       });
@@ -267,7 +292,7 @@ async function handleCrmUserUpdated(payload) {
         // Update PersonalDetails with userId if not already set
         if (!personalDetails.userId || String(personalDetails.userId) !== String(userId)) {
           await PersonalDetails.updateOne(
-            { _id: personalDetails._id },
+            { _id: personalDetails._id, tenantId },
             { $set: { userId: userId } }
           );
           console.log(
@@ -284,12 +309,13 @@ async function handleCrmUserUpdated(payload) {
         if (personalDetails.applicationId) {
           const professionalDetails = await ProfessionalDetails.findOne({
             applicationId: personalDetails.applicationId,
+            tenantId,
           });
 
           if (professionalDetails) {
             if (!professionalDetails.userId || String(professionalDetails.userId) !== String(userId)) {
               await ProfessionalDetails.updateOne(
-                { _id: professionalDetails._id },
+                { _id: professionalDetails._id, tenantId },
                 { $set: { userId: userId } }
               );
               console.log(
@@ -305,12 +331,13 @@ async function handleCrmUserUpdated(payload) {
           // 6. Update SubscriptionDetails by applicationId
           const subscriptionDetails = await SubscriptionDetails.findOne({
             applicationId: personalDetails.applicationId,
+            tenantId,
           });
 
           if (subscriptionDetails) {
             if (!subscriptionDetails.userId || String(subscriptionDetails.userId) !== String(userId)) {
               await SubscriptionDetails.updateOne(
-                { _id: subscriptionDetails._id },
+                { _id: subscriptionDetails._id, tenantId },
                 { $set: { userId: userId } }
               );
               console.log(

@@ -94,7 +94,7 @@ async function approveApplication({
     }
 
     // Load submission and overlay
-    const { submission } = await loadSubmission(applicationId);
+    const { submission } = await loadSubmission(applicationId, tenantId);
     const overlay = await ReviewOverlay.findOne({
       overlayId,
       applicationId,

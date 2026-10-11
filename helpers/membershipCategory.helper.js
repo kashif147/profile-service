@@ -192,6 +192,7 @@ async function syncLegacyProfessionalFieldsFromSubscriptionBody({
   body,
   userId,
   userType,
+  tenantId,
   professionalDetailsHandler,
   subscriptionDetailsHandler,
 }) {
@@ -200,6 +201,7 @@ async function syncLegacyProfessionalFieldsFromSubscriptionBody({
 
   const existing = await professionalDetailsHandler.getByApplicationId(
     applicationId,
+    tenantId,
   );
   if (!existing) return;
 
@@ -211,9 +213,14 @@ async function syncLegacyProfessionalFieldsFromSubscriptionBody({
     update[`professionalDetails.${key}`] = value;
   }
 
-  await professionalDetailsHandler.updateByApplicationId(applicationId, update);
+  await professionalDetailsHandler.updateByApplicationId(
+    applicationId,
+    update,
+    tenantId,
+  );
   await subscriptionDetailsHandler.unsetLegacyProfessionalFieldsByApplicationId(
     applicationId,
+    tenantId,
   );
 }
 

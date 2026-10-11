@@ -38,7 +38,12 @@ async function getCornMarketProfiles(req, res, next) {
     }
 
     // Build query: membershipStatus matches AND valueAddedServices is true
+    if (!req.tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
+
     const query = {
+      tenantId: req.tenantId,
       "additionalInformation.membershipStatus": normalizedStatus, // Direct match - DB stores "new" or "graduate"
       "preferences.valueAddedServices": true, // Must be true
     };
@@ -185,7 +190,7 @@ async function getCornMarketProfiles(req, res, next) {
   } catch (error) {
     return next(
       AppError.internalServerError(
-        error.message || "Failed to fetch CORN market profiles"
+        "Failed to fetch CORN market profiles"
       )
     );
   }

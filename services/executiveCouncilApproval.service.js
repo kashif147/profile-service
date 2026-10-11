@@ -73,6 +73,14 @@ async function recordExecutiveCouncilDecision({
   comments,
   session,
 }) {
+  if (!tenantId) {
+    return {
+      applicationId,
+      success: false,
+      status: "failed",
+      error: "Tenant context is required",
+    };
+  }
   const personalDetails = await PersonalDetails.findOne({
     applicationId,
     tenantId: String(tenantId),
@@ -100,7 +108,7 @@ async function recordExecutiveCouncilDecision({
   const resolvedDecisionDate = resolveDecisionDate(decisionDate);
 
   await PersonalDetails.updateOne(
-    { _id: personalDetails._id },
+    { _id: personalDetails._id, tenantId: String(tenantId) },
     {
       $set: {
         "executiveCouncilApprovalDetails.status": status,

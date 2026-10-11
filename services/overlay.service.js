@@ -16,7 +16,7 @@ async function upsertOverlayFromClientSubmission({
   notes,
 }) {
   // 1) Always load authoritative submission from DB
-  const { submission: serverSubmission } = await loadSubmission(applicationId);
+  const { submission: serverSubmission } = await loadSubmission(applicationId, tenantId);
 
   // 2) Compute patch using client-passed immutable submission
   let proposedPatch = compare(clientSubmission, editedEffectiveDoc);

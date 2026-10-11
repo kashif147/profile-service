@@ -107,39 +107,52 @@ function assertApplicationDuplicateReviewMutable(personal) {
   }
 }
 
-async function getPersonalDetailsForReview(applicationId) {
-  const personal = await PersonalDetails.findOne({ applicationId }).lean();
+function normalizeTenantId(tenantId) {
+  return String(tenantId || "").trim();
+}
+
+function requireRequestTenantId(tenantId) {
+  const t = normalizeTenantId(tenantId);
+  if (!t) {
+    throw AppError.forbidden("Tenant context is required");
+  }
+  return t;
+}
+
+async function getPersonalDetailsForReview(applicationId, tenantId) {
+  const personal = await PersonalDetails.findOne({
+    applicationId,
+    tenantId: requireRequestTenantId(tenantId),
+  }).lean();
   if (!personal) {
     throw AppError.notFound("Application not found");
   }
   return personal;
 }
 
-function normalizeTenantId(tenantId) {
-  return String(tenantId || "").trim();
-}
-
+/**
+ * The trusted request tenant is always authoritative. A missing request tenant
+ * is rejected (no "null passes"), and an application owned by a different
+ * tenant is indistinguishable from a missing one.
+ */
 function resolveApplicationTenantId(personal, requestTenantId) {
+  const normalizedRequestTenantId = requireRequestTenantId(requestTenantId);
   const applicationTenantId = normalizeTenantId(personal?.tenantId);
-  const normalizedRequestTenantId = normalizeTenantId(requestTenantId);
-
-  if (
-    normalizedRequestTenantId &&
-    applicationTenantId &&
-    normalizedRequestTenantId !== applicationTenantId
-  ) {
+  if (applicationTenantId !== normalizedRequestTenantId) {
     throw AppError.notFound("Application not found");
   }
-
-  return applicationTenantId || normalizedRequestTenantId;
+  return normalizedRequestTenantId;
 }
 
 async function runDuplicateDetection(applicationId, tenantId, actorId = null) {
-  const personal = await getPersonalDetailsForReview(applicationId);
+  const personal = await getPersonalDetailsForReview(applicationId, tenantId);
   const effectiveTenantId = resolveApplicationTenantId(personal, tenantId);
   assertApplicationDuplicateReviewMutable(personal);
   const result = await detectDuplicates(applicationId, effectiveTenantId, actorId);
-  const updatedPersonal = await getPersonalDetailsForReview(applicationId);
+  const updatedPersonal = await getPersonalDetailsForReview(
+    applicationId,
+    effectiveTenantId,
+  );
 
   return {
     ...result,
@@ -152,7 +165,7 @@ async function runDuplicateDetection(applicationId, tenantId, actorId = null) {
 }
 
 async function getDuplicateReviewState(applicationId, tenantId) {
-  let personal = await getPersonalDetailsForReview(applicationId);
+  let personal = await getPersonalDetailsForReview(applicationId, tenantId);
   resolveApplicationTenantId(personal, tenantId);
   const status = personal.duplicateReview?.status || DUPLICATE_REVIEW_STATUS.NOT_CHECKED;
 
@@ -197,7 +210,10 @@ async function recordDuplicateDecision({
     );
   }
 
-  const personal = await PersonalDetails.findOne({ applicationId });
+  const personal = await PersonalDetails.findOne({
+    applicationId,
+    tenantId: requireRequestTenantId(tenantId),
+  });
   if (!personal) {
     throw AppError.notFound("Application not found");
   }
@@ -300,7 +316,10 @@ async function recordDuplicateDecision({
     try {
       await personal.save({ session });
 
-      const { submission } = await loadSubmission(applicationId);
+      const { submission } = await loadSubmission(
+        applicationId,
+        effectiveTenantId,
+      );
       const normalizedChoices = normalizeMergeFieldChoices(mergeFieldChoices);
       const { mergedEffective } = await resolveMergedEffectiveForReview({
         applicationId,
@@ -356,12 +375,12 @@ async function recordDuplicateDecision({
 }
 
 async function ensureDuplicateReviewAllowsApproval(applicationId, tenantId) {
-  let personal = await getPersonalDetailsForReview(applicationId);
+  let personal = await getPersonalDetailsForReview(applicationId, tenantId);
   let status = personal.duplicateReview?.status || DUPLICATE_REVIEW_STATUS.NOT_CHECKED;
 
   if (status === DUPLICATE_REVIEW_STATUS.NOT_CHECKED) {
     await detectDuplicates(applicationId, tenantId);
-    personal = await getPersonalDetailsForReview(applicationId);
+    personal = await getPersonalDetailsForReview(applicationId, tenantId);
     status = personal.duplicateReview?.status || DUPLICATE_REVIEW_STATUS.NOT_CHECKED;
   }
 
@@ -445,8 +464,14 @@ async function applyEffectiveToProfile({ profile, effective, reviewerId, session
     );
   }
 
-  await Profile.updateOne({ _id: profile._id }, { $set }, { session });
-  return Profile.findById(profile._id).session(session);
+  await Profile.updateOne(
+    { _id: profile._id, tenantId: profile.tenantId },
+    { $set },
+    { session },
+  );
+  return Profile.findOne({ _id: profile._id, tenantId: profile.tenantId }).session(
+    session,
+  );
 }
 
 async function resolveProfileForApproval({
@@ -475,7 +500,10 @@ async function resolveProfileForApproval({
       tenantId,
       { requireAuthorizedMatch: false },
     );
-    let profile = await Profile.findById(resolvedProfile._id).session(session);
+    let profile = await Profile.findOne({
+      _id: resolvedProfile._id,
+      tenantId: requireRequestTenantId(tenantId),
+    }).session(session);
     if (!profile) {
       throw AppError.notFound("Matched profile not found for duplicate review");
     }

@@ -187,7 +187,8 @@ async function setupConsumers() {
       "applications.review.processed.v1",
       async (payload, context) => {
         await ApplicationApprovalEventListener.handleApplicationApproved(
-          payload.data
+          payload.data,
+          { envelopeTenantId: payload?.tenantId }
         );
       }
     );
@@ -237,9 +238,29 @@ async function setupConsumers() {
           );
           return;
         }
+        // Tenant comes from the event envelope (falls back to data.tenantId);
+        // a disagreeing body tenant is refused, and every read/write below is
+        // scoped to it so an id-only event can never touch another tenant.
+        const { resolveEventTenantId } = require("./eventTenant.js");
+        const tenantResolution = resolveEventTenantId(payload);
+        if (!tenantResolution.ok) {
+          console.warn(
+            "[profile.membership.events] members.subscription.current.updated.v1 tenant unresolved; skip",
+            { reason: tenantResolution.reason, profileId, correlationId: payload?.correlationId }
+          );
+          return;
+        }
+        const eventTenantId = tenantResolution.tenantId;
+        if (!mongoose.Types.ObjectId.isValid(String(profileId))) {
+          console.warn(
+            "[profile.membership.events] members.subscription.current.updated.v1 invalid profileId; skip",
+            { correlationId: payload?.correlationId }
+          );
+          return;
+        }
         const Profile = require("../models/profile.model.js");
         const { publishProfileAfterUpdateOne } = require("../services/profile.audit.publisher.js");
-        const profile = await Profile.findById(profileId);
+        const profile = await Profile.findOne({ _id: profileId, tenantId: eventTenantId });
         if (!profile) {
           console.warn(
             "[profile.membership.events] members.subscription.current.updated.v1 no profile document for profileId; skip",
@@ -294,12 +315,15 @@ async function setupConsumers() {
           }
           if (Object.keys(subSet).length > 0) {
             await SubscriptionDetails.updateOne(
-              { applicationId },
+              { applicationId, tenantId: eventTenantId },
               { $set: subSet }
             );
           }
         }
-        await Profile.updateOne({ _id: profileId }, { $set: update });
+        await Profile.updateOne(
+          { _id: profileId, tenantId: eventTenantId },
+          { $set: update }
+        );
         await publishProfileAfterUpdateOne({
           tenantId: profile.tenantId,
           profileId,

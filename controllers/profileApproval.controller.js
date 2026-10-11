@@ -221,7 +221,10 @@ function validatePatchPaths(patch) {
 async function approveApplication(req, res, next) {
   const { applicationId } = req.params;
   const { overlayId, overlayVersion, submission, proposedPatch } = req.body;
-  const tenantId = req.tenantId;
+  const tenantId = req.tenantId ? String(req.tenantId) : null;
+  if (!tenantId) {
+    return next(AppError.forbidden("Tenant context is required"));
+  }
   
   // reviewerId = ID of the user who is approving this application (the CRM user making the request)
   // This comes from the authenticated user's ID in the request (set by auth middleware)
@@ -244,17 +247,24 @@ async function approveApplication(req, res, next) {
     try {
     const personalForStatus = await PersonalDetails.findOne({
       applicationId,
-      tenantId: String(tenantId),
+      tenantId,
     })
       .select("applicationStatus")
       .session(session);
 
-    if (personalForStatus?.applicationStatus === APPLICATION_STATUS.PROCESSED) {
+    // No "null passes": an application not found in the trusted tenant (missing,
+    // or owned by another tenant) is a 404 before any payment/profile side effect.
+    if (!personalForStatus) {
+      throw AppError.notFound("Application not found");
+    }
+
+    if (personalForStatus.applicationStatus === APPLICATION_STATUS.PROCESSED) {
       throw AppError.conflict("Application has already been processed.");
     }
 
     const { submission: serverSubmission } = await loadSubmission(
-      applicationId
+      applicationId,
+      tenantId,
     );
 
     // Determine patch source
@@ -265,6 +275,7 @@ async function approveApplication(req, res, next) {
       overlay = await ReviewOverlay.findOne({
         overlayId,
         applicationId,
+        tenantId,
         status: "open",
       }).session(session);
       if (!overlay) {
@@ -423,9 +434,9 @@ async function approveApplication(req, res, next) {
         }
       }
       await PersonalDetails.updateOne(
-        { applicationId: applicationId },
+        { applicationId: applicationId, tenantId },
         { $set: personalSet },
-        { upsert: true, session }
+        { session }
       );
     }
 
@@ -438,7 +449,7 @@ async function approveApplication(req, res, next) {
         }
       }
       await ProfessionalDetails.updateOne(
-        { applicationId: applicationId },
+        { applicationId: applicationId, tenantId },
         { $set: profSet },
         { upsert: true, session }
       );
@@ -471,7 +482,7 @@ async function approveApplication(req, res, next) {
         }
       }
       await SubscriptionDetails.findOneAndUpdate(
-        { applicationId: applicationId },
+        { applicationId: applicationId, tenantId },
         { $set: subSet },
         { upsert: true, new: true, runValidators: true, session }
       );
@@ -487,7 +498,10 @@ async function approveApplication(req, res, next) {
       await overlay.save({ session });
     }
 
-    const updatedProfile = await Profile.findById(profile._id).session(session);
+    const updatedProfile = await Profile.findOne({
+      _id: profile._id,
+      tenantId,
+    }).session(session);
     const memberId = updatedProfile?.membershipNumber || null;
     const sub = approvalEffective.subscriptionDetails || {};
     const dateJoined = parseDateOnlyToUtcNoon(sub.dateJoined, true);
@@ -562,18 +576,32 @@ async function rejectApplication(req, res, next) {
     overlayId,
     overlayVersion /* submission, proposedPatch optional for audit */,
   } = req.body;
-  const tenantId = req.tenantId;
-  
+  const tenantId = req.tenantId ? String(req.tenantId) : null;
+  if (!tenantId) {
+    return next(AppError.forbidden("Tenant context is required"));
+  }
+
   // reviewerId = ID of the user who is rejecting this application (the CRM user making the request)
   // This comes from the authenticated user's ID in the request (set by auth middleware)
   const reviewerId = req.user?.id || req.userId;
+
+  // Tenant-scoped existence check BEFORE cancelling any payment intent.
+  const scopedApplication = await PersonalDetails.findOne({
+    applicationId,
+    tenantId,
+  })
+    .select("_id")
+    .lean();
+  if (!scopedApplication) {
+    return next(AppError.notFound("Application not found"));
+  }
 
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
     const existingSubscription = await SubscriptionDetails.findOne({
       applicationId,
-      tenantId: String(tenantId),
+      tenantId,
     })
       .select("paymentDetails")
       .lean();
@@ -603,6 +631,7 @@ async function rejectApplication(req, res, next) {
       const overlay = await ReviewOverlay.findOne({
         overlayId,
         applicationId,
+        tenantId,
         status: "open",
       }).session(session);
       if (!overlay) {
@@ -622,6 +651,7 @@ async function rejectApplication(req, res, next) {
     } else {
       const openOverlay = await ReviewOverlay.findOne({
         applicationId,
+        tenantId,
         status: "open",
       }).session(session);
       if (openOverlay) {
@@ -635,6 +665,7 @@ async function rejectApplication(req, res, next) {
 
     const personalForEvent = await PersonalDetails.findOne({
       applicationId: applicationId,
+      tenantId,
     })
       .select("userId contactInfo")
       .session(session)
@@ -642,7 +673,7 @@ async function rejectApplication(req, res, next) {
 
     // Update PersonalDetails with rejection status and details
     await PersonalDetails.updateOne(
-      { applicationId: applicationId },
+      { applicationId: applicationId, tenantId },
       {
         $set: {
           applicationStatus: APPLICATION_STATUS.REJECTED,
@@ -660,7 +691,7 @@ async function rejectApplication(req, res, next) {
     // No Profile is created for rejected applications
     if (paymentIntentId && cancelResult?.status) {
       await SubscriptionDetails.updateOne(
-        { applicationId },
+        { applicationId, tenantId },
         {
           $set: {
             paymentDetails: {

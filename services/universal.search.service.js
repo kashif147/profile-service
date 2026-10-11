@@ -112,12 +112,11 @@ class UniversalSearchService {
    * Build filter conditions based on provided filters
    */
   buildFilterConditions(filters, pageType, tenantId) {
-    const query = {};
-
-    // Always include tenantId for profiles
-    if (pageType === "profile" && tenantId) {
-      query.tenantId = tenantId;
+    if (!tenantId) {
+      throw new Error("Tenant context is required for search");
     }
+    // Always scope to the trusted tenant (profiles AND applications).
+    const query = { tenantId };
 
     // Application Status filter (for applications)
     if (pageType === "application" && filters.applicationStatus) {
@@ -365,9 +364,11 @@ class UniversalSearchService {
       // Get subscription and professional details for these applications
       const [subscriptions, professionals] = await Promise.all([
         SubscriptionDetails.find({
+          tenantId: query.tenantId,
           applicationId: { $in: applicationIds },
         }).lean(),
         ProfessionalDetails.find({
+          tenantId: query.tenantId,
           applicationId: { $in: applicationIds },
         }).lean(),
       ]);

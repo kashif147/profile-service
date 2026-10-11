@@ -94,21 +94,24 @@ describe("profile application create listener", () => {
     });
 
     expect(PersonalDetails.findOneAndUpdate).toHaveBeenCalledWith(
-      { applicationId: "app-1" },
+      // Phase 2B: upsert filters are tenant-scoped (was { applicationId } only).
+      { applicationId: "app-1", tenantId: "tenant-1" },
       expect.objectContaining({
         tenantId: "tenant-1",
       }),
       expect.objectContaining({ upsert: true, runValidators: true }),
     );
     expect(ProfessionalDetails.findOneAndUpdate).toHaveBeenCalledWith(
-      { applicationId: "app-1" },
+      // Phase 2B: upsert filters are tenant-scoped (was { applicationId } only).
+      { applicationId: "app-1", tenantId: "tenant-1" },
       expect.objectContaining({
         tenantId: "tenant-1",
       }),
       expect.objectContaining({ upsert: true, runValidators: true }),
     );
     expect(SubscriptionDetails.findOneAndUpdate).toHaveBeenCalledWith(
-      { applicationId: "app-1" },
+      // Phase 2B: upsert filters are tenant-scoped (was { applicationId } only).
+      { applicationId: "app-1", tenantId: "tenant-1" },
       expect.objectContaining({
         $set: expect.objectContaining({
           tenantId: "tenant-1",

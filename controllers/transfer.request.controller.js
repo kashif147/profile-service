@@ -54,6 +54,11 @@ const extractLocationNamesFromHierarchy = (lookupData = {}) => {
   };
 };
 
+function trustedTenantId(req) {
+  const t = req.tenantId != null ? String(req.tenantId).trim() : "";
+  return t || null;
+}
+
 /**
  * Submit a new transfer request
  * Body: { currentWorkLocationId, requestedWorkLocationId, reason }
@@ -62,6 +67,10 @@ exports.submitTransferRequest = async (req, res, next) => {
   try {
     const { currentWorkLocationId, requestedWorkLocationId, reason } = req.body;
     const { userId } = extractUserAndCreatorContext(req);
+    const tenantId = trustedTenantId(req);
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
 
     if (!currentWorkLocationId) {
       return next(AppError.badRequest("Current work location ID is required"));
@@ -88,11 +97,10 @@ exports.submitTransferRequest = async (req, res, next) => {
     }
 
     const profile = await Profile.findOne({
+      tenantId,
       userId: userIdObjectId,
       isActive: true,
     });
-
-    console.log("User ID:---------------------------------  ", userId);
 
     if (!profile) {
       return res.notFoundRecord("Profile not found for this user");
@@ -100,6 +108,7 @@ exports.submitTransferRequest = async (req, res, next) => {
 
     // Check if there's already a pending request
     const existingPendingRequest = await TransferRequest.findOne({
+      tenantId,
       userId: userIdObjectId,
       status: "PENDING",
     });
@@ -112,6 +121,7 @@ exports.submitTransferRequest = async (req, res, next) => {
 
     // Create transfer request
     const transferRequest = await TransferRequest.create({
+      tenantId,
       userId: userIdObjectId,
       profileId: profile._id,
       currentWorkLocationId: currentWorkLocationId,
@@ -140,9 +150,18 @@ exports.submitTransferRequest = async (req, res, next) => {
  */
 exports.getTransferRequestsForCRM = async (req, res, next) => {
   try {
+    const { userType } = extractUserAndCreatorContext(req);
+    if (userType !== "CRM") {
+      return next(AppError.forbidden("This endpoint is only for CRM users"));
+    }
+    const tenantId = trustedTenantId(req);
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
+
     const { status, userId } = req.query;
 
-    const query = {};
+    const query = { tenantId };
 
     if (userId) {
       // Convert userId string to ObjectId if it's a valid ObjectId
@@ -154,7 +173,7 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
     }
 
     if (status) {
-      query.status = status.toUpperCase();
+      query.status = String(status).toUpperCase();
     }
 
     const transferRequests = await TransferRequest.find(query)
@@ -168,6 +187,7 @@ exports.getTransferRequestsForCRM = async (req, res, next) => {
       .populate({
         path: "profileId",
         select: "membershipNumber userId normalizedEmail personalInfo",
+        match: { tenantId },
       })
       .lean();
 
@@ -282,12 +302,18 @@ exports.getTransferRequestsForPortal = async (req, res, next) => {
       return next(AppError.badRequest("Invalid user ID format"));
     }
 
+    const tenantId = trustedTenantId(req);
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
+
     const query = {
+      tenantId,
       userId: userIdObjectId,
     };
 
     if (status) {
-      query.status = status.toUpperCase();
+      query.status = String(status).toUpperCase();
     }
 
     const transferRequests = await TransferRequest.find(query)
@@ -406,12 +432,33 @@ exports.reviewTransferRequest = async (req, res, next) => {
     const { requestId } = req.params;
     const { action, reason } = req.body;
 
-    if (!action || !["APPROVE", "REJECT"].includes(action.toUpperCase())) {
+    // Approving/rejecting a transfer rewrites the member's Profile: CRM only.
+    const { userType } = extractUserAndCreatorContext(req);
+    if (userType !== "CRM") {
+      return next(
+        AppError.forbidden("Only CRM users can review transfer requests"),
+      );
+    }
+    const tenantId = trustedTenantId(req);
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
+
+    if (
+      !action ||
+      typeof action !== "string" ||
+      !["APPROVE", "REJECT"].includes(action.toUpperCase())
+    ) {
       return next(AppError.badRequest("Action must be 'APPROVE' or 'REJECT'"));
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(String(requestId))) {
+      return res.notFoundRecord("Transfer request not found or already processed");
     }
 
     const transferRequest = await TransferRequest.findOne({
       _id: requestId,
+      tenantId,
       status: "PENDING",
     });
 
@@ -437,7 +484,10 @@ exports.reviewTransferRequest = async (req, res, next) => {
 
     // If approved, update work location, branch, and region in profile
     if (isApprove) {
-      const profile = await Profile.findById(transferRequest.profileId);
+      const profile = await Profile.findOne({
+        _id: transferRequest.profileId,
+        tenantId,
+      });
       if (profile) {
         try {
           // Fetch work location hierarchy from user-service to get work location, branch and region

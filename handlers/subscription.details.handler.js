@@ -14,30 +14,20 @@ function buildMongoSetUpdate(updateData) {
 }
 
 async function findSubscriptionRecord(applicationId, tenantId) {
-  if (tenantId) {
-    const withTenant = await SubscriptionDetails.findOne({
-      applicationId,
-      tenantId,
-    }).sort(SUBSCRIPTION_SORT);
-    if (withTenant) return withTenant;
-  }
+  // Tenant-strict: never falls back to an unscoped lookup (which could return
+  // another tenant's subscription record for the same applicationId).
+  if (!tenantId) return null;
 
-  let record = await SubscriptionDetails.findOne({ applicationId }).sort(
-    SUBSCRIPTION_SORT
-  );
-  if (record) return record;
+  const withTenant = await SubscriptionDetails.findOne({
+    applicationId,
+    tenantId,
+  }).sort(SUBSCRIPTION_SORT);
+  if (withTenant) return withTenant;
 
-  if (tenantId) {
-    record = await SubscriptionDetails.findOne({
-      ApplicationId: applicationId,
-      tenantId,
-    }).sort(SUBSCRIPTION_SORT);
-    if (record) return record;
-  }
-
-  return SubscriptionDetails.findOne({ ApplicationId: applicationId }).sort(
-    SUBSCRIPTION_SORT
-  );
+  return SubscriptionDetails.findOne({
+    ApplicationId: applicationId,
+    tenantId,
+  }).sort(SUBSCRIPTION_SORT);
 }
 
 exports.findSubscriptionRecord = findSubscriptionRecord;

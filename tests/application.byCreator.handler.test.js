@@ -200,7 +200,8 @@ describe("GET /api/applications/user (getApplicationsByCreator)", () => {
 
 describe("other list endpoints keep the slim personalDetails shape", () => {
   test("/profile/:profileId returns only personalDetails.meta.isActive", async () => {
-    const [app] = await handler.getApplicationsByProfileId(PROFILE, []);
+    // Phase 2B: getApplicationsByProfileId requires the trusted tenant.
+    const [app] = await handler.getApplicationsByProfileId(PROFILE, [], TENANT);
     expect(app.personalDetails).toEqual({ meta: { isActive: true } });
   });
 

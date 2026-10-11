@@ -235,13 +235,16 @@ function portalUserOwnsPersonalDetails(
 // Original GET API - unchanged
 exports.getAllApplications = async (req, res, next) => {
   try {
-    const { userType } = extractUserAndCreatorContext(req);
+    const { userType, tenantId } = extractUserAndCreatorContext(req);
     if (userType !== "CRM") {
       return next(
         AppError.forbidden(
           "Access denied. Only CRM user can view applications.",
         ),
       );
+    }
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
     }
 
     const validatedQuery =
@@ -263,6 +266,7 @@ exports.getAllApplications = async (req, res, next) => {
       statusFilters,
       page,
       limit,
+      tenantId,
     );
 
     return res.success({
@@ -296,6 +300,9 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
           "Access denied. Only CRM users can view applications.",
         ),
       );
+    }
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
     }
 
     const page = req.body.page ? parseInt(req.body.page) : 1;
@@ -382,6 +389,7 @@ exports.getApplicationsWithTemplate = async (req, res, next) => {
       page,
       limit,
       columns,
+      tenantId,
     );
 
     return res.success({
@@ -422,9 +430,15 @@ exports.getApplicationById = async (req, res, next) => {
       return next(AppError.forbidden("Access denied."));
     }
     const { applicationId } = req.params;
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
 
     const applicationDetails =
-      await applicationService.getApplicationWithDetails(applicationId);
+      await applicationService.getApplicationWithDetails(
+        applicationId,
+        tenantId,
+      );
 
     if (!applicationDetails) {
       return res.notFoundRecord("Application not found");
@@ -508,8 +522,21 @@ exports.approveApplication = async (req, res, next) => {
     );
     const { comments, applicationStatus } = validatedData;
     const decision = (applicationStatus || "").toLowerCase().trim();
-    const subscriptionQuery = { applicationId };
-    if (tenantId != null) subscriptionQuery.tenantId = String(tenantId);
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
+    // Tenant-scoped existence check BEFORE any payment capture/cancel: an
+    // application from another tenant is indistinguishable from a missing one.
+    const scopedApplication = await PersonalDetails.findOne({
+      applicationId,
+      tenantId: String(tenantId),
+    })
+      .select("_id")
+      .lean();
+    if (!scopedApplication) {
+      return res.notFoundRecord("Application not found");
+    }
+    const subscriptionQuery = { applicationId, tenantId: String(tenantId) };
     const existingSubscription = await SubscriptionDetails.findOne(subscriptionQuery)
       .select("paymentDetails")
       .lean();
@@ -549,11 +576,12 @@ exports.approveApplication = async (req, res, next) => {
       applicationStatus,
       creatorId,
       comments,
+      tenantId,
     );
 
     if (paymentIntentId && paymentActionResult?.status) {
       await SubscriptionDetails.updateOne(
-        { applicationId },
+        { applicationId, tenantId: String(tenantId) },
         {
           $set: {
             paymentDetails: {
@@ -573,14 +601,17 @@ exports.approveApplication = async (req, res, next) => {
     if (decision === APPLICATION_STATUS.PROCESSED) {
       try {
         const [personal, professional, subscription] = await Promise.all([
-          PersonalDetails.findOne({ applicationId }).lean(),
-          ProfessionalDetails.findOne({ applicationId }).lean(),
-          SubscriptionDetails.findOne({ applicationId }).lean(),
+          PersonalDetails.findOne({ applicationId, tenantId: String(tenantId) }).lean(),
+          ProfessionalDetails.findOne({ applicationId, tenantId: String(tenantId) }).lean(),
+          SubscriptionDetails.findOne({ applicationId, tenantId: String(tenantId) }).lean(),
         ]);
         const profileDoc =
           personal?.profileId &&
           mongoose.Types.ObjectId.isValid(String(personal.profileId))
-            ? await Profile.findById(personal.profileId).lean()
+            ? await Profile.findOne({
+                _id: personal.profileId,
+                tenantId: String(tenantId),
+              }).lean()
             : null;
         const legacyProfessionalFields =
           await readLegacyProfessionalFieldsFromSubscriptionRecord(subscription);
@@ -697,7 +728,10 @@ exports.approveApplication = async (req, res, next) => {
       }
     } else if (decision === APPLICATION_STATUS.REJECTED) {
       try {
-        const personal = await PersonalDetails.findOne({ applicationId })
+        const personal = await PersonalDetails.findOne({
+          applicationId,
+          tenantId: String(tenantId),
+        })
           .select("userId contactInfo")
           .lean();
         const userEmail =
@@ -797,9 +831,13 @@ exports.getApplicationsByProfileId = async (req, res, next) => {
     }
 
     const statusFilters = parseStatusFilters(req.query.type);
+    if (!tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
     const applications = await applicationService.getApplicationsByProfileId(
       profileId,
       statusFilters,
+      tenantId,
     );
 
     return res.success({

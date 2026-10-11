@@ -57,7 +57,11 @@ class UniversalSearchController {
         );
       }
 
-      // Extract query parameters
+      if (!req.tenantId) {
+        return next(AppError.forbidden("Tenant context is required"));
+      }
+
+      // Extract query parameters (tenant is the trusted tenant only)
       const query = {
         tenantId: req.tenantId,
       };
@@ -147,9 +151,7 @@ class UniversalSearchController {
     } catch (error) {
       console.error("UniversalSearchController [search] Error:", error);
       return next(
-        AppError.internalServerError(
-          error.message || "Failed to perform search"
-        )
+        AppError.internalServerError("Failed to perform search")
       );
     }
   }

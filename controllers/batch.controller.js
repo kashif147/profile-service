@@ -8,6 +8,28 @@ const {
   cloneForAudit,
 } = require("../services/profile.audit.publisher.js");
 
+function trustedTenantId(req) {
+  const t = req.tenantId != null ? String(req.tenantId).trim() : "";
+  return t || null;
+}
+
+/**
+ * CRM-only + trusted tenant required for every batch operation.
+ * Returns the tenantId, or null after calling next(err).
+ */
+function requireCrmTenant(req, next) {
+  if (req.user?.userType !== "CRM") {
+    next(AppError.badRequest("Only CRM users can access this endpoint"));
+    return null;
+  }
+  const tenantId = trustedTenantId(req);
+  if (!tenantId) {
+    next(AppError.forbidden("Tenant context is required"));
+    return null;
+  }
+  return tenantId;
+}
+
 /**
  * Helper function to fetch subscription startDate for profiles
  */
@@ -138,11 +160,8 @@ function formatProfileSnapshot(profile, subscriptionStartMap, batchType) {
  */
 async function createBatch(req, res, next) {
   try {
-    if (req.user?.userType !== "CRM") {
-      return next(
-        AppError.badRequest("Only CRM users can access this endpoint")
-      );
-    }
+    const tenantId = requireCrmTenant(req, next);
+    if (!tenantId) return;
 
     const { name, type, date } = req.body;
     const userId = req.user?.id || req.user?.sub || req.userId;
@@ -171,6 +190,7 @@ async function createBatch(req, res, next) {
 
     // Build query based on frontend type
     let query = {
+      tenantId, // Only this tenant's profiles
       batchId: null, // Only profiles not in any batch
     };
 
@@ -223,6 +243,7 @@ async function createBatch(req, res, next) {
 
     // Create the batch with embedded profile data (even if empty)
     const batch = new Batch({
+      tenantId,
       name: name.trim(),
       type: type, // Store frontend type directly in database
       date: new Date(date),
@@ -239,7 +260,7 @@ async function createBatch(req, res, next) {
     // Update profiles with batchId (for reference, but batch has snapshot)
     if (profileIds.length > 0) {
       await Profile.updateMany(
-        { _id: { $in: profileIds } },
+        { _id: { $in: profileIds }, tenantId },
         { $set: { batchId: savedBatch._id } }
       );
       for (const b of matchingProfiles) {
@@ -266,7 +287,7 @@ async function createBatch(req, res, next) {
   } catch (error) {
     console.error("Error creating batch:", error);
     return next(
-      AppError.internalServerError(error.message || "Failed to create batch")
+      AppError.internalServerError("Failed to create batch")
     );
   }
 }
@@ -276,17 +297,15 @@ async function createBatch(req, res, next) {
  */
 async function getAllBatches(req, res, next) {
   try {
-    if (req.user?.userType !== "CRM") {
-      return next(
-        AppError.badRequest("Only CRM users can access this endpoint")
-      );
-    }
+    const tenantId = requireCrmTenant(req, next);
+    if (!tenantId) return;
 
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 500;
     const skip = (page - 1) * limit;
 
     const query = {
+      tenantId,
       isDeleted: false,
     };
 
@@ -313,7 +332,7 @@ async function getAllBatches(req, res, next) {
     // Fetch users by userId (createdBy is the userId string)
     const users = await User.find({
       userId: { $in: creatorIds },
-      tenantId: req.tenantId || req.user?.tenantId,
+      tenantId,
     })
       .select("userId userFullName")
       .lean();
@@ -342,7 +361,7 @@ async function getAllBatches(req, res, next) {
   } catch (error) {
     console.error("Error fetching batches:", error);
     return next(
-      AppError.internalServerError(error.message || "Failed to fetch batches")
+      AppError.internalServerError("Failed to fetch batches")
     );
   }
 }
@@ -353,16 +372,14 @@ async function getAllBatches(req, res, next) {
  */
 async function getBatchById(req, res, next) {
   try {
-    if (req.user?.userType !== "CRM") {
-      return next(
-        AppError.badRequest("Only CRM users can access this endpoint")
-      );
-    }
+    const tenantId = requireCrmTenant(req, next);
+    if (!tenantId) return;
 
     const { batchId } = req.params;
 
     const batch = await Batch.findOne({
       _id: batchId,
+      tenantId,
       isDeleted: false,
     }).lean();
 
@@ -375,7 +392,7 @@ async function getBatchById(req, res, next) {
     if (batch.createdBy) {
       const creator = await User.findOne({
         userId: batch.createdBy,
-        tenantId: req.tenantId || req.user?.tenantId,
+        tenantId,
       })
         .select("userFullName")
         .lean();
@@ -443,7 +460,7 @@ async function getBatchById(req, res, next) {
   } catch (error) {
     console.error("Error fetching batch:", error);
     return next(
-      AppError.internalServerError(error.message || "Failed to fetch batch")
+      AppError.internalServerError("Failed to fetch batch")
     );
   }
 }
@@ -453,17 +470,15 @@ async function getBatchById(req, res, next) {
  */
 async function updateBatch(req, res, next) {
   try {
-    if (req.user?.userType !== "CRM") {
-      return next(
-        AppError.badRequest("Only CRM users can access this endpoint")
-      );
-    }
+    const tenantId = requireCrmTenant(req, next);
+    if (!tenantId) return;
 
     const { batchId } = req.params;
     const { name, date, isActive } = req.body;
 
     const batch = await Batch.findOne({
       _id: batchId,
+      tenantId,
       isDeleted: false,
     });
 
@@ -492,7 +507,7 @@ async function updateBatch(req, res, next) {
   } catch (error) {
     console.error("Error updating batch:", error);
     return next(
-      AppError.internalServerError(error.message || "Failed to update batch")
+      AppError.internalServerError("Failed to update batch")
     );
   }
 }
@@ -502,16 +517,14 @@ async function updateBatch(req, res, next) {
  */
 async function deleteBatch(req, res, next) {
   try {
-    if (req.user?.userType !== "CRM") {
-      return next(
-        AppError.badRequest("Only CRM users can access this endpoint")
-      );
-    }
+    const tenantId = requireCrmTenant(req, next);
+    if (!tenantId) return;
 
     const { batchId } = req.params;
 
     const batch = await Batch.findOne({
       _id: batchId,
+      tenantId,
       isDeleted: false,
     });
 
@@ -519,9 +532,12 @@ async function deleteBatch(req, res, next) {
       return next(AppError.notFound("Batch not found"));
     }
 
-    const clearedProfiles = await Profile.find({ batchId: batchId }).lean();
-    // Remove batchId from all profiles
-    await Profile.updateMany({ batchId: batchId }, { $set: { batchId: null } });
+    const clearedProfiles = await Profile.find({ batchId: batchId, tenantId }).lean();
+    // Remove batchId from this tenant's profiles only
+    await Profile.updateMany(
+      { batchId: batchId, tenantId },
+      { $set: { batchId: null } },
+    );
     const actorId = req.user?.id || req.user?.sub || req.userId;
     for (const b of clearedProfiles) {
       const after = { ...(cloneForAudit(b) || {}), batchId: null };
@@ -546,7 +562,7 @@ async function deleteBatch(req, res, next) {
   } catch (error) {
     console.error("Error deleting batch:", error);
     return next(
-      AppError.internalServerError(error.message || "Failed to delete batch")
+      AppError.internalServerError("Failed to delete batch")
     );
   }
 }
@@ -556,16 +572,14 @@ async function deleteBatch(req, res, next) {
  */
 async function refreshBatch(req, res, next) {
   try {
-    if (req.user?.userType !== "CRM") {
-      return next(
-        AppError.badRequest("Only CRM users can access this endpoint")
-      );
-    }
+    const tenantId = requireCrmTenant(req, next);
+    if (!tenantId) return;
 
     const { batchId } = req.params;
 
     const batch = await Batch.findOne({
       _id: batchId,
+      tenantId,
       isDeleted: false,
     });
 
@@ -575,6 +589,7 @@ async function refreshBatch(req, res, next) {
 
     // Build query based on batch type
     let query = {
+      tenantId, // Only this tenant's profiles
       batchId: null, // Only profiles not in any batch
     };
 
@@ -599,9 +614,12 @@ async function refreshBatch(req, res, next) {
     const profileIds = matchingProfiles.map((profile) => profile._id);
 
     const refreshActorId = req.user?.id || req.user?.sub || req.userId;
-    const oldBatchMembers = await Profile.find({ batchId: batchId }).lean();
-    // Remove batchId from old profiles
-    await Profile.updateMany({ batchId: batchId }, { $set: { batchId: null } });
+    const oldBatchMembers = await Profile.find({ batchId: batchId, tenantId }).lean();
+    // Remove batchId from old profiles (this tenant only)
+    await Profile.updateMany(
+      { batchId: batchId, tenantId },
+      { $set: { batchId: null } },
+    );
     for (const b of oldBatchMembers) {
       const after = { ...(cloneForAudit(b) || {}), batchId: null };
       await publishProfileAudit("profile.updated", {
@@ -650,7 +668,7 @@ async function refreshBatch(req, res, next) {
     // Update all matching profiles with the batchId
     if (profileIds.length > 0) {
       await Profile.updateMany(
-        { _id: { $in: profileIds } },
+        { _id: { $in: profileIds }, tenantId },
         { $set: { batchId: batchId } }
       );
       for (const b of matchingProfiles) {
@@ -673,7 +691,7 @@ async function refreshBatch(req, res, next) {
   } catch (error) {
     console.error("Error refreshing batch:", error);
     return next(
-      AppError.internalServerError(error.message || "Failed to refresh batch")
+      AppError.internalServerError("Failed to refresh batch")
     );
   }
 }

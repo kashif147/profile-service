@@ -36,7 +36,7 @@ async function reassignProfileServiceReferences({
   const writeOptions = session ? { session } : {};
 
   const personalResult = await PersonalDetails.updateMany(
-    { profileId: absorbedObjectId },
+    { tenantId, profileId: absorbedObjectId },
     { $set: { profileId: masterObjectId } },
     writeOptions,
   );
@@ -54,7 +54,7 @@ async function reassignProfileServiceReferences({
   );
 
   const batchProfileIdsResult = await Batch.updateMany(
-    { profileIds: absorbedObjectId },
+    { tenantId, profileIds: absorbedObjectId },
     [
       {
         $set: {
@@ -78,7 +78,7 @@ async function reassignProfileServiceReferences({
   );
 
   const batchProfilesResult = await Batch.updateMany(
-    { "profiles.profileId": absorbedObjectId },
+    { tenantId, "profiles.profileId": absorbedObjectId },
     [
       {
         $set: {

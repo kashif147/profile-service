@@ -16,7 +16,12 @@ async function getRecruitAFriendProfiles(req, res, next) {
     const skip = (page - 1) * limit;
 
   
+    if (!req.tenantId) {
+      return next(AppError.forbidden("Tenant context is required"));
+    }
+
     const query = {
+      tenantId: req.tenantId,
       "recruitmentDetails.confirmedRecruiterProfileId": { $ne: null },
     };
 
@@ -38,9 +43,7 @@ async function getRecruitAFriendProfiles(req, res, next) {
     });
   } catch (error) {
     return next(
-      AppError.internalServerError(
-        error.message || "Failed to fetch Recruit a Friend profiles"
-      )
+      AppError.internalServerError("Failed to fetch Recruit a Friend profiles")
     );
   }
 }

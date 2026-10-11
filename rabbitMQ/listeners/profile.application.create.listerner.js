@@ -95,8 +95,29 @@ class ProfileApplicationCreateListener {
       const existingPersonal = await PersonalDetails.findOne({
         applicationId,
       }).lean();
-      const resolvedTenantId =
-        tenantId || personalDetails.tenantId || existingPersonal?.tenantId;
+      const incomingTenantId = String(
+        tenantId || personalDetails?.tenantId || "",
+      ).trim();
+      const storedTenantId = existingPersonal?.tenantId
+        ? String(existingPersonal.tenantId).trim()
+        : "";
+      // The stored tenant is authoritative once an application exists: an event
+      // body tenant must never overwrite it. A mismatch is refused.
+      if (storedTenantId && incomingTenantId && incomingTenantId !== storedTenantId) {
+        console.warn(
+          "⏭️ [PROFILE_CREATE_LISTENER] Refusing: event tenant does not match stored application tenant",
+          { applicationId }
+        );
+        return;
+      }
+      const resolvedTenantId = storedTenantId || incomingTenantId;
+      if (!resolvedTenantId) {
+        console.warn(
+          "⏭️ [PROFILE_CREATE_LISTENER] Skipping: no tenantId on event or stored application",
+          { applicationId }
+        );
+        return;
+      }
       const existingIsRejected = isRejectedStatus(
         existingPersonal?.applicationStatus
       );
@@ -182,7 +203,7 @@ class ProfileApplicationCreateListener {
       }
 
       const newPersonalDetails = await PersonalDetails.findOneAndUpdate(
-        { applicationId: applicationId },
+        { applicationId: applicationId, tenantId: resolvedTenantId },
         personalUpdate,
         { upsert: true, new: true, runValidators: true }
       );
@@ -202,6 +223,7 @@ class ProfileApplicationCreateListener {
         );
         const existingProfessional = await ProfessionalDetails.findOne({
           applicationId,
+          tenantId: resolvedTenantId,
         }).lean();
         const resolvedProfessionalUserId = await resolveLocalPortalUserIdForSync(
           resolvedTenantId,
@@ -212,7 +234,7 @@ class ProfileApplicationCreateListener {
         );
         const newProfessionalDetails =
           await ProfessionalDetails.findOneAndUpdate(
-            { applicationId: applicationId },
+            { applicationId: applicationId, tenantId: resolvedTenantId },
             {
               applicationId: applicationId,
               tenantId: resolvedTenantId,
@@ -271,6 +293,7 @@ class ProfileApplicationCreateListener {
       // Check if we have existing subscription details in the database
       const existingSubscriptionDetails = await SubscriptionDetails.findOne({
         applicationId: applicationId,
+        tenantId: resolvedTenantId,
       });
 
       // If subscriptionDetailsData is empty but we have existing data, merge them
@@ -389,7 +412,7 @@ class ProfileApplicationCreateListener {
         }
 
         const newSubscriptionDetails = await SubscriptionDetails.findOneAndUpdate(
-          { applicationId: applicationId },
+          { applicationId: applicationId, tenantId: resolvedTenantId },
           updateQuery,
           { upsert: true, new: true, runValidators: true }
         );
@@ -462,10 +485,7 @@ class ProfileApplicationCreateListener {
       );
 
       // 4. Run duplicate detection in background (non-blocking)
-      queueDuplicateDetection(
-        applicationId,
-        tenantId || newPersonalDetails.tenantId || null,
-      );
+      queueDuplicateDetection(applicationId, resolvedTenantId);
       console.log(
         "🔍 [PROFILE_CREATE_LISTENER] Duplicate detection queued for background processing"
       );

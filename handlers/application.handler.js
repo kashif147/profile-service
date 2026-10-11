@@ -153,10 +153,27 @@ function buildDateRangeQuery(filterEntry = {}) {
 }
 // membership number generation moved to Profile creation flow
 
-exports.getAllApplications = (statusFilters = []) =>
+/**
+ * Every staging-collection read/write in this handler is scoped to the trusted
+ * tenant. A missing tenant is a programming error / unauthenticated call and is
+ * rejected rather than silently widening the query to every tenant.
+ */
+function requireTenantId(tenantId) {
+  const t = tenantId == null ? "" : String(tenantId).trim();
+  if (!t) {
+    const err = new Error("Tenant context is required");
+    err.status = 403;
+    err.code = "TENANT_REQUIRED";
+    throw err;
+  }
+  return t;
+}
+exports.requireTenantId = requireTenantId;
+
+exports.getAllApplications = (statusFilters = [], tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
-      let query = {};
+      let query = { tenantId: requireTenantId(tenantId) };
 
       // If status filters are provided, filter by them
       // Normalize to lowercase to handle both cases
@@ -178,11 +195,12 @@ exports.getAllApplications = (statusFilters = []) =>
     }
   });
 
-exports.getApplicationById = (applicationId) =>
+exports.getApplicationById = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const application = await PersonalDetails.findOne({
         applicationId: applicationId,
+        tenantId: requireTenantId(tenantId),
       })
         .populate("userId", "name email")
         .populate("approvalDetails.approvedBy", "name email");
@@ -346,10 +364,12 @@ async function enrichApplicationsForList(
     applications.map(async (app) => {
       const subscription = await SubscriptionDetails.findOne({
         applicationId: app.applicationId,
+        tenantId: app.tenantId,
       }).lean();
 
       const professional = await ProfessionalDetails.findOne({
         applicationId: app.applicationId,
+        tenantId: app.tenantId,
       }).lean();
       const subscriptionData = subscription?.subscriptionDetails || {};
       const dateJoined = subscriptionData.dateJoined;
@@ -430,11 +450,12 @@ async function enrichApplicationsForList(
   );
 }
 
-exports.getApplicationsByProfileId = (profileId, statusFilters = []) =>
+exports.getApplicationsByProfileId = (profileId, statusFilters = [], tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = applyApplicationStatusFilters(
         {
+          tenantId: requireTenantId(tenantId),
           profileId: new mongoose.Types.ObjectId(profileId),
           ...NOT_DELETED_APPLICATION_FILTER,
         },
@@ -517,9 +538,11 @@ exports.updateApplicationStatus = (
   newStatus,
   approvedBy,
   comments,
+  tenantId,
 ) =>
   new Promise(async (resolve, reject) => {
     try {
+      const scopedTenantId = requireTenantId(tenantId);
       // Normalize status to lowercase to ensure consistency
       const normalizedStatus = newStatus?.toLowerCase();
       const updateData = {
@@ -537,7 +560,7 @@ exports.updateApplicationStatus = (
       }
 
       const result = await PersonalDetails.findOneAndUpdate(
-        { applicationId: applicationId },
+        { applicationId: applicationId, tenantId: scopedTenantId },
         { $set: updateData },
         { new: true, runValidators: true },
       );
@@ -553,11 +576,11 @@ exports.updateApplicationStatus = (
         normalizedStatus === APPLICATION_STATUS.REJECTED
       ) {
         await ProfessionalDetails.updateMany(
-          { applicationId },
+          { applicationId, tenantId: scopedTenantId },
           { $set: { "meta.isActive": active } },
         );
         await SubscriptionDetails.updateMany(
-          { applicationId },
+          { applicationId, tenantId: scopedTenantId },
           { $set: { "meta.isActive": active } },
         );
       }
@@ -574,11 +597,13 @@ exports.updateApplicationStatus = (
     }
   });
 
-exports.getApplicationWithDetails = (applicationId) =>
+exports.getApplicationWithDetails = (applicationId, requestTenantId) =>
   new Promise(async (resolve, reject) => {
     try {
+      const tenantId = requireTenantId(requestTenantId);
       const personalDetails = await PersonalDetails.findOne({
         applicationId: applicationId,
+        tenantId,
       });
 
       if (!personalDetails) {
@@ -586,10 +611,8 @@ exports.getApplicationWithDetails = (applicationId) =>
         return;
       }
 
-      const tenantId = personalDetails.tenantId || null;
-
       const [professionalDetails, subscriptionDetails] = await Promise.all([
-        ProfessionalDetails.findOne({ applicationId: applicationId }),
+        ProfessionalDetails.findOne({ applicationId: applicationId, tenantId }),
         findSubscriptionRecord(applicationId, tenantId),
       ]);
 
@@ -645,10 +668,11 @@ exports.getAllApplicationsWithDetails = (
   statusFilters = [],
   page = 1,
   limit = 500,
+  tenantId,
 ) =>
   new Promise(async (resolve, reject) => {
     try {
-      let query = {};
+      let query = { tenantId: requireTenantId(tenantId) };
 
       if (statusFilters && statusFilters.length > 0) {
         query.applicationStatus = { $in: statusFilters };
@@ -676,6 +700,7 @@ exports.getAllApplicationsWithDetails = (
               await Promise.all([
                 ProfessionalDetails.findOne({
                   applicationId: application.applicationId,
+                  tenantId: application.tenantId,
                 }),
                 findSubscriptionRecord(
                   application.applicationId,
@@ -828,11 +853,14 @@ exports.getApplicationsWithTemplateFilters = (
   page = 1,
   limit = 500,
   columns = [],
+  requestTenantId,
 ) =>
   new Promise(async (resolve, reject) => {
     try {
-      // Start with system defaults: exclude deleted so we get maximum relevant results
-      const query = { ...SYSTEM_DEFAULT_APPLICATION_FILTERS };
+      const tenantId = requireTenantId(requestTenantId);
+      // Start with system defaults: exclude deleted so we get maximum relevant results.
+      // tenantId is always the trusted tenant (never from filters).
+      const query = { ...SYSTEM_DEFAULT_APPLICATION_FILTERS, tenantId };
 
       // Resolve filters: frontend sends camelCase keys (e.g. workLocation); we map to DB path and apply.
       const applicationIdSets = [];
@@ -877,6 +905,7 @@ exports.getApplicationsWithTemplateFilters = (
             query[config.path] = dateQuery;
           } else if (config.source === "subscriptionDetails") {
             const docs = await SubscriptionDetails.find({
+              tenantId,
               [config.path]: dateQuery,
             }).select("applicationId");
             applicationIdSets.push({
@@ -890,9 +919,11 @@ exports.getApplicationsWithTemplateFilters = (
           // membershipCategory: from SubscriptionDetails or ProfessionalDetails
           const categoryQuery = { $in: values };
           const subs = await SubscriptionDetails.find({
+            tenantId,
             [config.pathSubs]: categoryQuery,
           }).select("applicationId");
           const profs = await ProfessionalDetails.find({
+            tenantId,
             [config.pathProf]: categoryQuery,
           }).select("applicationId");
           const ids = [
@@ -917,7 +948,7 @@ exports.getApplicationsWithTemplateFilters = (
                 : v,
             );
           }
-          const q = { [config.path]: { [op]: values } };
+          const q = { tenantId, [config.path]: { [op]: values } };
           const docs =
             await ProfessionalDetails.find(q).select("applicationId");
           applicationIdSets.push({
@@ -925,7 +956,7 @@ exports.getApplicationsWithTemplateFilters = (
             isEqual,
           });
         } else if (config.source === "subscriptionDetails") {
-          const q = { [config.path]: { [op]: values } };
+          const q = { tenantId, [config.path]: { [op]: values } };
           const docs =
             await SubscriptionDetails.find(q).select("applicationId");
           applicationIdSets.push({
@@ -999,6 +1030,7 @@ exports.getApplicationsWithTemplateFilters = (
               await Promise.all([
                 ProfessionalDetails.findOne({
                   applicationId: application.applicationId,
+                  tenantId: application.tenantId,
                 }),
                 findSubscriptionRecord(
                   application.applicationId,

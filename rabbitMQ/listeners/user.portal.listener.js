@@ -7,6 +7,7 @@ const Profile = require("../../models/profile.model.js");
 const PersonalDetails = require("../../models/personal.details.model.js");
 const ProfessionalDetails = require("../../models/professional.details.model.js");
 const SubscriptionDetails = require("../../models/subscription.model.js");
+const { resolveEventTenantId, exactEmailRegex } = require("../eventTenant.js");
 const {
   publishProfileAfterUpdateOne,
 } = require("../../services/profile.audit.publisher.js");
@@ -26,8 +27,17 @@ async function handlePortalUserCreated(payload) {
     userMobilePhone,
     userMemberNumber,
     userMicrosoftId,
-    tenantId,
   } = data;
+
+  const tenantResolution = resolveEventTenantId(payload);
+  if (!tenantResolution.ok) {
+    console.warn(
+      `Refusing Portal user event: tenantId ${tenantResolution.reason} (envelope vs data)`,
+      { userId, reason: tenantResolution.reason }
+    );
+    return;
+  }
+  const tenantId = tenantResolution.tenantId;
 
   if (!userId || !tenantId) {
     console.warn(
@@ -89,7 +99,7 @@ async function handlePortalUserCreated(payload) {
         if (!profile.userId || String(profile.userId) !== String(localUserId)) {
           const beforeLean = profile.toObject({ depopulate: true });
           await Profile.updateOne(
-            { _id: profile._id },
+            { _id: profile._id, tenantId },
             { $set: { userId: localUserId } }
           );
           await publishProfileAfterUpdateOne({
@@ -117,9 +127,10 @@ async function handlePortalUserCreated(payload) {
       if (userEmail) {
         const normalizedEmail = userEmail.toLowerCase();
         const personalDetails = await PersonalDetails.findOne({
+          tenantId,
           $or: [
-            { "contactInfo.personalEmail": new RegExp(`^${normalizedEmail}$`, "i") },
-            { "contactInfo.workEmail": new RegExp(`^${normalizedEmail}$`, "i") },
+            { "contactInfo.personalEmail": exactEmailRegex(normalizedEmail) },
+            { "contactInfo.workEmail": exactEmailRegex(normalizedEmail) },
           ],
           "meta.deleted": { $ne: true },
         });
@@ -132,7 +143,7 @@ async function handlePortalUserCreated(payload) {
           // Update PersonalDetails with userId if not already set
           if (!personalDetails.userId || String(personalDetails.userId) !== String(localUserId)) {
             await PersonalDetails.updateOne(
-              { _id: personalDetails._id },
+              { _id: personalDetails._id, tenantId },
               { $set: { userId: localUserId } }
             );
             console.log(
@@ -149,12 +160,13 @@ async function handlePortalUserCreated(payload) {
           if (personalDetails.applicationId) {
             const professionalDetails = await ProfessionalDetails.findOne({
               applicationId: personalDetails.applicationId,
+              tenantId,
             });
 
             if (professionalDetails) {
               if (!professionalDetails.userId || String(professionalDetails.userId) !== String(localUserId)) {
                 await ProfessionalDetails.updateOne(
-                  { _id: professionalDetails._id },
+                  { _id: professionalDetails._id, tenantId },
                   { $set: { userId: localUserId } }
                 );
                 console.log(
@@ -170,12 +182,13 @@ async function handlePortalUserCreated(payload) {
             // 6. Update SubscriptionDetails by applicationId
             const subscriptionDetails = await SubscriptionDetails.findOne({
               applicationId: personalDetails.applicationId,
+              tenantId,
             });
 
             if (subscriptionDetails) {
               if (!subscriptionDetails.userId || String(subscriptionDetails.userId) !== String(localUserId)) {
                 await SubscriptionDetails.updateOne(
-                  { _id: subscriptionDetails._id },
+                  { _id: subscriptionDetails._id, tenantId },
                   { $set: { userId: localUserId } }
                 );
                 console.log(
@@ -219,8 +232,17 @@ async function handlePortalUserUpdated(payload) {
     userLastName,
     userMobilePhone,
     userMemberNumber,
-    tenantId,
   } = data;
+
+  const tenantResolution = resolveEventTenantId(payload);
+  if (!tenantResolution.ok) {
+    console.warn(
+      `Refusing Portal user event: tenantId ${tenantResolution.reason} (envelope vs data)`,
+      { userId, reason: tenantResolution.reason }
+    );
+    return;
+  }
+  const tenantId = tenantResolution.tenantId;
 
   if (!userId || !tenantId) {
     console.warn(
@@ -285,7 +307,7 @@ async function handlePortalUserUpdated(payload) {
         if (Object.keys(updateFields).length > 0) {
           const beforeLean = profile.toObject({ depopulate: true });
           await Profile.updateOne(
-            { _id: profile._id },
+            { _id: profile._id, tenantId },
             { $set: updateFields }
           );
           await publishProfileAfterUpdateOne({
@@ -315,7 +337,7 @@ async function handlePortalUserUpdated(payload) {
             depopulate: true,
           });
           await Profile.updateOne(
-            { _id: profileByEmailOrMember._id },
+            { _id: profileByEmailOrMember._id, tenantId },
             { $set: { userId: localUserId } }
           );
           await publishProfileAfterUpdateOne({
@@ -335,9 +357,10 @@ async function handlePortalUserUpdated(payload) {
       if (userEmail) {
         const normalizedEmail = userEmail.toLowerCase();
         const personalDetails = await PersonalDetails.findOne({
+          tenantId,
           $or: [
-            { "contactInfo.personalEmail": new RegExp(`^${normalizedEmail}$`, "i") },
-            { "contactInfo.workEmail": new RegExp(`^${normalizedEmail}$`, "i") },
+            { "contactInfo.personalEmail": exactEmailRegex(normalizedEmail) },
+            { "contactInfo.workEmail": exactEmailRegex(normalizedEmail) },
           ],
           "meta.deleted": { $ne: true },
         });
@@ -350,7 +373,7 @@ async function handlePortalUserUpdated(payload) {
           // Update PersonalDetails with userId if not already set
           if (!personalDetails.userId || String(personalDetails.userId) !== String(localUserId)) {
             await PersonalDetails.updateOne(
-              { _id: personalDetails._id },
+              { _id: personalDetails._id, tenantId },
               { $set: { userId: localUserId } }
             );
             console.log(
@@ -367,12 +390,13 @@ async function handlePortalUserUpdated(payload) {
           if (personalDetails.applicationId) {
             const professionalDetails = await ProfessionalDetails.findOne({
               applicationId: personalDetails.applicationId,
+              tenantId,
             });
 
             if (professionalDetails) {
               if (!professionalDetails.userId || String(professionalDetails.userId) !== String(localUserId)) {
                 await ProfessionalDetails.updateOne(
-                  { _id: professionalDetails._id },
+                  { _id: professionalDetails._id, tenantId },
                   { $set: { userId: localUserId } }
                 );
                 console.log(
@@ -388,12 +412,13 @@ async function handlePortalUserUpdated(payload) {
             // 6. Update SubscriptionDetails by applicationId
             const subscriptionDetails = await SubscriptionDetails.findOne({
               applicationId: personalDetails.applicationId,
+              tenantId,
             });
 
             if (subscriptionDetails) {
               if (!subscriptionDetails.userId || String(subscriptionDetails.userId) !== String(localUserId)) {
                 await SubscriptionDetails.updateOne(
-                  { _id: subscriptionDetails._id },
+                  { _id: subscriptionDetails._id, tenantId },
                   { $set: { userId: localUserId } }
                 );
                 console.log(

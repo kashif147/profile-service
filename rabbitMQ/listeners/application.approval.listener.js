@@ -4,6 +4,7 @@ const ProfessionalDetails = require("../../models/professional.details.model.js"
 const SubscriptionDetails = require("../../models/subscription.model.js");
 const Profile = require("../../models/profile.model.js");
 const { APPLICATION_STATUS } = require("../../constants/enums.js");
+const { resolveEventTenantId } = require("../eventTenant.js");
 
 // Helper function to handle bypass user ObjectId conversion
 function getReviewerIdForDb(reviewerId) {
@@ -18,7 +19,7 @@ class ApplicationApprovalEventListener {
     this.serviceName = "profile-service";
   }
 
-  async handleApplicationApproved(data) {
+  async handleApplicationApproved(data, { envelopeTenantId } = {}) {
     try {
       console.log(
         "📥 [APPLICATION_APPROVAL_LISTENER] Received application processed event:",
@@ -51,8 +52,38 @@ class ApplicationApprovalEventListener {
         isExistingProfile,
         effective,
         subscriptionAttributes,
-        tenantId,
       } = data;
+
+      // Tenant: envelope wins over data; a disagreement is refused.
+      const tenantResolution = resolveEventTenantId({
+        tenantId: envelopeTenantId,
+        data,
+      });
+      if (!tenantResolution.ok) {
+        console.warn(
+          "⏭️ [APPLICATION_APPROVAL_LISTENER] Skipping: tenant unresolved",
+          { applicationId, reason: tenantResolution.reason }
+        );
+        return;
+      }
+      const tenantId = tenantResolution.tenantId;
+
+      // Never let the event re-tenant an existing application: if a staging
+      // record already exists under a different tenant, refuse the event.
+      const existingPersonal = await PersonalDetails.findOne({ applicationId })
+        .select("tenantId")
+        .lean();
+      if (
+        existingPersonal &&
+        existingPersonal.tenantId &&
+        String(existingPersonal.tenantId) !== tenantId
+      ) {
+        console.warn(
+          "⏭️ [APPLICATION_APPROVAL_LISTENER] Refusing: event tenant does not match stored application tenant",
+          { applicationId }
+        );
+        return;
+      }
 
       if (!effective || typeof effective !== "object") {
         console.warn(
@@ -65,7 +96,7 @@ class ApplicationApprovalEventListener {
       // Update main application models with processed data.
       if (effective.personalInfo) {
         await PersonalDetails.updateOne(
-          { applicationId: applicationId },
+          { applicationId: applicationId, tenantId },
           {
             $set: {
               personalInfo: effective.personalInfo,
@@ -85,7 +116,7 @@ class ApplicationApprovalEventListener {
 
       if (effective.professionalDetails) {
         await ProfessionalDetails.updateOne(
-          { applicationId: applicationId },
+          { applicationId: applicationId, tenantId },
           { $set: { professionalDetails: effective.professionalDetails } },
           { upsert: true }
         );
@@ -96,7 +127,7 @@ class ApplicationApprovalEventListener {
 
       if (effective.subscriptionDetails) {
         await SubscriptionDetails.updateOne(
-          { applicationId: applicationId },
+          { applicationId: applicationId, tenantId },
           { $set: { subscriptionDetails: effective.subscriptionDetails } },
           { upsert: true }
         );
@@ -106,11 +137,11 @@ class ApplicationApprovalEventListener {
       }
 
       await ProfessionalDetails.updateMany(
-        { applicationId },
+        { applicationId, tenantId },
         { $set: { "meta.isActive": true } }
       );
       await SubscriptionDetails.updateMany(
-        { applicationId },
+        { applicationId, tenantId },
         { $set: { "meta.isActive": true } }
       );
 
