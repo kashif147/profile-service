@@ -1,4 +1,5 @@
 const SubscriptionDetails = require("../models/subscription.model");
+const { requireTenantId } = require("../helpers/requireTenantId");
 const personalDetails = require("../models/personal.details.model");
 
 const SUBSCRIPTION_SORT = { updatedAt: -1, createdAt: -1 };
@@ -16,7 +17,7 @@ function buildMongoSetUpdate(updateData) {
 async function findSubscriptionRecord(applicationId, tenantId) {
   // Tenant-strict: never falls back to an unscoped lookup (which could return
   // another tenant's subscription record for the same applicationId).
-  if (!tenantId) return null;
+  requireTenantId(tenantId);
 
   const withTenant = await SubscriptionDetails.findOne({
     applicationId,
@@ -64,6 +65,7 @@ exports.unsetLegacyProfessionalFieldsByApplicationId = (
 exports.create = (data) =>
   new Promise(async (resolve, reject) => {
     try {
+      requireTenantId(data?.tenantId);
       const record = await SubscriptionDetails.create(data);
       resolve(record);
     } catch (error) {
@@ -122,9 +124,7 @@ exports.deleteByApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const record = await SubscriptionDetails.findOneAndDelete({
         ...query,
       });
@@ -155,9 +155,7 @@ exports.getByUserId = (userId, tenantId) =>
         "meta.isActive": true,
       };
       
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       
       const result = await SubscriptionDetails.findOne(query).sort({
         updatedAt: -1,
@@ -180,9 +178,7 @@ exports.getByEmail = (email, tenantId) =>
           { "contactInfo.workEmail": email },
         ],
       };
-      if (tenantId) {
-        personalDetailsQuery.tenantId = tenantId;
-      }
+      personalDetailsQuery.tenantId = requireTenantId(tenantId);
       const personalDetailsRecord = await personalDetails.findOne(
         personalDetailsQuery
       );
@@ -194,9 +190,7 @@ exports.getByEmail = (email, tenantId) =>
 
       // Then find subscription details by userId
       const subscriptionQuery = { userId: personalDetailsRecord._id };
-      if (tenantId) {
-        subscriptionQuery.tenantId = tenantId;
-      }
+      subscriptionQuery.tenantId = requireTenantId(tenantId);
       const result = await SubscriptionDetails.findOne(subscriptionQuery);
       resolve(result);
     } catch (error) {
@@ -209,9 +203,7 @@ exports.updateByUserId = (userId, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { userId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const record = await SubscriptionDetails.findOneAndUpdate(
         query,
         { $set: buildMongoSetUpdate(updateData) },
@@ -241,9 +233,7 @@ exports.updateByEmail = (email, updateData, tenantId) =>
           { "contactInfo.workEmail": email },
         ],
       };
-      if (tenantId) {
-        personalDetailsQuery.tenantId = tenantId;
-      }
+      personalDetailsQuery.tenantId = requireTenantId(tenantId);
       const personalDetailsRecord = await personalDetails.findOne(
         personalDetailsQuery
       );
@@ -254,9 +244,7 @@ exports.updateByEmail = (email, updateData, tenantId) =>
 
       // Then update subscription details by userId
       const subscriptionQuery = { userId: personalDetailsRecord._id };
-      if (tenantId) {
-        subscriptionQuery.tenantId = tenantId;
-      }
+      subscriptionQuery.tenantId = requireTenantId(tenantId);
       const record = await SubscriptionDetails.findOneAndUpdate(
         subscriptionQuery,
         updateData,
@@ -277,9 +265,7 @@ exports.deleteByUserId = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { userId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const record = await SubscriptionDetails.findOneAndDelete(query);
       if (!record) return reject(new Error("Subscription details not found"));
       resolve(record);
@@ -302,9 +288,7 @@ exports.deleteByEmail = (email, tenantId) =>
           { "contactInfo.workEmail": email },
         ],
       };
-      if (tenantId) {
-        personalDetailsQuery.tenantId = tenantId;
-      }
+      personalDetailsQuery.tenantId = requireTenantId(tenantId);
       const personalDetailsRecord = await personalDetails.findOne(
         personalDetailsQuery
       );
@@ -315,9 +299,7 @@ exports.deleteByEmail = (email, tenantId) =>
 
       // Then delete subscription details by userId
       const subscriptionQuery = { userId: personalDetailsRecord._id };
-      if (tenantId) {
-        subscriptionQuery.tenantId = tenantId;
-      }
+      subscriptionQuery.tenantId = requireTenantId(tenantId);
       const record = await SubscriptionDetails.findOneAndDelete(
         subscriptionQuery
       );
@@ -336,9 +318,7 @@ exports.findDeletedByUserId = (userId, tenantId) =>
         userId,
         "meta.deleted": true,
       };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const result = await SubscriptionDetails.findOne(query);
       resolve(result);
     } catch (error) {
@@ -360,9 +340,7 @@ exports.findDeletedByEmail = (email, tenantId) =>
           { "contactInfo.workEmail": email },
         ],
       };
-      if (tenantId) {
-        personalDetailsQuery.tenantId = tenantId;
-      }
+      personalDetailsQuery.tenantId = requireTenantId(tenantId);
       const personalDetailsRecord = await personalDetails.findOne(
         personalDetailsQuery
       );
@@ -377,9 +355,7 @@ exports.findDeletedByEmail = (email, tenantId) =>
         userId: personalDetailsRecord._id,
         "meta.deleted": true,
       };
-      if (tenantId) {
-        subscriptionQuery.tenantId = tenantId;
-      }
+      subscriptionQuery.tenantId = requireTenantId(tenantId);
       const result = await SubscriptionDetails.findOne(subscriptionQuery);
       resolve(result);
     } catch (error) {
@@ -398,9 +374,7 @@ exports.restoreByUserId = (userId, updateData, tenantId) =>
       const { meta, ...dataWithoutMeta } = updateData;
 
       const query = { userId, "meta.deleted": true };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const record = await SubscriptionDetails.findOneAndUpdate(
         query,
         {
@@ -433,9 +407,7 @@ exports.restoreByEmail = (email, updateData, tenantId) =>
           { "contactInfo.workEmail": email },
         ],
       };
-      if (tenantId) {
-        personalDetailsQuery.tenantId = tenantId;
-      }
+      personalDetailsQuery.tenantId = requireTenantId(tenantId);
       const personalDetailsRecord = await personalDetails.findOne(
         personalDetailsQuery
       );
@@ -452,9 +424,7 @@ exports.restoreByEmail = (email, updateData, tenantId) =>
         userId: personalDetailsRecord._id,
         "meta.deleted": true,
       };
-      if (tenantId) {
-        subscriptionQuery.tenantId = tenantId;
-      }
+      subscriptionQuery.tenantId = requireTenantId(tenantId);
       const record = await SubscriptionDetails.findOneAndUpdate(
         subscriptionQuery,
         {
@@ -484,9 +454,7 @@ exports.checkifSoftDeleted = (userId, tenantId) =>
         userId,
         "meta.deleted": true,
       };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const result = await SubscriptionDetails.findOne(query);
       resolve(result);
     } catch (error) {
@@ -517,16 +485,12 @@ exports.getByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
     try {
       // Try lowercase first, then uppercase for backward compatibility
       const query = { userId: userId, applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       let record = await SubscriptionDetails.findOne(query);
       
       if (!record) {
         const legacyQuery = { userId: userId, ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         record = await SubscriptionDetails.findOne(legacyQuery);
       }
       
@@ -550,9 +514,7 @@ exports.updateByUserIdAndApplicationId = (
     try {
       // Try lowercase first, then uppercase for backward compatibility
       const query = { userId: userId, applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       let record = await SubscriptionDetails.findOneAndUpdate(
         query,
         { $set: buildMongoSetUpdate(updateData) },
@@ -564,9 +526,7 @@ exports.updateByUserIdAndApplicationId = (
       
       if (!record) {
         const legacyQuery = { userId: userId, ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         record = await SubscriptionDetails.findOneAndUpdate(
           legacyQuery,
           { $set: buildMongoSetUpdate(updateData) },
@@ -593,18 +553,14 @@ exports.deleteByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
     try {
       // Try lowercase first, then uppercase for backward compatibility
       const query = { userId: userId, applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       let record = await SubscriptionDetails.findOneAndDelete({
         ...query,
       });
       
       if (!record) {
         const legacyQuery = { userId: userId, ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         record = await SubscriptionDetails.findOneAndDelete({
           ...legacyQuery,
         });

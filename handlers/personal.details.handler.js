@@ -1,4 +1,5 @@
 const PersonalDetails = require("../models/personal.details.model");
+const { requireTenantId } = require("../helpers/requireTenantId");
 const { APPLICATION_STATUS } = require("../constants/enums");
 const { stampPersonalInfoFullName } = require("../helpers/personal.info.fullName.js");
 const {
@@ -40,6 +41,7 @@ const generateFullAddress = (contactInfo) => {
 exports.create = (data) =>
   new Promise(async (resolve, reject) => {
     try {
+      requireTenantId(data?.tenantId);
       // Age calculation and date conversion
       if (data.personalInfo?.dateOfBirth) {
         let dob;
@@ -115,9 +117,7 @@ exports.getByUserId = (userId, tenantId) =>
         "meta.deleted": { $ne: true }
       };
       
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       
       const result = await PersonalDetails.findOne(query);
       resolve(result);
@@ -139,9 +139,7 @@ exports.getByEmail = (email, tenantId) =>
         ],
         "meta.deleted": { $ne: true },
       };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const result = await PersonalDetails.findOne(query);
       resolve(result);
     } catch (error) {
@@ -154,17 +152,13 @@ exports.getApplicationById = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       // Try lowercase first, then uppercase for backward compatibility
       let result = await PersonalDetails.findOne(query);
       
       if (!result) {
         const legacyQuery = { ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         result = await PersonalDetails.findOne(legacyQuery);
       }
       
@@ -182,17 +176,13 @@ exports.getByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { userId: userId, applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       // Try lowercase first, then uppercase for backward compatibility
       let result = await PersonalDetails.findOne(query);
       
       if (!result) {
         const legacyQuery = { userId: userId, ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         result = await PersonalDetails.findOne(legacyQuery);
       }
       
@@ -215,11 +205,11 @@ exports.updateByApplicationId = (applicationId, updateData, tenantId) =>
 
       if (updateData.personalInfo) {
         const findQ = { applicationId };
-        if (tenantId) findQ.tenantId = tenantId;
+        findQ.tenantId = requireTenantId(tenantId);
         let existing = await PersonalDetails.findOne(findQ).lean();
         if (!existing) {
           const legacyQuery = { ApplicationId: applicationId };
-          if (tenantId) legacyQuery.tenantId = tenantId;
+          legacyQuery.tenantId = requireTenantId(tenantId);
           existing = await PersonalDetails.findOne(legacyQuery).lean();
         }
         const merged = {
@@ -231,9 +221,7 @@ exports.updateByApplicationId = (applicationId, updateData, tenantId) =>
       }
 
       const query = { applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       // Try lowercase first, then uppercase for backward compatibility
       let record = await PersonalDetails.findOneAndUpdate(
         query,
@@ -246,9 +234,7 @@ exports.updateByApplicationId = (applicationId, updateData, tenantId) =>
       
       if (!record) {
         const legacyQuery = { ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         record = await PersonalDetails.findOneAndUpdate(
           legacyQuery,
           updateData,
@@ -283,15 +269,13 @@ exports.updateByUserIdAndApplicationId = (
       }
 
       const query = { userId: userId, applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
 
       if (updateData.personalInfo) {
         let existing = await PersonalDetails.findOne(query).lean();
         if (!existing) {
           const legacyQuery = { userId: userId, ApplicationId: applicationId };
-          if (tenantId) legacyQuery.tenantId = tenantId;
+          legacyQuery.tenantId = requireTenantId(tenantId);
           existing = await PersonalDetails.findOne(legacyQuery).lean();
         }
         const merged = {
@@ -314,9 +298,7 @@ exports.updateByUserIdAndApplicationId = (
 
       if (!record) {
         const legacyQuery = { userId: userId, ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         record = await PersonalDetails.findOneAndUpdate(
           legacyQuery,
           updateData,
@@ -342,9 +324,7 @@ exports.deleteByApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       // Try lowercase first, then uppercase for backward compatibility
       let record = await PersonalDetails.findOneAndDelete({
         ...query,
@@ -352,9 +332,7 @@ exports.deleteByApplicationId = (applicationId, tenantId) =>
       
       if (!record) {
         const legacyQuery = { ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         record = await PersonalDetails.findOneAndDelete({
           ...legacyQuery,
         });
@@ -375,9 +353,7 @@ exports.deleteByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { userId: userId, applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       // Try lowercase first, then uppercase for backward compatibility
       let record = await PersonalDetails.findOneAndDelete({
         ...query,
@@ -385,9 +361,7 @@ exports.deleteByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
       
       if (!record) {
         const legacyQuery = { userId: userId, ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         record = await PersonalDetails.findOneAndDelete({
           ...legacyQuery,
         });
@@ -408,9 +382,7 @@ exports.updateApplicationStatus = (applicationId, status, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const setPayload = { applicationStatus: status };
       if (status === APPLICATION_STATUS.REJECTED) {
         setPayload["meta.isActive"] = false;
@@ -425,9 +397,7 @@ exports.updateApplicationStatus = (applicationId, status, tenantId) =>
 
       if (!result) {
         const legacyQuery = { ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         result = await PersonalDetails.findOneAndUpdate(
           legacyQuery,
           { $set: setPayload },
@@ -472,9 +442,7 @@ exports.getByUserIdForPortal = (userId, tenantId) =>
         "meta.isActive": true,
       };
       
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       
       const result = await PersonalDetails.findOne(query).sort({
         updatedAt: -1,

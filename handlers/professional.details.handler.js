@@ -1,9 +1,11 @@
 const ProfessionalDetails = require("../models/professional.details.model");
+const { requireTenantId } = require("../helpers/requireTenantId");
 const personalDetails = require("../models/personal.details.model");
 
 exports.create = (data) =>
   new Promise(async (resolve, reject) => {
     try {
+      requireTenantId(data?.tenantId);
       const record = await ProfessionalDetails.create(data);
       resolve(record);
     } catch (error) {
@@ -16,9 +18,7 @@ exports.checkApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const record = await personalDetails.findOne(query);
       resolve(record);
     } catch (error) {
@@ -34,9 +34,7 @@ exports.getByApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const record = await ProfessionalDetails.findOne(query);
       resolve(record);
     } catch (error) {
@@ -52,9 +50,7 @@ exports.updateByApplicationId = (applicationId, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const record = await ProfessionalDetails.findOneAndUpdate(
         query,
         updateData,
@@ -78,9 +74,7 @@ exports.deleteByApplicationId = (applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const record = await ProfessionalDetails.findOneAndDelete({
         ...query,
       });
@@ -104,9 +98,7 @@ exports.checkPersonalDetailsByEmail = (email, tenantId) =>
           { "contactInfo.workEmail": email },
         ],
       };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const record = await personalDetails.findOne(query);
       resolve(record);
     } catch (error) {
@@ -134,9 +126,7 @@ exports.getByUserId = (userId, tenantId) =>
         "meta.isActive": true,
       };
       
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       
       const result = await ProfessionalDetails.findOne(query).sort({
         updatedAt: -1,
@@ -159,9 +149,7 @@ exports.getByEmail = (email, tenantId) =>
           { "contactInfo.workEmail": email },
         ],
       };
-      if (tenantId) {
-        personalDetailsQuery.tenantId = tenantId;
-      }
+      personalDetailsQuery.tenantId = requireTenantId(tenantId);
       const personalDetailsRecord = await personalDetails.findOne(
         personalDetailsQuery
       );
@@ -173,9 +161,7 @@ exports.getByEmail = (email, tenantId) =>
 
       // Then find professional details by userId
       const professionalDetailsQuery = { userId: personalDetailsRecord._id };
-      if (tenantId) {
-        professionalDetailsQuery.tenantId = tenantId;
-      }
+      professionalDetailsQuery.tenantId = requireTenantId(tenantId);
       const result = await ProfessionalDetails.findOne(
         professionalDetailsQuery
       );
@@ -190,9 +176,7 @@ exports.updateByUserId = (userId, updateData, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { userId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const record = await ProfessionalDetails.findOneAndUpdate(
         query,
         updateData,
@@ -222,9 +206,7 @@ exports.updateByEmail = (email, updateData, tenantId) =>
           { "contactInfo.workEmail": email },
         ],
       };
-      if (tenantId) {
-        personalDetailsQuery.tenantId = tenantId;
-      }
+      personalDetailsQuery.tenantId = requireTenantId(tenantId);
       const personalDetailsRecord = await personalDetails.findOne(
         personalDetailsQuery
       );
@@ -235,9 +217,7 @@ exports.updateByEmail = (email, updateData, tenantId) =>
 
       // Then update professional details by userId
       const professionalDetailsQuery = { userId: personalDetailsRecord._id };
-      if (tenantId) {
-        professionalDetailsQuery.tenantId = tenantId;
-      }
+      professionalDetailsQuery.tenantId = requireTenantId(tenantId);
       const record = await ProfessionalDetails.findOneAndUpdate(
         professionalDetailsQuery,
         updateData,
@@ -258,9 +238,7 @@ exports.deleteByUserId = (userId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { userId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       const record = await ProfessionalDetails.findOneAndDelete(query);
       if (!record) return reject(new Error("Professional details not found"));
       resolve(record);
@@ -283,9 +261,7 @@ exports.deleteByEmail = (email, tenantId) =>
           { "contactInfo.workEmail": email },
         ],
       };
-      if (tenantId) {
-        personalDetailsQuery.tenantId = tenantId;
-      }
+      personalDetailsQuery.tenantId = requireTenantId(tenantId);
       const personalDetailsRecord = await personalDetails.findOne(
         personalDetailsQuery
       );
@@ -296,9 +272,7 @@ exports.deleteByEmail = (email, tenantId) =>
 
       // Then delete professional details by userId
       const professionalDetailsQuery = { userId: personalDetailsRecord._id };
-      if (tenantId) {
-        professionalDetailsQuery.tenantId = tenantId;
-      }
+      professionalDetailsQuery.tenantId = requireTenantId(tenantId);
       const record = await ProfessionalDetails.findOneAndDelete(
         professionalDetailsQuery,
         { new: true }
@@ -321,9 +295,7 @@ exports.findDeletedByEmail = (email, tenantId) =>
           { "contactInfo.workEmail": email },
         ],
       };
-      if (tenantId) {
-        personalDetailsQuery.tenantId = tenantId;
-      }
+      personalDetailsQuery.tenantId = requireTenantId(tenantId);
       const personalDetailsRecord = await personalDetails.findOne(
         personalDetailsQuery
       );
@@ -338,9 +310,7 @@ exports.findDeletedByEmail = (email, tenantId) =>
         userId: personalDetailsRecord._id,
         "meta.deleted": true,
       };
-      if (tenantId) {
-        professionalDetailsQuery.tenantId = tenantId;
-      }
+      professionalDetailsQuery.tenantId = requireTenantId(tenantId);
       const result = await ProfessionalDetails.findOne(
         professionalDetailsQuery
       );
@@ -360,17 +330,13 @@ exports.getApplicationById = (applicationId, tenantId) =>
       // Query both uppercase and lowercase field names to handle legacy data
       // Prioritize lowercase since schema uses applicationId
       const query = { applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       let record = await ProfessionalDetails.findOne(query);
       
       // Fallback to uppercase for backward compatibility with legacy data
       if (!record) {
         const legacyQuery = { ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         record = await ProfessionalDetails.findOne(legacyQuery);
       }
 
@@ -388,17 +354,13 @@ exports.getByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { userId: userId, applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       // Try lowercase first, then uppercase for backward compatibility
       let record = await ProfessionalDetails.findOne(query);
       
       if (!record) {
         const legacyQuery = { userId: userId, ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         record = await ProfessionalDetails.findOne(legacyQuery);
       }
       
@@ -421,9 +383,7 @@ exports.updateByUserIdAndApplicationId = (
   new Promise(async (resolve, reject) => {
     try {
       const query = { userId: userId, applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       // Try lowercase first, then uppercase for backward compatibility
       let record = await ProfessionalDetails.findOneAndUpdate(
         query,
@@ -436,9 +396,7 @@ exports.updateByUserIdAndApplicationId = (
       
       if (!record) {
         const legacyQuery = { userId: userId, ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         record = await ProfessionalDetails.findOneAndUpdate(
           legacyQuery,
           updateData,
@@ -464,9 +422,7 @@ exports.deleteByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
   new Promise(async (resolve, reject) => {
     try {
       const query = { userId: userId, applicationId: applicationId };
-      if (tenantId) {
-        query.tenantId = tenantId;
-      }
+      query.tenantId = requireTenantId(tenantId);
       // Try lowercase first, then uppercase for backward compatibility
       let record = await ProfessionalDetails.findOneAndDelete({
         ...query,
@@ -474,9 +430,7 @@ exports.deleteByUserIdAndApplicationId = (userId, applicationId, tenantId) =>
       
       if (!record) {
         const legacyQuery = { userId: userId, ApplicationId: applicationId };
-        if (tenantId) {
-          legacyQuery.tenantId = tenantId;
-        }
+        legacyQuery.tenantId = requireTenantId(tenantId);
         record = await ProfessionalDetails.findOneAndDelete({
           ...legacyQuery,
         });
