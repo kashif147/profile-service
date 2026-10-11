@@ -3,9 +3,10 @@ const mongoose = require("mongoose");
 exports.mongooseConnection = async () => {
   try {
     // Build connection string with environment variables
-    const mongoUri =
-      process.env.MONGO_URI ||
-      `mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASS}@clusterprojectshell.tptnh8w.mongodb.net/${process.env.MONGO_DB}/?retryWrites=true&w=majority&appName=ClusterProjectShell`;
+    const mongoUri = process.env.MONGO_URI;
+    if (!mongoUri) {
+      throw new Error("MONGO_URI is required (no connection string is hardcoded)");
+    }
 
     // Connection options for better Atlas connectivity
     const options = {

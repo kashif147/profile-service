@@ -16,9 +16,15 @@
 
 const mongoose = require("mongoose");
 
-// Database URIs (hardcoded)
-const USER_SERVICE_URI = "mongodb+srv://kashif147:Test12**@clusterprojectshell.tptnh8w.mongodb.net/User-Service?retryWrites=true&w=majority&appName=ClusterProjectShell";
-const PROFILE_SERVICE_URI = "mongodb+srv://kashif147:Test12**@clusterprojectshell.tptnh8w.mongodb.net/Profile-Service?retryWrites=true&w=majority&appName=ClusterProjectShell";
+// RETIRED: this script read user-service's database directly, which the
+// database-per-service rule forbids (use user-service HTTP APIs instead). The
+// hardcoded connection strings it carried have been removed; it no longer runs.
+console.error(
+  "sync-users-from-user-service.js is retired: it read another service's database directly.",
+);
+process.exit(1);
+const USER_SERVICE_URI = undefined;
+const PROFILE_SERVICE_URI = process.env.MONGO_URI;
 
 // Connect to multiple databases
 async function connectToDatabases() {

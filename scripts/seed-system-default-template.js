@@ -13,7 +13,11 @@ const { APPLICATION_STATUS, APPLICATION_RESPONSE_COLUMNS } = require("../constan
 require("dotenv").config();
 
 // Database connection string - reads from environment variable or .env file
-const MONGODB_URI = process.env.MONGODB_URI || process.env.DATABASE_URL || "mongodb+srv://kashif147:Test12**@clusterprojectshell.tptnh8w.mongodb.net/Profile-Service?retryWrites=true&w=majority&appName=ClusterProjectShell";
+const MONGODB_URI = process.env.MONGODB_URI || process.env.DATABASE_URL || process.env.MONGO_URI;
+if (!MONGODB_URI) {
+  console.error("Set MONGODB_URI, DATABASE_URL or MONGO_URI (no connection string is hardcoded).");
+  process.exit(1);
+}
 
 // System Default Template Configuration
 const SYSTEM_DEFAULT_TEMPLATE = {

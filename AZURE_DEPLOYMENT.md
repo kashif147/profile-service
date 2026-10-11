@@ -31,7 +31,7 @@ Go to: **App Service → Configuration → Application settings** and add:
 
 ```bash
 NODE_ENV=staging
-MONGO_URI=mongodb+srv://kashif147:Test12**@clusterprojectshell.tptnh8w.mongodb.net/Profile-Service?retryWrites=true&w=majority&appName=ClusterProjectShell
+MONGO_URI=<your MongoDB connection string - never commit it>
 RABBIT_URL=amqp://guest:guest@projectshell-rabbitmq123.canadacentral.azurecontainer.io:5672
 JWT_SECRET=32704701374fhfwefgwefwisagfiwudsgfui
 JWT_EXPIRY=24h

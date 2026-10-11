@@ -13,7 +13,11 @@ require("dotenv").config();
 const MONGODB_URI =
   process.env.MONGODB_URI ||
   process.env.DATABASE_URL ||
-  "mongodb+srv://kashif147:Test12**@clusterprojectshell.tptnh8w.mongodb.net/Profile-Service?retryWrites=true&w=majority&appName=ClusterProjectShell";
+  process.env.MONGO_URI;
+if (!MONGODB_URI) {
+  console.error("Set MONGODB_URI, DATABASE_URL or MONGO_URI (no connection string is hardcoded).");
+  process.exit(1);
+}
 
 const DEFAULT_TEMPLATE_TYPE = "application";
 
