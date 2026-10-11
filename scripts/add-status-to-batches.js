@@ -8,9 +8,9 @@ require("dotenv").config();
 
 const Batch = require("../models/batch.model.js");
 
-const MONGODB_URI = "mongodb+srv://kashif147:Test12**@clusterprojectshell.tptnh8w.mongodb.net/Profile-Service?retryWrites=true&w=majority&appName=ClusterProjectShell"
+const MONGODB_URI = process.env.MONGO_URI || process.env.MONGODB_URI || process.env.DATABASE_URL;
 if (!MONGODB_URI) {
-  console.error("Error: MONGODB_URI or DATABASE_URL not set");
+  console.error("Error: MONGO_URI, MONGODB_URI or DATABASE_URL not set");
   process.exit(1);
 }
 
