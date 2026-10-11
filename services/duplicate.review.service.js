@@ -457,7 +457,7 @@ async function applyEffectiveToProfile({ profile, effective, reviewerId, session
   // same check bulkApproval.controller.js already has for its own "existing
   // profile" branch.
   if (!profile.membershipNumber) {
-    const membershipNumber = await generateMembershipNumber();
+    const membershipNumber = await generateMembershipNumber(profile.tenantId);
     $set.membershipNumber = membershipNumber;
     console.log(
       `✅ Generated membership number ${membershipNumber} for existing profile ${profile._id} (duplicate-review LINK)`,

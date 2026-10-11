@@ -25,10 +25,8 @@ const ProfileSchema = new mongoose.Schema(
     normalizedEmail: { type: String, required: true },
     membershipNumber: {
       type: String,
-      unique: true,
-      sparse: true,
       trim: true,
-    }, // Auto-generated membership number; absent for attendee-only (non-member) profiles
+    }, // Auto-generated, unique per tenant (index below); absent for attendee-only (non-member) profiles
     firstJoinedDate: { type: Date, default: null }, // Date of first membership
     submissionDate: { type: Date, default: Date.now }, // Date of submission
     // NEW: Pointer to the current subscription
@@ -193,5 +191,16 @@ for (const hook of ["findOneAndUpdate", "updateOne", "updateMany"]) {
 }
 
 ProfileSchema.index({ tenantId: 1, normalizedEmail: 1 }, { unique: true });
+// Membership numbers are sequenced per tenant (helpers/membership.number.generator.js), so
+// uniqueness is per tenant too. Replaces the global membershipNumber_1 unique index, which
+// scripts/migrate-membership-number-tenant-index.js drops only after this one exists.
+ProfileSchema.index(
+  { tenantId: 1, membershipNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { membershipNumber: { $type: "string" } },
+    name: "tenantId_1_membershipNumber_1",
+  },
+);
 ProfileSchema.index({ batchId: 1 });
 module.exports = mongoose.model("Profile", ProfileSchema);

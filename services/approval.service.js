@@ -196,7 +196,7 @@ async function approveApplication({
       }
 
       if (!existingProfile.membershipNumber) {
-        const membershipNumber = await generateMembershipNumber();
+        const membershipNumber = await generateMembershipNumber(existingProfile.tenantId);
         profileUpdate.membershipNumber = membershipNumber;
         console.log(
           `✅ Generated membership number ${membershipNumber} for existing profile ${existingProfile._id}`
@@ -225,7 +225,7 @@ async function approveApplication({
           : now;
 
       // Generate membership number for new profile
-      const membershipNumber = await generateMembershipNumber();
+      const membershipNumber = await generateMembershipNumber(tenantId);
 
       // Build $set object for new profile creation
       const profileSetFields = {

@@ -1,4 +1,6 @@
 const Profile = require("../models/profile.model");
+const MembershipNumberSequence = require("../models/membershipNumberSequence.model");
+const { requireTenantId } = require("./requireTenantId");
 
 const YEAR_TO_ALPHABET = {
   2025: "A",
@@ -35,51 +37,66 @@ const getCurrentYearAlphabet = () => {
   return YEAR_TO_ALPHABET[currentYear] || "Z"; // Default to Z if year not in mapping
 };
 
-// Function to get the next sequence number for a given year alphabet
-const getNextSequenceNumber = async (yearAlphabet) => {
-  try {
-    // Find the highest membership number for the current year from Profile
-    const highestMembership = await Profile.findOne({
-      membershipNumber: { $regex: `^${yearAlphabet}` },
-    })
-      .sort({ membershipNumber: -1 })
-      .lean();
-
-    if (!highestMembership || !highestMembership.membershipNumber) {
-      // First membership for this year
-      return 1;
-    }
-
-    // Extract the sequence number from the highest membership number
-    const sequencePart = highestMembership.membershipNumber.substring(1);
-    const currentSequence = parseInt(sequencePart, 10);
-
-    return currentSequence + 1;
-  } catch (error) {
-    console.error("Error getting next sequence number:", error);
-    throw error;
-  }
+/** Highest numeric suffix already issued to this tenant for the letter (0 if none). */
+const highestExistingSequence = async (tenantId, yearAlphabet) => {
+  const highest = await Profile.findOne({
+    tenantId,
+    membershipNumber: { $regex: `^${yearAlphabet}\\d+$` },
+  })
+    .sort({ membershipNumber: -1 })
+    .select({ membershipNumber: 1 })
+    .lean();
+  if (!highest || !highest.membershipNumber) return 0;
+  const n = parseInt(highest.membershipNumber.substring(1), 10);
+  return Number.isFinite(n) ? n : 0;
 };
 
-// Main function to generate membership number
-const generateMembershipNumber = async () => {
-  try {
-    const yearAlphabet = getCurrentYearAlphabet();
-    const sequenceNumber = await getNextSequenceNumber(yearAlphabet);
-
-    // Format sequence number to 5 digits (e.g., 00001, 00002, etc.)
-    const formattedSequence = sequenceNumber.toString().padStart(5, "0");
-
-    const membershipNumber = `${yearAlphabet}${formattedSequence}`;
-
-    console.log(`Generated membership number: ${membershipNumber}`);
-    return membershipNumber;
-  } catch (error) {
-    console.error("Error generating membership number:", error);
-    throw error;
+/**
+ * Next sequence for (tenant, letter), atomically. The counter is seeded once from the
+ * tenant's current maximum with $max, which is idempotent and safe under concurrent
+ * first use; after that every call is a single $inc. Runs outside any approval
+ * transaction on purpose: an aborted approval leaves a gap, never a duplicate.
+ */
+const getNextSequenceNumber = async (tenantId, yearAlphabet) => {
+  const filter = { tenantId, yearAlphabet };
+  const seeded = await MembershipNumberSequence.exists(filter);
+  if (!seeded) {
+    const currentMax = await highestExistingSequence(tenantId, yearAlphabet);
+    try {
+      await MembershipNumberSequence.updateOne(
+        filter,
+        { $max: { seq: currentMax } },
+        { upsert: true },
+      );
+    } catch (err) {
+      // A concurrent first call created the row; $max below still applies.
+      if (err?.code !== 11000) throw err;
+      await MembershipNumberSequence.updateOne(filter, { $max: { seq: currentMax } });
+    }
   }
+  const row = await MembershipNumberSequence.findOneAndUpdate(
+    filter,
+    { $inc: { seq: 1 } },
+    { new: true },
+  ).lean();
+  return row.seq;
+};
+
+/**
+ * Next membership number for the tenant: "<year letter><5-digit sequence>", unique
+ * within the tenant (Profile index { tenantId, membershipNumber }). Existing members are
+ * never renumbered.
+ */
+const generateMembershipNumber = async (tenantId) => {
+  const tid = String(requireTenantId(tenantId));
+  const yearAlphabet = getCurrentYearAlphabet();
+  const sequenceNumber = await getNextSequenceNumber(tid, yearAlphabet);
+  const membershipNumber = `${yearAlphabet}${sequenceNumber.toString().padStart(5, "0")}`;
+  console.log(`Generated membership number: ${membershipNumber}`);
+  return membershipNumber;
 };
 
 module.exports = {
   generateMembershipNumber,
+  getCurrentYearAlphabet,
 };

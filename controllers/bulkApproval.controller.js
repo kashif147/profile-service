@@ -356,7 +356,7 @@ async function approveSingleApplication({
       }
 
       if (!existingProfile.membershipNumber) {
-        const membershipNumber = await generateMembershipNumber();
+        const membershipNumber = await generateMembershipNumber(existingProfile.tenantId);
         updateFields.membershipNumber = membershipNumber;
         console.log(
           `✅ Generated membership number ${membershipNumber} for existing profile ${existingProfile._id}`
