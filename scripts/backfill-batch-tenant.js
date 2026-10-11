@@ -11,7 +11,11 @@
  * query) is reported as MIXED and left untouched — it needs a manual split /
  * delete decision, and its Profile.batchId links should be reviewed.
  *
- * DRY-RUN BY DEFAULT. Nothing is written unless --apply is passed.
+ * DRY-RUN BY DEFAULT. Nothing is written unless --apply is passed. A dry run
+ * prints aggregate counts only (add --verbose for per-batch lines). With
+ * --apply every stamped batch id is printed: keep that output, it is the
+ * rollback record ($unset tenantId on exactly those ids).
+ * Exit code 2 when any batch is MIXED (spans tenants): resolve before --apply.
  *
  * Usage:
  *   MONGO_URI=... node scripts/backfill-batch-tenant.js           # dry run
@@ -23,6 +27,7 @@ const mongoose = require("mongoose");
 require("dotenv").config();
 
 const APPLY = process.argv.includes("--apply");
+const VERBOSE = APPLY || process.argv.includes("--verbose");
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 
 async function main() {
@@ -36,7 +41,18 @@ async function main() {
   const profiles = db.collection("profiles");
   const users = db.collection("users");
 
-  const summary = { scanned: 0, alreadyTenanted: 0, stamped: 0, mixed: 0, unresolved: 0 };
+  const summary = {
+    scanned: 0,
+    alreadyTenanted: 0,
+    stamped: 0,
+    stampedFromProfiles: 0,
+    stampedFromCreator: 0,
+    // resolved from profiles, but some of those profiles carry no tenantId
+    partialProfilesWithoutTenant: 0,
+    mixed: 0,
+    unresolved: 0,
+  };
+  const stampedByTenant = {};
   const problems = [];
 
   const cursor = batches.find(
@@ -56,7 +72,11 @@ async function main() {
         problems.push({ batchId: String(batch._id), reason: "mixed_tenants", tenants: clean.map(String) });
         continue;
       }
-      if (clean.length === 1) tenantId = String(clean[0]);
+      if (clean.length === 1) {
+        tenantId = String(clean[0]);
+        summary.stampedFromProfiles += 1;
+        if (clean.length !== tenants.length) summary.partialProfilesWithoutTenant += 1;
+      }
     }
 
     if (!tenantId && batch.createdBy) {
@@ -65,7 +85,10 @@ async function main() {
         userType: "CRM",
       });
       const clean = creatorTenants.filter((t) => t != null && String(t).trim());
-      if (clean.length === 1) tenantId = String(clean[0]);
+      if (clean.length === 1) {
+        tenantId = String(clean[0]);
+        summary.stampedFromCreator += 1;
+      }
     }
 
     if (!tenantId) {
@@ -75,7 +98,10 @@ async function main() {
     }
 
     summary.stamped += 1;
-    console.log(`${APPLY ? "UPDATE" : "WOULD UPDATE"} batch ${batch._id} -> tenantId ${tenantId}`);
+    stampedByTenant[tenantId] = (stampedByTenant[tenantId] || 0) + 1;
+    if (VERBOSE) {
+      console.log(`${APPLY ? "UPDATE" : "WOULD UPDATE"} batch ${batch._id} -> tenantId ${tenantId}`);
+    }
     if (APPLY) {
       await batches.updateOne(
         { _id: batch._id, $or: [{ tenantId: { $exists: false } }, { tenantId: null }, { tenantId: "" }] },
@@ -85,11 +111,12 @@ async function main() {
   }
 
   summary.alreadyTenanted = await batches.countDocuments({ tenantId: { $nin: [null, ""], $exists: true } });
-  console.log(JSON.stringify({ mode: APPLY ? "apply" : "dry-run", summary }, null, 2));
-  if (problems.length) {
+  console.log(JSON.stringify({ mode: APPLY ? "apply" : "dry-run", summary, stampedByTenant }, null, 2));
+  if (problems.length && VERBOSE) {
     console.log("Batches needing manual review (left untouched):");
     console.log(JSON.stringify(problems, null, 2));
   }
+  if (summary.mixed) process.exitCode = 2;
   await mongoose.connection.close();
 }
 

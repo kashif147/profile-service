@@ -6,7 +6,10 @@
  * wrong tenant. The authoritative tenant of a transfer request is the tenant of
  * the Profile it references (profileId -> Profile.tenantId).
  *
- * DRY-RUN BY DEFAULT. Nothing is written unless --apply is passed.
+ * DRY-RUN BY DEFAULT. Nothing is written unless --apply is passed. A dry run
+ * prints aggregate counts only (add --verbose for per-row lines). With --apply
+ * every change is printed as "<id>: <old> -> <new>": keep that output, it is
+ * the rollback record (set each id back to its old tenantId).
  *
  * Usage:
  *   MONGO_URI=... node scripts/migrate-transfer-request-tenant.js           # dry run
@@ -19,6 +22,7 @@ const mongoose = require("mongoose");
 require("dotenv").config();
 
 const APPLY = process.argv.includes("--apply");
+const VERBOSE = APPLY || process.argv.includes("--verbose");
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 
 async function main() {
@@ -33,6 +37,7 @@ async function main() {
 
   const summary = { scanned: 0, unchanged: 0, retenanted: 0, missingProfile: 0, profileWithoutTenant: 0 };
   const problems = [];
+  const transitions = {}; // "<old tenant> -> <new tenant>": count
 
   const cursor = transfers.find({}, { projection: { _id: 1, profileId: 1, tenantId: 1 } });
   for await (const row of cursor) {
@@ -56,9 +61,11 @@ async function main() {
       continue;
     }
     summary.retenanted += 1;
-    console.log(
-      `${APPLY ? "UPDATE" : "WOULD UPDATE"} transferRequest ${row._id}: ${row.tenantId || "<none>"} -> ${profileTenant}`,
-    );
+    const t = `${row.tenantId || "<none>"} -> ${profileTenant}`;
+    transitions[t] = (transitions[t] || 0) + 1;
+    if (VERBOSE) {
+      console.log(`${APPLY ? "UPDATE" : "WOULD UPDATE"} transferRequest ${row._id}: ${t}`);
+    }
     if (APPLY) {
       await transfers.updateOne(
         { _id: row._id, tenantId: row.tenantId },
@@ -67,8 +74,8 @@ async function main() {
     }
   }
 
-  console.log(JSON.stringify({ mode: APPLY ? "apply" : "dry-run", summary }, null, 2));
-  if (problems.length) {
+  console.log(JSON.stringify({ mode: APPLY ? "apply" : "dry-run", summary, transitions }, null, 2));
+  if (problems.length && VERBOSE) {
     console.log("Rows needing manual review (left untouched):");
     console.log(JSON.stringify(problems, null, 2));
   }
