@@ -1,5 +1,6 @@
 const Profile = require("../models/profile.model");
 const { normalizeEmail } = require("../helpers/profileLookup.service.js");
+const { resolveInternalCallerTenant } = require("../middlewares/internalTenant");
 
 const CONTINUE_RESPONSE = { version: "1.0.0", action: "Continue" };
 
@@ -24,7 +25,27 @@ exports.validateProfile = async (req, res) => {
     );
 
     // Extract fields from Azure B2C request
-    const { email, tenantId, step, ...claims } = req.body || {};
+    // A tenantId in the B2C body is only a claim: it is dropped (never echoed back) and the
+    // tenant comes solely from the trusted internal caller (Phase 2C B).
+    // eslint-disable-next-line no-unused-vars
+    const { email, tenantId: _claimedTenantId, step, ...claims } = req.body || {};
+
+    // Trusted tenant: user-service forwards the authenticated B2C connector call as a genuine
+    // internal request with x-tenant-id resolved from the B2C app. The gateway strips a
+    // client-supplied x-internal-request, so a direct caller cannot reach this branch. No
+    // trusted tenant -> fail closed (never a cross-tenant duplicate/identity lookup).
+    const auth = resolveInternalCallerTenant(req, { allowUserIdentity: false });
+    const headerTenant =
+      typeof req.headers["x-tenant-id"] === "string" ? req.headers["x-tenant-id"].trim() : "";
+    if (!auth.ok || auth.mode !== "internal" || !headerTenant || auth.tenantId !== headerTenant) {
+      console.warn(`[${requestId}] 🚫 No trusted tenant (internal x-tenant-id) - blocking validation`);
+      return send(res, {
+        version: "1.0.0",
+        action: "ShowBlockPage",
+        userMessage: "Sign-up validation is not available. Please contact support.",
+      });
+    }
+    const tenantId = auth.tenantId;
     
     // Extract mobile number and membership number from extension attributes or direct fields
     let mobileNumber = null;
@@ -139,10 +160,8 @@ exports.validateProfile = async (req, res) => {
       // NO isActive filter - check all profiles to prevent duplicates
     };
     
-    // Add tenant filter if provided
-    if (tenantId) {
-      query.tenantId = tenantId;
-    }
+    // Always scoped to the trusted tenant (never a cross-tenant lookup).
+    query.tenantId = tenantId;
 
     console.log(`[${requestId}] 🔍 Searching for existing profile(s) (active OR inactive)...`);
     const dbStartTime = Date.now();
@@ -237,7 +256,7 @@ exports.validateProfile = async (req, res) => {
           version: "1.0.0",
           action: "Continue",
           email,
-          ...(tenantId && { tenantId: existingProfile.tenantId?.toString() || tenantId }),
+          tenantId,
           existingProfile: "true",  // Flag to indicate profile exists
           profileId: existingProfile._id.toString(),  // Profile to link to
           membershipNumber: existingProfile.membershipNumber,  // Return membership number
@@ -281,7 +300,7 @@ exports.validateProfile = async (req, res) => {
     return send(res, {
       ...CONTINUE_RESPONSE,
       email,
-      ...(tenantId && { tenantId }),
+      tenantId,
       ...(step && { step }),
       ...claims,
     });
