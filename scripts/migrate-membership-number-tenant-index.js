@@ -27,6 +27,7 @@
  * Connects only to profile-service's own database. Raw driver; prints no member data.
  */
 const mongoose = require("mongoose");
+const { assertMigrationTarget } = require("./lib/migrationTargetGuard");
 
 const LEGACY_INDEX = "membershipNumber_1";
 const NEW_INDEX = "tenantId_1_membershipNumber_1";
@@ -104,6 +105,7 @@ async function main() {
   await mongoose.connect(uri, { autoIndex: false });
   const db = mongoose.connection.db;
   try {
+    assertMigrationTarget(mongoose.connection.name, process.argv.slice(2), { apply: args.apply });
     const before = await report(db);
     const out = { mode: args.mode, apply: args.apply, report: before };
     const profiles = db.collection("profiles");

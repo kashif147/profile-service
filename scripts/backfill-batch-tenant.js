@@ -24,6 +24,7 @@
  * Connects only to profile-service's own database.
  */
 const mongoose = require("mongoose");
+const { assertMigrationTarget } = require("./lib/migrationTargetGuard");
 require("dotenv").config();
 
 const APPLY = process.argv.includes("--apply");
@@ -36,6 +37,7 @@ async function main() {
     process.exit(1);
   }
   await mongoose.connect(MONGO_URI);
+  assertMigrationTarget(mongoose.connection.name, process.argv.slice(2), { apply: APPLY });
   const db = mongoose.connection.db;
   const batches = db.collection("batches");
   const profiles = db.collection("profiles");

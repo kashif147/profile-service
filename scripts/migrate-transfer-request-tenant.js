@@ -19,6 +19,7 @@
  * Rows whose profile is missing or has no tenantId are reported, never guessed.
  */
 const mongoose = require("mongoose");
+const { assertMigrationTarget } = require("./lib/migrationTargetGuard");
 require("dotenv").config();
 
 const APPLY = process.argv.includes("--apply");
@@ -31,6 +32,7 @@ async function main() {
     process.exit(1);
   }
   await mongoose.connect(MONGO_URI);
+  assertMigrationTarget(mongoose.connection.name, process.argv.slice(2), { apply: APPLY });
   const db = mongoose.connection.db;
   const transfers = db.collection("transferrequests");
   const profiles = db.collection("profiles");
