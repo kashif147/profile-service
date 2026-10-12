@@ -375,14 +375,14 @@ exports.checkEmailExists = async (req, res, next) => {
     const normalizedEmail = normalizeEmail(email);
 
     // Build query conditions for Profile lookup
+    // Tenant-owned lookup (Phase 2C D): trusted tenant required, never a cross-tenant check.
+    if (!tenantId) {
+      return next(AppError.unauthorized("Tenant context required"));
+    }
     const profileQuery = {
       normalizedEmail: normalizedEmail,
+      tenantId,
     };
-
-    // Add tenantId if available
-    if (tenantId) {
-      profileQuery.tenantId = tenantId;
-    }
 
     // Check if profile exists (approved profiles)
     const existingProfile = await Profile.findOne(profileQuery)
