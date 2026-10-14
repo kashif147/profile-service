@@ -9,12 +9,36 @@ const {
   enrichPersonalInfoFullNameOnDocument,
 } = require("../helpers/personal.info.fullName.js");
 
+/*
+ * Logging: ids, outcomes and error names/codes only. Request headers (Authorization, cookies),
+ * bodies, params, req.user / req.ctx, personal-details records and whole error objects are never
+ * logged - they carry tokens and personal data (email, names, DOB, address, mobile).
+ * Validation/database errors log field names only: Joi details[].path, Mongoose
+ * Object.keys(errors), duplicate key Object.keys(keyPattern). error.message is not logged where
+ * it can embed values.
+ */
+function safeErrorFields(error) {
+  const fields = { name: error?.name || null, code: error?.code ?? null };
+  if (error?.isJoi && Array.isArray(error.details)) {
+    fields.fields = error.details.map((d) => (Array.isArray(d.path) ? d.path.join(".") : String(d.path)));
+  } else if (error?.name === "ValidationError" && error.errors && typeof error.errors === "object") {
+    fields.fields = Object.keys(error.errors);
+  } else if (error?.code === 11000) {
+    fields.fields = Object.keys(error.keyPattern || {});
+  }
+  return fields;
+}
+
+function logError(operation, error, ids = {}) {
+  console.error(`PersonalDetailsController [${operation}] Error:`, { ...ids, ...safeErrorFields(error) });
+}
+
 exports.createPersonalDetails = async (req, res, next) => {
   try {
     const { userId, creatorId, userType, tenantId } =
       extractUserAndCreatorContext(req);
     console.log("=== createPersonalDetails START ===");
-    console.log("User context:", { userId, creatorId, userType });
+    console.log("User context:", { tenantId, userId, creatorId, userType });
 
     const validatedData =
       await joischemas.personal_details_create.validateAsync(req.body);
@@ -104,14 +128,14 @@ exports.createPersonalDetails = async (req, res, next) => {
       },
     });
 
-    console.log("=== createPersonalDetails SUCCESS ===");
+    console.log("=== createPersonalDetails SUCCESS ===", {
+      tenantId,
+      applicationId: result?.applicationId ?? null,
+    });
     enrichPersonalInfoFullNameOnDocument(result);
     return res.success(result);
   } catch (error) {
-    console.error(
-      "PersonalDetailsController [createPersonalDetails] Error:",
-      error
-    );
+    logError("createPersonalDetails", error);
     if (error.isJoi) {
       return next(AppError.badRequest("Validation error: " + error.message));
     }
@@ -122,14 +146,11 @@ exports.createPersonalDetails = async (req, res, next) => {
 exports.getPersonalDetails = async (req, res, next) => {
   try {
     console.log("=== getPersonalDetails START ===");
-    console.log("Request params:", req.params);
-    console.log("Request user:", req.user);
-    console.log("Request ctx:", req.ctx);
 
     const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
     const applicationId = req.params.applicationId;
 
-    console.log("Extracted context:", { userId, userType, applicationId });
+    console.log("Extracted context:", { tenantId, userId, userType, applicationId });
 
     if (!applicationId) {
       return next(AppError.badRequest("Application ID is required"));
@@ -165,11 +186,7 @@ exports.getPersonalDetails = async (req, res, next) => {
     enrichPersonalInfoFullNameOnDocument(personalDetails);
     return res.success(personalDetails);
   } catch (error) {
-    console.error(
-      "PersonalDetailsController [getPersonalDetails] Error:",
-      error
-    );
-    console.error("Error stack:", error.stack);
+    logError("getPersonalDetails", error);
     if (error.message === "Personal details not found") {
       return res.notFoundRecord("Personal details not found");
     }
@@ -184,8 +201,7 @@ exports.updatePersonalDetails = async (req, res, next) => {
     const applicationId = req.params.applicationId;
 
     // Context logging for debugging
-    console.log('[updatePersonalDetails] req.user:', req.user);
-    console.log('[updatePersonalDetails] Context:', { userId, userType, creatorId, applicationId });
+    console.log('[updatePersonalDetails] Context:', { tenantId, userId, userType, creatorId, applicationId });
 
     if (!applicationId) {
       return next(AppError.badRequest('Application ID is required'));
@@ -228,10 +244,7 @@ exports.updatePersonalDetails = async (req, res, next) => {
     enrichPersonalInfoFullNameOnDocument(result);
     return res.success(result);
   } catch (error) {
-    console.error(
-      'PersonalDetailsController [updatePersonalDetails] Error:',
-      error
-    );
+    logError("updatePersonalDetails", error);
     return next(AppError.internal(error.message || 'Internal server error'));
   }
 };
@@ -254,10 +267,7 @@ exports.deletePersonalDetails = async (req, res, next) => {
 
     return res.success("Personal details deleted successfully");
   } catch (error) {
-    console.error(
-      "PersonalDetailsController [deletePersonalDetails] Error:",
-      error
-    );
+    logError("deletePersonalDetails", error);
     if (error.message === "Personal details not found") {
       return res.notFoundRecord("Personal details not found");
     }
@@ -267,12 +277,9 @@ exports.deletePersonalDetails = async (req, res, next) => {
 exports.getMyPersonalDetails = async (req, res, next) => {
   try {
     console.log("=== getMyPersonalDetails START ===");
-    console.log("Request headers:", req.headers);
-    console.log("Request user:", req.user);
-    console.log("Request ctx:", req.ctx);
 
     const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
-    console.log("Extracted context:", { userId, userType });
+    console.log("Extracted context:", { tenantId, userId, userType });
 
     // For PORTAL users, get by userId
     if (userType === "PORTAL") {
@@ -289,7 +296,7 @@ exports.getMyPersonalDetails = async (req, res, next) => {
         userId,
         tenantId
       );
-      console.log("Service response:", personalDetails);
+      console.log("Service response:", { found: Boolean(personalDetails) });
 
     if (!personalDetails) {
       console.log("No personal details found for user:", userId);
@@ -313,11 +320,7 @@ exports.getMyPersonalDetails = async (req, res, next) => {
       );
     }
   } catch (error) {
-    console.error(
-      "PersonalDetailsController [getMyPersonalDetails] Error:",
-      error
-    );
-    console.error("Error stack:", error.stack);
+    logError("getMyPersonalDetails", error);
     if (error.message === "Personal details not found") {
       return res.notFoundRecord("Personal details not found");
     }
@@ -343,10 +346,7 @@ exports.getApplicationStatus = async (req, res, next) => {
 
     return res.success({ applicationStatus });
   } catch (error) {
-    console.error(
-      "PersonalDetailsController [getApplicationStatus] Error:",
-      error
-    );
+    logError("getApplicationStatus", error);
     if (error.message === "Personal details not found") {
       return res.notFoundRecord("Personal details not found");
     }
@@ -444,10 +444,7 @@ exports.checkEmailExists = async (req, res, next) => {
       message: "No profiles with this email already exist",
     });
   } catch (error) {
-    console.error(
-      "PersonalDetailsController [checkEmailExists] Error:",
-      error
-    );
+    logError("checkEmailExists", error);
     return next(error);
   }
 };
