@@ -17,7 +17,7 @@ const bizLogger = require("../config/bizLogger.js");
  * /profile/batch) or the /api/system-logs ingest router, which establish no
  * trusted tenant.
  */
-const tenantContextWarn = tenantContextMiddleware({ mode: "warn" });
+const tenantContextWarn = tenantContextMiddleware();
 
 // Emit a structured, correlation-tagged record for the authenticated request
 // context. logging-lib fills correlationId/userId/tenantId from `req`
