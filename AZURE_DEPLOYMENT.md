@@ -32,15 +32,15 @@ Go to: **App Service → Configuration → Application settings** and add:
 ```bash
 NODE_ENV=staging
 MONGO_URI=<your MongoDB connection string - never commit it>
-RABBIT_URL=amqp://guest:guest@projectshell-rabbitmq123.canadacentral.azurecontainer.io:5672
-JWT_SECRET=32704701374fhfwefgwefwisagfiwudsgfui
+RABBIT_URL=amqp://guest:<password>@projectshell-rabbitmq123.canadacentral.azurecontainer.io:5672
+JWT_SECRET=<generate-strong-random-secret>
 JWT_EXPIRY=24h
 AUTH_BYPASS_ENABLED=true
 POLICY_SERVICE_URL=https://userserviceshell-aqf6f0b8fqgmagch.canadacentral-01.azurewebsites.net
 POLICY_CACHE_TIMEOUT=300000
 POLICY_TIMEOUT=5000
 POLICY_RETRIES=3
-REDIS_URL=rediss://admin:Letme1nplz@user-service-redis.redis.cache.windows.net:6380/0
+REDIS_URL=rediss://admin:<password>@user-service-redis.redis.cache.windows.net:6380/0
 REDIS_ENABLED=true
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
 ```
@@ -107,7 +107,7 @@ ALLOWED_ORIGINS=https://your-frontend.azurewebsites.net,http://localhost:3000
 
 1. **Correct format for Azure Redis Cache (SSL port 6380):**
    ```
-   REDIS_URL=rediss://username:password@hostname:6380/0
+   REDIS_URL=rediss://username:<password>@hostname:6380/0
    ```
    - Use `rediss://` (double 's') for SSL/TLS connections
    - Remove any extra text like `@Redis@` from the URL
@@ -118,7 +118,7 @@ ALLOWED_ORIGINS=https://your-frontend.azurewebsites.net,http://localhost:3000
    REDIS_HOST=user-service-redis.redis.cache.windows.net
    REDIS_PORT=6380
    REDIS_USERNAME=admin
-   REDIS_PASSWORD=Letme1nplz
+   REDIS_PASSWORD=<redis-access-key>
    REDIS_DB=0
    ```
 
