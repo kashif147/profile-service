@@ -66,10 +66,25 @@ Error responses carry the machine-readable `reason` alongside `code`.
 
 ## Stats
 
-All dates use the organisation timezone - user-service `Tenant.regionalSettings.timezone`,
-read through the internal `GET /api/internal/tenants/:tenantId/lifecycle-config` and cached
-per tenant for 10 minutes; `Europe/Dublin` when unset, invalid or unreachable. The resolved
-zone is returned as `timeZone`.
+All dates use the organisation timezone (user-service `Tenant.regionalSettings.timezone`),
+read **as the caller**: profile-service forwards the caller's `Authorization` (plus
+`x-tenant-id`, `x-user-id`, `x-correlation-id`) to user-service
+`GET /api/tenant/regional-settings`. It never sends `x-internal-request` and never puts a
+tenant id in the path. Successful answers are cached per tenant for 10 minutes. A 404 or outage is
+cached for 1 minute, and a 401/403 is never cached. The fallback is `Europe/Dublin`. The resolved zone is
+returned as `timeZone`.
+
+**Pending user-service endpoint (dependency, not built here):**
+
+```
+GET /api/tenant/regional-settings          (tenantScoped router: authenticate + requireTenant)
+gate: tenant-regional-settings:read
+tenant: trusted context only (no :id, no query/body tenant)
+200 { "status": "success", "data": { "tenantId": "...", "timezone": "Europe/Dublin",
+                                     "locale": "en-IE", "currency": "EUR", "dateFormat": "DD/MM/YYYY" } }
+```
+
+Until it ships, every drive figure uses `Europe/Dublin`, which is correct for the current tenant.
 
 - `today` - distinct applications attributed to this drive since local midnight.
 - `total` - distinct non-deleted applications attributed to the drive.
@@ -94,6 +109,7 @@ denies a resource with no Permission rows (`UNKNOWN_RESOURCE`), so **every drive
 |---|---|---|
 | `MEMBERSHIP_DRIVES_READ` (`membership-drives:read`) | IRO, BO, RO | list own drives, view a colleague's running drive, stats, own recruited list |
 | `MEMBERSHIP_DRIVES_WRITE` (`membership-drives:write`) | IRO, BO, RO | create/edit/complete own drives, attribute registrations |
+| `TENANT_REGIONAL_SETTINGS_READ` (`tenant-regional-settings:read`) | IRO, BO, RO | read their own tenant's timezone/locale only; no other tenant data (unlike `tenant:read`) |
 
 Not proposed: no grant to PORTAL roles, no tenant-wide "all drives" view, and no change to any
 other role. Row-level rules (owner-only mutation, owner-only recruited list) are enforced in
@@ -104,5 +120,5 @@ the table above allows. If managers need oversight later, add a separate
 Related dependencies to verify, not change:
 - Registering the member uses the existing `POST /api/personal-details` (`portal:create`) and
   sibling routes - confirm IRO/BO/RO hold those in DEV.
-- The organisation timezone comes from user-service's internal lifecycle-config endpoint,
-  which trusts `x-internal-request` (existing behaviour, owned by the auth/tenant session).
+- The organisation timezone needs the new `GET /api/tenant/regional-settings` (above) and
+  `tenant-regional-settings:read` for IRO/BO/RO. Without them, drives use `Europe/Dublin`.

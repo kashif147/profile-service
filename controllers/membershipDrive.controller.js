@@ -2,6 +2,7 @@ const Joi = require("joi");
 const membershipDriveService = require("../services/membershipDrive.service");
 const { AppError } = require("../errors/AppError");
 const { requireTenantId } = require("../helpers/requireTenantId");
+const { getTenantTimezone } = require("../services/tenantTimezone.service");
 const { DRIVE_STATUSES } = require("../constants/membershipDrive.constants");
 
 /*
@@ -93,10 +94,11 @@ exports.listMyDrives = async (req, res, next) => {
     const query = validate(listQuerySchema, req.query);
     const result = await membershipDriveService.listMyDrives(tenantId, userId, query);
     if (query.includeStats) {
+      const timeZone = await getTenantTimezone(tenantId, req);
       result.drives = await Promise.all(
         result.drives.map(async (drive) => ({
           ...drive,
-          stats: await membershipDriveService.computeStats(tenantId, drive),
+          stats: await membershipDriveService.computeStats(tenantId, drive, { timeZone }),
         })),
       );
     }
@@ -152,11 +154,13 @@ exports.linkRegistration = async (req, res, next) => {
   try {
     const { tenantId, userId } = staffContext(req);
     const { applicationId } = validate(registrationSchema, req.body);
+    const timeZone = await getTenantTimezone(tenantId, req);
     const result = await membershipDriveService.linkRegistration(
       tenantId,
       userId,
       req.params.id,
       applicationId,
+      { timeZone },
     );
     return res.success(result);
   } catch (error) {
@@ -198,7 +202,8 @@ exports.listRegistrations = async (req, res, next) => {
 exports.getDriveStats = async (req, res, next) => {
   try {
     const { tenantId } = staffContext(req);
-    const stats = await membershipDriveService.getDriveStats(tenantId, req.params.id);
+    const timeZone = await getTenantTimezone(tenantId, req);
+    const stats = await membershipDriveService.getDriveStats(tenantId, req.params.id, { timeZone });
     return res.success(stats);
   } catch (error) {
     return next(error);

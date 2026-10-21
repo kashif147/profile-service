@@ -450,13 +450,23 @@ describe("today in the organisation timezone", () => {
     ]);
     const drive = MembershipDrive.store.find((d) => d._id === DRIVE_A);
 
-    const dublin = await driveService.computeStats(A, drive, { now });
+    const dublin = await driveService.computeStats(A, drive, { now, timeZone: "Europe/Dublin" });
     expect(dublin).toMatchObject({ today: 2, total: 3, timeZone: "Europe/Dublin" });
 
-    getTenantTimezone.mockResolvedValueOnce("UTC");
-    const utc = await driveService.computeStats(A, drive, { now });
+    const utc = await driveService.computeStats(A, drive, { now, timeZone: "UTC" });
     expect(utc).toMatchObject({ today: 1, total: 3, timeZone: "UTC" });
-    expect(getTenantTimezone).toHaveBeenCalledWith(A);
+
+    // No timezone supplied -> Dublin, and the service itself makes no lookup.
+    expect(await driveService.computeStats(A, drive, { now })).toMatchObject({ timeZone: "Europe/Dublin" });
+    expect(getTenantTimezone).not.toHaveBeenCalled();
+  });
+
+  test("the stats endpoint resolves the timezone as the caller, for the trusted tenant", async () => {
+    getTenantTimezone.mockResolvedValueOnce("UTC");
+    const r = req(A, IRO_A, { params: { id: DRIVE_A }, query: { tenantId: B } });
+    const { data } = await invoke(drives.getDriveStats, r);
+    expect(data.timeZone).toBe("UTC");
+    expect(getTenantTimezone).toHaveBeenCalledWith(A, r);
   });
 });
 

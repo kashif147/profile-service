@@ -4,7 +4,7 @@ const PersonalDetails = require("../models/personal.details.model");
 const SubscriptionDetails = require("../models/subscription.model");
 const Profile = require("../models/profile.model");
 const { AppError } = require("../errors/AppError");
-const { getTenantTimezone, FALLBACK_TIMEZONE } = require("./tenantTimezone.service");
+const { FALLBACK_TIMEZONE } = require("./tenantTimezone.service");
 const {
   STATUS_TRANSITIONS,
   EDITABLE_STATUSES,
@@ -19,8 +19,9 @@ const {
  * tenant-scoped load, so a non-owner in the same tenant gets 403 and a caller in another
  * tenant gets 404.
  *
- * Calendar dates (drive window, "today") are evaluated in the organisation timezone
- * (Tenant.regionalSettings.timezone, Europe/Dublin fallback - see tenantTimezone.service).
+ * Calendar dates (drive window, "today") are evaluated in the organisation timezone, which
+ * the controller resolves as the caller (tenantTimezone.service) and passes in as
+ * `timeZone`; this module makes no network calls and defaults to Europe/Dublin.
  */
 
 const MAX_LIST_LIMIT = 100;
@@ -200,7 +201,13 @@ function assertAttributionAllowed(drive, userId, now, { unlink = false } = {}) {
  * drive's calendar window, so a drive can't claim members recruited before it started or
  * after it ended.
  */
-async function linkRegistration(tenantId, userId, driveId, applicationId, { now = new Date() } = {}) {
+async function linkRegistration(
+  tenantId,
+  userId,
+  driveId,
+  applicationId,
+  { now = new Date(), timeZone = FALLBACK_TIMEZONE } = {},
+) {
   const drive = await loadDrive(tenantId, driveId);
   const { late } = assertAttributionAllowed(drive, userId, now);
 
@@ -223,7 +230,6 @@ async function linkRegistration(tenantId, userId, driveId, applicationId, { now 
     });
   }
 
-  const timeZone = await getTenantTimezone(tenantId);
   const createdOn = localDate(application.createdAt || now, timeZone);
   if (createdOn < driveCalendarDate(drive.startDate) || createdOn > driveCalendarDate(drive.endDate)) {
     throw AppError.conflict("Application was not created within the drive's dates", {
@@ -284,8 +290,8 @@ function driveApplicationsFilter(tenantId, drive) {
 }
 
 /** today / total / rejoins for one drive, all tenant scoped. */
-async function computeStats(tenantId, drive, { now = new Date(), timeZone } = {}) {
-  const tz = timeZone || (await getTenantTimezone(tenantId));
+async function computeStats(tenantId, drive, { now = new Date(), timeZone = FALLBACK_TIMEZONE } = {}) {
+  const tz = timeZone;
   const driveFilter = driveApplicationsFilter(tenantId, drive);
 
   const [applicationIds, todayIds] = await Promise.all([
@@ -316,9 +322,9 @@ async function computeStats(tenantId, drive, { now = new Date(), timeZone } = {}
   };
 }
 
-async function getDriveStats(tenantId, driveId) {
+async function getDriveStats(tenantId, driveId, { timeZone } = {}) {
   const drive = await loadDrive(tenantId, driveId);
-  return { driveId: String(drive._id), ...(await computeStats(tenantId, drive)) };
+  return { driveId: String(drive._id), ...(await computeStats(tenantId, drive, { timeZone })) };
 }
 
 /**
