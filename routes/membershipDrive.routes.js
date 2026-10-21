@@ -15,6 +15,8 @@ router.post("/", write, membershipDriveController.createDrive);
 
 // Sub-resource routes are registered before "/:id" for readability; they don't collide.
 router.get("/:id/stats", read, membershipDriveController.getDriveStats);
+// Recruited applications/members, paginated - drive owner only.
+router.get("/:id/registrations", read, membershipDriveController.listRegistrations);
 router.post("/:id/registrations", write, membershipDriveController.linkRegistration);
 router.delete(
   "/:id/registrations/:applicationId",

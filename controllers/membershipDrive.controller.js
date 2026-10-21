@@ -46,6 +46,12 @@ const registrationSchema = Joi.object({
   applicationId: Joi.string().trim().min(1).max(100).required(),
 });
 
+const registrationsQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1),
+  limit: Joi.number().integer().min(1).max(100),
+  applicationStatus: Joi.string().trim().max(50),
+}).unknown(true);
+
 const listQuerySchema = Joi.object({
   status: Joi.string().valid(...DRIVE_STATUSES),
   page: Joi.number().integer().min(1),
@@ -166,6 +172,22 @@ exports.unlinkRegistration = async (req, res, next) => {
       userId,
       req.params.id,
       req.params.applicationId,
+    );
+    return res.success(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.listRegistrations = async (req, res, next) => {
+  try {
+    const { tenantId, userId } = staffContext(req);
+    const query = validate(registrationsQuerySchema, req.query);
+    const result = await membershipDriveService.listRegistrations(
+      tenantId,
+      userId,
+      req.params.id,
+      query,
     );
     return res.success(result);
   } catch (error) {

@@ -217,6 +217,8 @@ const ProfileSchema = new mongoose.Schema(
       driveId: { type: String, default: null },
       linkedAt: { type: Date, default: null },
       linkedBy: { type: String, default: null },
+      // Attributed by the owner after the drive was COMPLETED (late-registration grace period).
+      late: { type: Boolean, default: false },
     },
 
     meta: {

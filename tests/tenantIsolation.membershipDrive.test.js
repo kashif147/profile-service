@@ -17,13 +17,21 @@ const mm = () => require("./helpers/memoryModel");
 jest.mock("../models/membershipDrive.model", () => mm().createMemoryModel("MembershipDrive"));
 jest.mock("../models/personal.details.model", () => mm().createMemoryModel("personalDetails"));
 jest.mock("../models/subscription.model", () => mm().createMemoryModel("subscriptionDetails"));
+jest.mock("../models/profile.model", () => mm().createMemoryModel("Profile"));
+jest.mock("../services/tenantTimezone.service", () => ({
+  FALLBACK_TIMEZONE: "Europe/Dublin",
+  getTenantTimezone: jest.fn(async () => "Europe/Dublin"),
+}));
 
 const { mockRes } = require("./helpers/memoryModel");
 const MembershipDrive = require("../models/membershipDrive.model");
 const PersonalDetails = require("../models/personal.details.model");
 const SubscriptionDetails = require("../models/subscription.model");
+const Profile = require("../models/profile.model");
+const { getTenantTimezone } = require("../services/tenantTimezone.service");
 const drives = require("../controllers/membershipDrive.controller");
-const { startOfToday } = require("../services/membershipDrive.service");
+const driveService = require("../services/membershipDrive.service");
+const { startOfToday } = driveService;
 
 const A = "aaaaaaaaaaaaaaaaaaaaaaaa";
 const B = "bbbbbbbbbbbbbbbbbbbbbbbb";
@@ -32,6 +40,7 @@ const IRO_A2 = "a10000000000000000000002";
 const IRO_B = "b10000000000000000000001";
 const DRIVE_A = "a50000000000000000000001";
 const DRIVE_B = "b50000000000000000000001";
+const IN_WINDOW = new Date("2026-10-15T12:00:00Z");
 
 const req = (tenantId, userId, extra = {}) => ({
   tenantId,
@@ -67,15 +76,16 @@ const driveDoc = (overrides) => ({
 });
 
 beforeEach(() => {
-  for (const M of [MembershipDrive, PersonalDetails, SubscriptionDetails]) M.reset();
+  for (const M of [MembershipDrive, PersonalDetails, SubscriptionDetails, Profile]) M.reset();
+  getTenantTimezone.mockClear();
   MembershipDrive.seed([
     driveDoc({ _id: DRIVE_A, tenantId: A, ownerUserId: IRO_A, name: "A drive" }),
     driveDoc({ _id: DRIVE_B, tenantId: B, ownerUserId: IRO_B, name: "B drive" }),
   ]);
   PersonalDetails.seed([
-    { tenantId: A, applicationId: "app-a1", meta: { deleted: false }, membershipDrive: { driveId: null } },
-    { tenantId: A, applicationId: "app-a2", meta: { deleted: false }, membershipDrive: { driveId: null } },
-    { tenantId: B, applicationId: "app-b1", meta: { deleted: false }, membershipDrive: { driveId: null } },
+    { tenantId: A, applicationId: "app-a1", createdAt: IN_WINDOW, meta: { deleted: false }, membershipDrive: { driveId: null } },
+    { tenantId: A, applicationId: "app-a2", createdAt: IN_WINDOW, meta: { deleted: false }, membershipDrive: { driveId: null } },
+    { tenantId: B, applicationId: "app-b1", createdAt: IN_WINDOW, meta: { deleted: false }, membershipDrive: { driveId: null } },
   ]);
 });
 
@@ -333,6 +343,7 @@ describe("registrations and stats", () => {
       rejoins: 1,
       signUpTarget: 10,
       remainingToTarget: 8,
+      timeZone: "Europe/Dublin",
     });
     for (const call of [...PersonalDetails.calls, ...SubscriptionDetails.calls].filter((c) => c.filter)) {
       expect(call.filter.tenantId).toBe(A);
@@ -355,5 +366,155 @@ describe("startOfToday", () => {
     expect(startOfToday(new Date("2026-12-15T10:00:00Z"), "Europe/Dublin").toISOString()).toBe(
       "2026-12-15T00:00:00.000Z",
     );
+  });
+});
+
+describe("attribution window and late registration", () => {
+  const link = (userId, applicationId = "app-a1", id = DRIVE_A) =>
+    invoke(drives.linkRegistration, req(A, userId, { params: { id }, body: { applicationId } }));
+  const drive = () => MembershipDrive.store.find((d) => d._id === DRIVE_A);
+
+  test("DRAFT and INACTIVE drives accept no registrations", async () => {
+    for (const status of ["DRAFT", "INACTIVE"]) {
+      drive().status = status;
+      const { err } = await link(IRO_A);
+      expect(err).toMatchObject({ status: 409, reason: "DRIVE_NOT_ACCEPTING" });
+    }
+  });
+
+  test("an application created before the drive started is refused", async () => {
+    PersonalDetails.seed([
+      { tenantId: A, applicationId: "app-early", createdAt: new Date("2026-09-20T10:00:00Z"), meta: {}, membershipDrive: { driveId: null } },
+    ]);
+    const { err } = await link(IRO_A, "app-early");
+    expect(err).toMatchObject({ status: 409, reason: "OUTSIDE_DRIVE_WINDOW" });
+  });
+
+  test("an application created after the drive's end date is refused", async () => {
+    drive().endDate = new Date("2026-10-10");
+    const { err } = await link(IRO_A);
+    expect(err).toMatchObject({ status: 409, reason: "OUTSIDE_DRIVE_WINDOW" });
+  });
+
+  test("the window is evaluated in the organisation timezone", async () => {
+    // 23:30 UTC on 30 Sep is 00:30 on 1 Oct in Dublin (IST), the drive's first day.
+    PersonalDetails.seed([
+      { tenantId: A, applicationId: "app-edge", createdAt: new Date("2026-09-30T23:30:00Z"), meta: {}, membershipDrive: { driveId: null } },
+    ]);
+    expect((await link(IRO_A, "app-edge")).err).toBeUndefined();
+
+    PersonalDetails.seed([
+      { tenantId: A, applicationId: "app-edge-utc", createdAt: new Date("2026-09-30T23:30:00Z"), meta: {}, membershipDrive: { driveId: null } },
+    ]);
+    getTenantTimezone.mockResolvedValueOnce("UTC");
+    expect((await link(IRO_A, "app-edge-utc")).err).toMatchObject({ reason: "OUTSIDE_DRIVE_WINDOW" });
+  });
+
+  test("COMPLETED drive: owner may attribute late within the grace period, flagged late", async () => {
+    Object.assign(drive(), { status: "COMPLETED", statusChangedAt: new Date(Date.now() - 2 * 86400000) });
+    const { err, data } = await link(IRO_A);
+    expect(err).toBeUndefined();
+    expect(data.late).toBe(true);
+    expect(PersonalDetails.store.find((p) => p.applicationId === "app-a1").membershipDrive.late).toBe(true);
+  });
+
+  test("COMPLETED drive: colleagues cannot attribute late", async () => {
+    Object.assign(drive(), { status: "COMPLETED", statusChangedAt: new Date() });
+    expect((await link(IRO_A2)).err).toMatchObject({ status: 403 });
+  });
+
+  test("COMPLETED drive: nothing can be attributed after the grace period", async () => {
+    Object.assign(drive(), { status: "COMPLETED", statusChangedAt: new Date(Date.now() - 8 * 86400000) });
+    expect((await link(IRO_A)).err).toMatchObject({ status: 409, reason: "LATE_REGISTRATION_CLOSED" });
+  });
+
+  test("INACTIVE drive tags cannot be removed", async () => {
+    await link(IRO_A);
+    drive().status = "INACTIVE";
+    const { err } = await invoke(
+      drives.unlinkRegistration,
+      req(A, IRO_A, { params: { id: DRIVE_A, applicationId: "app-a1" } }),
+    );
+    expect(err).toMatchObject({ status: 409 });
+  });
+});
+
+describe("today in the organisation timezone", () => {
+  test("counts distinct applications attributed since local midnight", async () => {
+    const now = new Date("2026-10-21T10:00:00Z");
+    PersonalDetails.seed([
+      // 23:30 UTC on the 20th = 00:30 on the 21st in Dublin -> today in Dublin, not in UTC.
+      { tenantId: A, applicationId: "late-night", meta: {}, membershipDrive: { driveId: DRIVE_A, linkedAt: new Date("2026-10-20T23:30:00Z") } },
+      { tenantId: A, applicationId: "morning", meta: {}, membershipDrive: { driveId: DRIVE_A, linkedAt: new Date("2026-10-21T08:00:00Z") } },
+      { tenantId: A, applicationId: "yesterday", meta: {}, membershipDrive: { driveId: DRIVE_A, linkedAt: new Date("2026-10-20T12:00:00Z") } },
+    ]);
+    const drive = MembershipDrive.store.find((d) => d._id === DRIVE_A);
+
+    const dublin = await driveService.computeStats(A, drive, { now });
+    expect(dublin).toMatchObject({ today: 2, total: 3, timeZone: "Europe/Dublin" });
+
+    getTenantTimezone.mockResolvedValueOnce("UTC");
+    const utc = await driveService.computeStats(A, drive, { now });
+    expect(utc).toMatchObject({ today: 1, total: 3, timeZone: "UTC" });
+    expect(getTenantTimezone).toHaveBeenCalledWith(A);
+  });
+});
+
+describe("recruited registrations list", () => {
+  beforeEach(async () => {
+    PersonalDetails.seed([
+      {
+        tenantId: A, applicationId: "app-a3", applicationStatus: "APPROVED", profileId: "a60000000000000000000001",
+        personalInfo: { forename: "Mary", surname: "Byrne" }, createdAt: IN_WINDOW, meta: {},
+        membershipDrive: { driveId: DRIVE_A, linkedAt: new Date("2026-10-16T09:00:00Z"), linkedBy: IRO_A2 },
+      },
+    ]);
+    Profile.seed([
+      { _id: "a60000000000000000000001", tenantId: A, membershipNumber: "A12345" },
+      // Same id in another tenant must never be read for tenant A.
+      { _id: "a60000000000000000000001", tenantId: B, membershipNumber: "B99999" },
+    ]);
+    SubscriptionDetails.seed([
+      { tenantId: A, applicationId: "app-a3", subscriptionDetails: { membershipStatus: "rejoin" } },
+    ]);
+    await invoke(drives.linkRegistration, req(A, IRO_A, { params: { id: DRIVE_A }, body: { applicationId: "app-a1" } }));
+  });
+
+  test("owner gets a paginated list with minimal member fields", async () => {
+    const { err, data } = await invoke(
+      drives.listRegistrations,
+      req(A, IRO_A, { params: { id: DRIVE_A }, query: { limit: "1", page: "2" } }),
+    );
+    expect(err).toBeUndefined();
+    expect(data).toMatchObject({ total: 2, page: 2, limit: 1 });
+    expect(data.registrations).toEqual([
+      {
+        applicationId: "app-a3",
+        applicationStatus: "APPROVED",
+        forename: "Mary",
+        surname: "Byrne",
+        fullName: "Mary Byrne",
+        applicationCreatedAt: IN_WINDOW,
+        linkedAt: new Date("2026-10-16T09:00:00Z"),
+        linkedBy: IRO_A2,
+        late: false,
+        isRejoin: true,
+        profileId: "a60000000000000000000001",
+        membershipNumber: "A12345",
+      },
+    ]);
+    for (const call of [...Profile.calls, ...PersonalDetails.calls, ...SubscriptionDetails.calls].filter((c) => c.filter)) {
+      expect(call.filter.tenantId).toBe(A);
+    }
+  });
+
+  test("colleagues cannot list a drive's members", async () => {
+    const { err } = await invoke(drives.listRegistrations, req(A, IRO_A2, { params: { id: DRIVE_A } }));
+    expect(err).toMatchObject({ status: 403 });
+  });
+
+  test("another tenant gets 404", async () => {
+    const { err } = await invoke(drives.listRegistrations, req(B, IRO_B, { params: { id: DRIVE_A } }));
+    expect(err).toMatchObject({ status: 404 });
   });
 });
