@@ -15,5 +15,6 @@ router.use("/universal", require("./universal.search.routes"));
 router.use("/batches", require("./batch.routes"));
 router.use("/payment-forms", require("./paymentForm.routes"));
 router.use("/groups", require("./group.routes"));
+router.use("/membership-drives", require("./membershipDrive.routes"));
 
 module.exports = router;
