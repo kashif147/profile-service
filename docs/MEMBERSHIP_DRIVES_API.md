@@ -81,3 +81,28 @@ zone is returned as `timeZone`.
 `{ registrations, total, page, limit }`, newest attribution first. Each row:
 `applicationId, applicationStatus, forename, surname, fullName, applicationCreatedAt,
 linkedAt, linkedBy, late, isRejoin, profileId, membershipNumber` (the last two once approved).
+
+## Permissions (proposal - not seeded)
+
+The routes gate on `membership-drives:read` / `membership-drives:write`. user-service's PDP
+denies a resource with no Permission rows (`UNKNOWN_RESOURCE`), so **every drive route returns
+403 until this is seeded**. The proposed least-privilege grant, by role code (a
+`grant-membership-drives-permissions-to-roles.js` modelled on
+`grant-issues-permissions-to-roles.js`; the role `category` field is unreliable):
+
+| Permission | Grant to | Why |
+|---|---|---|
+| `MEMBERSHIP_DRIVES_READ` (`membership-drives:read`) | IRO, BO, RO | list own drives, view a colleague's running drive, stats, own recruited list |
+| `MEMBERSHIP_DRIVES_WRITE` (`membership-drives:write`) | IRO, BO, RO | create/edit/complete own drives, attribute registrations |
+
+Not proposed: no grant to PORTAL roles, no tenant-wide "all drives" view, and no change to any
+other role. Row-level rules (owner-only mutation, owner-only recruited list) are enforced in
+profile-service, so the resource grant alone never reaches another officer's data beyond what
+the table above allows. If managers need oversight later, add a separate
+`membership-drives-admin:read` with its own route; don't widen these.
+
+Related dependencies to verify, not change:
+- Registering the member uses the existing `POST /api/personal-details` (`portal:create`) and
+  sibling routes - confirm IRO/BO/RO hold those in DEV.
+- The organisation timezone comes from user-service's internal lifecycle-config endpoint,
+  which trusts `x-internal-request` (existing behaviour, owned by the auth/tenant session).
