@@ -210,6 +210,17 @@ const ProfileSchema = new mongoose.Schema(
       ],
     },
 
+    // Recruitment drive this application was registered under (models/membershipDrive.model.js).
+    // Set only via POST /membership-drives/:id/registrations; the create/update Joi schemas
+    // reject it as an unknown key.
+    membershipDrive: {
+      driveId: { type: String, default: null },
+      linkedAt: { type: Date, default: null },
+      linkedBy: { type: String, default: null },
+      // Attributed by the owner after the drive was COMPLETED (late-registration grace period).
+      late: { type: Boolean, default: false },
+    },
+
     meta: {
       createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
       updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
@@ -246,5 +257,9 @@ ProfileSchema.index({ "duplicateDetection.isPotentialDuplicate": 1 });
 ProfileSchema.index({ "duplicateDetection.matchedApplicationIds": 1 });
 ProfileSchema.index({ tenantId: 1, applicationId: 1 });
 ProfileSchema.index({ tenantId: 1, userId: 1 });
+ProfileSchema.index(
+  { tenantId: 1, "membershipDrive.driveId": 1, "membershipDrive.linkedAt": -1 },
+  { partialFilterExpression: { "membershipDrive.driveId": { $type: "string" } } },
+);
 
 module.exports = mongoose.model("personalDetails", ProfileSchema);
