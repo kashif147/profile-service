@@ -14,5 +14,5 @@ test("UAT db names are refused, even dry run", () => {
 test("--apply requires a matching --expect-db; only target-env dev", () => {
   expect(() => assertMigrationTarget("profile-service-dev", ["--apply"])).toThrow(/requires --expect-db/);
   expect(() => assertMigrationTarget("profile-service-dev", ["--apply", "--expect-db=Profile-Service"])).toThrow(/--expect-db/);
-  expect(() => assertMigrationTarget("profile-service-dev", ["--target-env=uat"])).toThrow(/not approved/);
+  expect(() => assertMigrationTarget("profile-service-dev", ["--target-env=uat"])).toThrow(/requires DEPLOYMENT_ENV=uat/);
 });
