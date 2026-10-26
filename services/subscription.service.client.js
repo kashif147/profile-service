@@ -62,32 +62,23 @@ async function fetchCurrentSubscriptionByProfileId(
   currentSubscriptionId = null,
 ) {
   if (!profileId) return null;
+  // Phase A / A3: subscriptions are tenant-owned. Never call subscription-service without the
+  // caller's trusted tenant, and never retry with an empty tenant (that unscoped retry returned
+  // other tenants' subscriptions for the same profileId).
+  const trustedTenant = tenantId == null ? "" : String(tenantId).trim();
+  if (!trustedTenant) return null;
 
   const base = SUBSCRIPTION_SERVICE_URL.replace(/\/$/, "");
   const url = `${base}/api/v1/subscriptions/profile/${profileId}`;
 
   try {
-    let response = await axios.get(url, {
-      headers: buildHeaders(req, tenantId || ""),
+    const response = await axios.get(url, {
+      headers: buildHeaders(req, trustedTenant),
       timeout: 8000,
       validateStatus: (status) => status < 500,
     });
 
-    let raw = parseSubscriptionsFromResponse(response.data);
-
-    if (raw.length === 0 && tenantId) {
-      const fallback = await axios.get(url, {
-        headers: buildHeaders(req, ""),
-        timeout: 8000,
-        validateStatus: (status) => status < 500,
-      });
-      raw = parseSubscriptionsFromResponse(fallback.data);
-      if (raw.length > 0) {
-        console.warn(
-          `[subscription.service.client] Fallback succeeded for profile ${profileId} (tenantId filter omitted)`,
-        );
-      }
-    }
+    const raw = parseSubscriptionsFromResponse(response.data);
 
     const seen = new Set();
     const subscriptions = raw.filter((s) => {
