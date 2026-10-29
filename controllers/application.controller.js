@@ -262,11 +262,16 @@ exports.getAllApplications = async (req, res, next) => {
     const page = validatedQuery.page || 1;
     const limit = validatedQuery.limit || 500;
 
+    const paymentStatuses = validatedQuery.paymentStatus
+      ? [].concat(validatedQuery.paymentStatus)
+      : [];
+
     const result = await applicationService.getAllApplicationsWithDetails(
       statusFilters,
       page,
       limit,
       tenantId,
+      { paymentStatuses },
     );
 
     return res.success({

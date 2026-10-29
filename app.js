@@ -97,6 +97,12 @@ const {
   shutdownEventSystem,
 } = require("./rabbitMQ");
 
+// Payment-link outbox relay (services/outbox.service.js). Publishes once RabbitMQ is up;
+// until then rows stay PENDING and back off.
+if (process.env.NODE_ENV !== "test") {
+  require("./services/outbox.service.js").startOutboxRelay();
+}
+
 if (process.env.RABBIT_URL) {
   console.log("🐰 RabbitMQ URL configured, initializing with middleware...");
   initEventSystem()

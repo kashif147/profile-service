@@ -210,6 +210,53 @@ const ProfileSchema = new mongoose.Schema(
       ],
     },
 
+    // Deferred payment link state (services/applicationPaymentLink.service.js). Written only by
+    // that service and its event listeners; the create/update Joi schemas reject it.
+    payment: {
+      type: new mongoose.Schema(
+        {
+          mode: { type: String, enum: ["LINK", "INLINE", "NOT_REQUIRED"] },
+          status: {
+            type: String,
+            enum: [
+              "NONE",
+              "LINK_REQUESTED",
+              "LINK_ISSUED",
+              "LINK_EXPIRED",
+              "AUTHORISED",
+              "AUTHORISATION_EXPIRING",
+              "AUTHORISATION_EXPIRED",
+              "CAPTURED",
+              "FAILED",
+              "CANCELED",
+              "REFUNDED",
+              "PARTIALLY_REFUNDED",
+            ],
+          },
+          reason: { type: String, default: null },
+          paymentOption: { type: String, enum: ["FULL"], default: "FULL" },
+          linkVersion: { type: Number, default: 0 },
+          paymentId: { type: String, default: null },
+          paymentLinkId: { type: String, default: null },
+          paymentIntentId: { type: String, default: null },
+          checkoutUrl: { type: String, default: null },
+          expiresAt: { type: Date, default: null },
+          authorisationExpiresAt: { type: Date, default: null },
+          amount: { type: Number, default: null },
+          currency: { type: String, default: null },
+          emailSequence: { type: Number, default: 0 },
+          requestedBy: {
+            userId: { type: String },
+            channel: { type: String },
+          },
+          requestedAt: { type: Date },
+          lastEventKey: { type: String, default: null },
+          updatedAt: { type: Date },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
     // Recruitment drive this application was registered under (models/membershipDrive.model.js).
     // Set only via POST /membership-drives/:id/registrations; the create/update Joi schemas
     // reject it as an unknown key.
@@ -257,6 +304,11 @@ ProfileSchema.index({ "duplicateDetection.isPotentialDuplicate": 1 });
 ProfileSchema.index({ "duplicateDetection.matchedApplicationIds": 1 });
 ProfileSchema.index({ tenantId: 1, applicationId: 1 });
 ProfileSchema.index({ tenantId: 1, userId: 1 });
+// CRM review queue: applications whose link payment is authorised.
+ProfileSchema.index(
+  { tenantId: 1, "payment.status": 1 },
+  { partialFilterExpression: { "payment.mode": "LINK" } },
+);
 ProfileSchema.index(
   { tenantId: 1, "membershipDrive.driveId": 1, "membershipDrive.linkedAt": -1 },
   { partialFilterExpression: { "membershipDrive.driveId": { $type: "string" } } },

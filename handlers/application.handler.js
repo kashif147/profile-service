@@ -669,6 +669,7 @@ exports.getAllApplicationsWithDetails = (
   page = 1,
   limit = 500,
   tenantId,
+  { paymentStatuses = [] } = {},
 ) =>
   new Promise(async (resolve, reject) => {
     try {
@@ -676,6 +677,11 @@ exports.getAllApplicationsWithDetails = (
 
       if (statusFilters && statusFilters.length > 0) {
         query.applicationStatus = { $in: statusFilters };
+      }
+      // Payment-link applications by link state (review queue: AUTHORISED).
+      if (paymentStatuses && paymentStatuses.length > 0) {
+        query["payment.mode"] = "LINK";
+        query["payment.status"] = { $in: paymentStatuses };
       }
 
       // Calculate pagination
@@ -737,6 +743,11 @@ exports.getAllApplicationsWithDetails = (
               paymentStatus: normalizePaymentStatusForDisplay(
                 subscriptionDetails?.paymentDetails?.status,
               ),
+              // Payment-link state; approvalReady only once the PaymentIntent is authorised.
+              linkPayment:
+                application.payment?.mode === "LINK"
+                  ? require("../services/applicationPaymentLink.service.js").paymentView(application)
+                  : null,
               applicationStatus: application.applicationStatus,
               approvalDetails: application.approvalDetails,
               isPotentialDuplicate:
