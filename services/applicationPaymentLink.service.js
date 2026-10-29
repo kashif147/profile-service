@@ -86,6 +86,7 @@ function paymentView(personal, now = new Date()) {
       status: "NONE",
       reason: null,
       paymentOption: null,
+      pricingBasis: null,
       linkVersion: 0,
       checkoutUrl: null,
       expiresAt: null,
@@ -102,6 +103,7 @@ function paymentView(personal, now = new Date()) {
     status,
     reason: p.reason || null,
     paymentOption: p.paymentOption || "FULL",
+    pricingBasis: p.pricingBasis || null,
     linkVersion: p.linkVersion || 0,
     checkoutUrl: status === "LINK_ISSUED" ? p.checkoutUrl || null : null,
     expiresAt: p.expiresAt || null,
@@ -229,12 +231,20 @@ async function processLinkRequest(ctx, applicationId, body, req, now) {
     SubscriptionDetails.findOne({ tenantId, applicationId }).lean(),
     ProfessionalDetails.findOne({ tenantId, applicationId }).lean(),
   ]);
+  // Owner rule: Credit Card -> full annual fee (FULL); any other supported payment type ->
+  // three months' fee (FIRST_INSTALMENT). account-service computes the amount; profile only
+  // derives the option from its own record and refuses a client option that disagrees.
   const paymentType = subscription?.subscriptionDetails?.paymentType || null;
-  if (paymentType !== PAYMENT_TYPE.CARD_PAYMENT) {
-    throw businessError(409, "PAYMENT_METHOD_NOT_SUPPORTED", "Payment links are available for card applications only");
+  if (!Object.values(PAYMENT_TYPE).includes(paymentType)) {
+    throw businessError(409, "PAYMENT_METHOD_NOT_SUPPORTED", "Application has no supported payment type");
   }
-  if (body.action !== "RESEND" && (body.paymentOption || "FULL") !== "FULL") {
-    throw businessError(409, "INSTALMENTS_NOT_ALLOWED", "Only full payment links are available");
+  const paymentOption = paymentType === PAYMENT_TYPE.CARD_PAYMENT ? "FULL" : "FIRST_INSTALMENT";
+  if (body.action !== "RESEND" && body.paymentOption && body.paymentOption !== paymentOption) {
+    throw businessError(
+      409,
+      "PAYMENT_OPTION_MISMATCH",
+      `This application's payment type (${paymentType}) is charged ${paymentOption === "FULL" ? "the full annual fee" : "three months' fee"}`
+    );
   }
 
   const current = personal.payment || {};
@@ -288,7 +298,8 @@ async function processLinkRequest(ctx, applicationId, body, req, now) {
     mode: "LINK",
     status: "LINK_REQUESTED",
     reason: null,
-    paymentOption: "FULL",
+    paymentOption,
+    pricingBasis: null,
     linkVersion,
     paymentId: null,
     paymentLinkId: null,
@@ -320,7 +331,7 @@ async function processLinkRequest(ctx, applicationId, body, req, now) {
         applicationId,
         linkVersion,
         action: previousVersion ? "REPLACE" : "ISSUE",
-        paymentOption: "FULL",
+        paymentOption,
         // Pricing INPUTS from profile's own application record; account computes the amount.
         pricing: {
           membershipCategory: membershipCategoryOf(subscription, professional),
@@ -381,7 +392,11 @@ async function transition(tenantId, applicationId, linkVersion, to, set = {}, ev
         "payment.status": to,
         "payment.updatedAt": new Date(),
         "payment.lastEventKey": eventKey,
-        ...Object.fromEntries(Object.entries(set).map(([k, v]) => [`payment.${k}`, v])),
+        ...Object.fromEntries(
+          Object.entries(set)
+            .filter(([, v]) => v !== undefined)
+            .map(([k, v]) => [`payment.${k}`, v])
+        ),
       },
     },
     { new: true }
@@ -421,6 +436,8 @@ async function handlePaymentLinkEvent(routingKey, tenantId, data) {
         expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
         amount: Number.isInteger(data.amount) ? data.amount : null,
         currency: data.currency || null,
+        paymentOption: ["FULL", "FIRST_INSTALMENT"].includes(data.paymentOption) ? data.paymentOption : undefined,
+        pricingBasis: ["ANNUAL", "THREE_MONTHS"].includes(data.pricingBasis?.basis) ? data.pricingBasis.basis : null,
         reason: null,
         emailSequence: 1,
       }, eventKey);

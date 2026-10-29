@@ -8,11 +8,9 @@ const service = require("../services/applicationPaymentLink.service.js");
 // amount, price or payment state: unknown keys (e.g. "amount") are rejected.
 const bodySchema = Joi.object({
   action: Joi.string().valid("ISSUE", "RESEND", "REPLACE").required(),
-  paymentOption: Joi.string().valid("FULL", "FIRST_INSTALMENT").when("action", {
-    is: "RESEND",
-    then: Joi.optional(),
-    otherwise: Joi.required(),
-  }),
+  // Optional: the server derives it from the application's payment type (card -> FULL,
+  // otherwise FIRST_INSTALMENT = three months); a disagreeing value is refused with 409.
+  paymentOption: Joi.string().valid("FULL", "FIRST_INSTALMENT").optional(),
 });
 const paramsSchema = Joi.object({ applicationId: Joi.string().trim().min(1).max(100).required() });
 const CHANNELS = new Set(["CRM", "MEMBERSHUB"]);

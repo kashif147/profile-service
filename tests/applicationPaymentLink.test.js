@@ -139,6 +139,7 @@ d("application payment links (profile-service)", () => {
     expect(r.body.data).toEqual({ applicationId: "app-1", linkVersion: 1, payment: { status: "LINK_REQUESTED" } });
     const doc = await PersonalDetails.findOne({ tenantId: A, applicationId: "app-1" }).lean();
     expect(doc.payment).toMatchObject({ mode: "LINK", status: "LINK_REQUESTED", linkVersion: 1, paymentOption: "FULL" });
+    expect((await OutboxEvent.findOne({ eventKey: `link:${A}:app-1:v1:requested` }).lean()).data.paymentOption).toBe("FULL");
     const out = await OutboxEvent.findOne({ eventKey: `link:${A}:app-1:v1:requested` }).lean();
     expect(out.tenantId).toBe(A);
     expect(out.routingKey).toBe("applications.payment-link.requested.v1");
@@ -163,13 +164,36 @@ d("application payment links (profile-service)", () => {
     expect(replay.body).toMatchObject({ success: false, error: { code: "LINK_ACTIVE", status: 409 } });
   });
 
-  test("non-card, first instalment, closed application, inline authorised payment -> 409", async () => {
-    await expectCode(issue("app-dd", "k-dd"), 409, "PAYMENT_METHOD_NOT_SUPPORTED");
-    await expectCode(issue("app-flow", "k-fi", { action: "ISSUE", paymentOption: "FIRST_INSTALMENT" }), 409, "INSTALMENTS_NOT_ALLOWED");
+  test("non-card application -> three-month link (FIRST_INSTALMENT), never refused for being non-card", async () => {
+    const r = await issue("app-dd", "k-dd", { action: "ISSUE" });
+    expect(r.status).toBe(202);
+    const doc = await PersonalDetails.findOne({ tenantId: A, applicationId: "app-dd" }).lean();
+    expect(doc.payment).toMatchObject({ status: "LINK_REQUESTED", paymentOption: "FIRST_INSTALMENT" });
+    const out = await OutboxEvent.findOne({ eventKey: `link:${A}:app-dd:v1:requested` }).lean();
+    expect(out.data.paymentOption).toBe("FIRST_INSTALMENT");
+    expect(out.data.pricing).toEqual({ membershipCategory: "General Nurse", paymentType: "Direct Debit" });
+    expect(out.data).not.toHaveProperty("amount");
+    // issued: price and basis come from account-service and are shown as-is
+    await service.handlePaymentLinkEvent("payments.payment-link.issued.v1", A, issuedEvent("app-dd", 1, {
+      amount: 7475, paymentOption: "FIRST_INSTALMENT", pricingBasis: { basis: "THREE_MONTHS", annualFee: 29900 }, eventKey: "dd-issued",
+    }));
+    const view = await service.getApplicationPayment(A, "app-dd");
+    expect(view).toMatchObject({ amount: 7475, paymentOption: "FIRST_INSTALMENT", pricingBasis: "THREE_MONTHS" });
+  });
+
+  test("client paymentOption that disagrees with the payment type -> 409 PAYMENT_OPTION_MISMATCH", async () => {
+    await seedApplication(A, "app-so", { paymentType: "Standing Order" });
+    await expectCode(issue("app-so", "k-so", { action: "ISSUE", paymentOption: "FULL" }), 409, "PAYMENT_OPTION_MISMATCH");
+    await expectCode(issue("app-flow", "k-fi", { action: "ISSUE", paymentOption: "FIRST_INSTALMENT" }), 409, "PAYMENT_OPTION_MISMATCH");
+    await seedApplication(A, "app-unknown-type", { paymentType: "Bitcoin" });
+    await expectCode(issue("app-unknown-type", "k-ut"), 409, "PAYMENT_METHOD_NOT_SUPPORTED");
+  });
+
+  test("closed application, inline authorised payment -> 409", async () => {
     await expectCode(issue("app-closed", "k-cl"), 409, "APPLICATION_CLOSED");
     latestByApp["app-inline"] = { paymentIntentId: "pi_inline", status: "requires_capture" };
     await expectCode(issue("app-inline", "k-in"), 409, "ALREADY_AUTHORISED");
-    expect(await OutboxEvent.countDocuments({ "data.applicationId": { $in: ["app-dd", "app-closed", "app-inline"] } })).toBe(0);
+    expect(await OutboxEvent.countDocuments({ "data.applicationId": { $in: ["app-closed", "app-inline", "app-so", "app-unknown-type"] } })).toBe(0);
   });
 
   test("tenant isolation: another tenant's application reads as not found (POST and GET)", async () => {

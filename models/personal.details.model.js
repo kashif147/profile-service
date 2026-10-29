@@ -234,7 +234,9 @@ const ProfileSchema = new mongoose.Schema(
             ],
           },
           reason: { type: String, default: null },
-          paymentOption: { type: String, enum: ["FULL"], default: "FULL" },
+          // Derived from the payment type: FULL (card, annual) | FIRST_INSTALMENT (three months).
+          paymentOption: { type: String, enum: ["FULL", "FIRST_INSTALMENT"], default: "FULL" },
+          pricingBasis: { type: String, enum: ["ANNUAL", "THREE_MONTHS", null], default: null },
           linkVersion: { type: Number, default: 0 },
           paymentId: { type: String, default: null },
           paymentLinkId: { type: String, default: null },
