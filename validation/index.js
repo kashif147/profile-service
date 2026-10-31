@@ -130,6 +130,20 @@ module.exports.personal_details_update = Joi.object({
   }),
 });
 
+const LINK_PAYMENT_STATUSES = [
+  "LINK_REQUESTED",
+  "LINK_ISSUED",
+  "LINK_EXPIRED",
+  "AUTHORISED",
+  "AUTHORISATION_EXPIRING",
+  "AUTHORISATION_EXPIRED",
+  "CAPTURED",
+  "FAILED",
+  "CANCELED",
+  "REFUNDED",
+  "PARTIALLY_REFUNDED",
+];
+
 module.exports.application_status_query = Joi.object({
   type: Joi.alternatives()
     .try(
@@ -141,6 +155,13 @@ module.exports.application_status_query = Joi.object({
     .optional(),
   page: Joi.number().integer().min(1).optional().default(1),
   limit: Joi.number().integer().min(1).max(1000).optional().default(500),
+  // Payment-link state (personalDetails.payment.status), e.g. AUTHORISED for the review queue.
+  paymentStatus: Joi.alternatives()
+    .try(
+      Joi.string().valid(...LINK_PAYMENT_STATUSES),
+      Joi.array().items(Joi.string().valid(...LINK_PAYMENT_STATUSES)),
+    )
+    .optional(),
 });
 
 module.exports.application_approve = Joi.object({

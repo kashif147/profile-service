@@ -55,6 +55,9 @@ const {
   publishProfileAfterUpdateOne,
 } = require("../services/profile.audit.publisher.js");
 const {
+  resolveApprovalPaymentIntent,
+} = require("../services/applicationPaymentLink.service.js");
+const {
   fetchLatestApplicationPayment,
   capturePaymentIntent,
 } = require("../services/account.service.client.js");
@@ -286,14 +289,27 @@ async function approveSingleApplication({
     })
       .select("paymentDetails")
       .lean();
-    const latestPayment = await fetchLatestApplicationPayment(
+    // LINK mode: the link's own authorised PaymentIntent; INLINE: unchanged resolution.
+    // Kept in sync with profileApproval.controller.js.
+    const { paymentIntentId, latestPayment } = await resolveApprovalPaymentIntent({
+      personal: personalDetails,
       applicationId,
       tenantId,
       req,
-    );
-    const paymentIntentId =
-      latestPayment?.paymentIntentId ||
-      resolvePaymentIntentId(existingSubscriptionForPayment);
+      inlineResolver: async () => {
+        const latest = await fetchLatestApplicationPayment(
+          applicationId,
+          tenantId,
+          req,
+        );
+        return {
+          paymentIntentId:
+            latest?.paymentIntentId ||
+            resolvePaymentIntentId(existingSubscriptionForPayment),
+          latestPayment: latest,
+        };
+      },
+    });
     let captureResult = null;
     if (paymentIntentId) {
       captureResult = await capturePaymentIntent(paymentIntentId, tenantId, req);

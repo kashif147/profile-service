@@ -5,6 +5,7 @@ router.use("/profile", require("./profile.routes"));
 router.use("/personal-details", require("./personal.details.routes"));
 router.use("/professional-details", require("./professional.details.routes"));
 router.use("/subscription-details", require("./subscription.details.routes"));
+router.use("/applications", require("./applicationPaymentLink.routes"));
 router.use("/applications", require("./application.routes"));
 router.use("/applications", require("./applications.routes"));
 router.use("/templates", require("./application.filter.template.routes"));

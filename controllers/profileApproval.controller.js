@@ -53,6 +53,9 @@ const {
 const {
   resolveGapLetterEligibility,
 } = require("../helpers/gapLetterEligibility.helper.js");
+const {
+  resolveApprovalPaymentIntent,
+} = require("../services/applicationPaymentLink.service.js");
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const APPROVAL_TRANSACTION_MAX_ATTEMPTS = 3;
@@ -341,11 +344,20 @@ async function approveApplication(req, res, next) {
       .select("paymentDetails")
       .session(session)
       .lean();
-    const { paymentIntentId, latestPayment } = await resolveLatestPaymentIntentId({
+    // LINK mode: the link's own authorised PaymentIntent; INLINE: unchanged resolution.
+    // Kept in sync with bulkApproval.controller.js.
+    const { paymentIntentId, latestPayment } = await resolveApprovalPaymentIntent({
+      personal: personalForReview,
       applicationId,
       tenantId,
       req,
-      fallbackSubscription: existingSubscription,
+      inlineResolver: () =>
+        resolveLatestPaymentIntentId({
+          applicationId,
+          tenantId,
+          req,
+          fallbackSubscription: existingSubscription,
+        }),
     });
 
     if (paymentIntentId) {
