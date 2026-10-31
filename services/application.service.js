@@ -105,6 +105,7 @@ class ApplicationService {
     page = 1,
     limit = 500,
     tenantId,
+    options = {},
   ) {
     try {
       return await applicationHandler.getAllApplicationsWithDetails(
@@ -112,6 +113,7 @@ class ApplicationService {
         page,
         limit,
         tenantId,
+        options,
       );
     } catch (error) {
       console.error(

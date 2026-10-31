@@ -43,6 +43,23 @@ const {
   handleSubscriptionCancellationUndoneActive,
 } = require("./listeners/subscription.personal.details.listener.js");
 const { handleCertificateIssued } = require("./listeners/certificateIssued.listener.js");
+const PAYMENT_LINK_EXCHANGE_MAPPING = Object.freeze({
+  "applications.payment-link.requested.v1": "application.events",
+  "applications.payment-link.email.requested.v1": "application.events",
+  "payments.payment-link.issued.v1": "payment.events",
+  "payments.payment-link.failed.v1": "payment.events",
+  "payments.payment-link.expired.v1": "payment.events",
+  "payments.application-payment.status-changed.v1": "payment.events",
+  "payments.application-payment.authorisation-expiring.v1": "payment.events",
+});
+const PAYMENT_LINK_INBOUND_KEYS = [
+  "payments.payment-link.issued.v1",
+  "payments.payment-link.failed.v1",
+  "payments.payment-link.expired.v1",
+  "payments.application-payment.status-changed.v1",
+  "payments.application-payment.authorisation-expiring.v1",
+];
+
 // Initialize event system
 async function initEventSystem() {
   try {
@@ -58,6 +75,12 @@ async function initEventSystem() {
       connectionName: "profile-service",
       serviceName: "profile-service",
     });
+    // The lockfile-pinned middleware (db70fb8) predates the payment-link routing keys; register
+    // them so routing never depends on which middleware commit a build resolves. Same values as
+    // rabbitmq-middleware src/publisher.js exchangeMapping.
+    if (typeof publisher.setExchangeMapping === "function") {
+      publisher.setExchangeMapping(PAYMENT_LINK_EXCHANGE_MAPPING);
+    }
     console.log("✅ Event system initialized with middleware");
   } catch (error) {
     console.error("❌ Failed to initialize event system:", error.message);
@@ -94,6 +117,24 @@ async function publishDomainEvent(eventType, data, metadata = {}) {
 async function setupConsumers() {
   try {
     console.log("🔧 Setting up RabbitMQ consumers...");
+
+    // 0. Payment-link outcomes from account-service (payment.events exchange).
+    const PAYMENT_LINK_QUEUE = "profile.payment-link.events";
+    try {
+      await consumer.createQueue(PAYMENT_LINK_QUEUE, { durable: true, messageTtl: 3600000 });
+      await consumer.bindQueue(PAYMENT_LINK_QUEUE, "payment.events", PAYMENT_LINK_INBOUND_KEYS);
+      const { handlePaymentLinkMessage } = require("../services/applicationPaymentLink.service.js");
+      for (const key of PAYMENT_LINK_INBOUND_KEYS) {
+        // Strict envelope tenant (no body fallback, mismatch refused) - see handlePaymentLinkMessage.
+        consumer.registerHandler(key, async (payload) => {
+          await handlePaymentLinkMessage(key, payload);
+        });
+      }
+      await consumer.consume(PAYMENT_LINK_QUEUE, { prefetch: 10 });
+      console.log("✅ Payment link events consumer ready:", PAYMENT_LINK_QUEUE);
+    } catch (error) {
+      console.error("❌ Payment link consumer setup failed, continuing without it:", error.message);
+    }
 
     // 1. Portal service events queue (portal.events exchange)
     const PORTAL_QUEUE = "profile.portal.events";
