@@ -231,9 +231,8 @@ const allowedUpdateFields = new Set([
   "deactivatedAt",
 ]);
 
+// Phase B / Z9: the legacy tenant SU is retired; ASU is the tenant administrator (own tenant only).
 const FULL_MEMBERSHIP_UPDATE_ROLES = new Set([
-  "SU",
-  "SUPER USER",
   "ASU",
   "ASSISTANT SUPER USER",
   "MO",
