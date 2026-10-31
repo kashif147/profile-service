@@ -252,6 +252,35 @@ d("application payment links (profile-service)", () => {
     expect((await PersonalDetails.findOne({ tenantId: A, applicationId: "app-1" }).lean()).payment.status).toBe("LINK_ISSUED");
   });
 
+  test("listener entry: strict envelope tenant - body-only, malformed and mismatched refused; matching applied", async () => {
+    const HX = "6a00000000000000000000a1";
+    const HY = "6a00000000000000000000b2";
+    await seedApplication(HX, "app-env");
+    await issue("app-env", "k-env", undefined, { ...staff, tenantId: HX });
+    const ev = issuedEvent("app-env", 1, { eventKey: `link:${HX}:app-env:v1:issued` });
+    const status = async () => (await PersonalDetails.findOne({ tenantId: HX, applicationId: "app-env" }).lean()).payment.status;
+    const before = await status();
+    const cases = [
+      [{ data: { ...ev, tenantId: HX } }, "missing_envelope_tenant"],
+      [{ tenantId: "tenant-a", data: ev }, "invalid_envelope_tenant"],
+      [{ tenantId: { $ne: null }, data: ev }, "invalid_envelope_tenant"],
+      [{ tenantId: HX, data: { ...ev, tenantId: HY } }, "tenant_mismatch"],
+      [{ tenantId: HY, data: { ...ev, tenantId: HX } }, "tenant_mismatch"],
+    ];
+    for (const [payload, reason] of cases) {
+      expect(await service.handlePaymentLinkMessage("payments.payment-link.issued.v1", payload)).toEqual({ applied: false, reason });
+    }
+    expect(await status()).toBe(before);
+    expect(await ProcessedEvent.countDocuments({ eventKey: ev.eventKey })).toBe(0);
+    // a valid envelope for another tenant never mutates this tenant's application
+    const other = await service.handlePaymentLinkMessage("payments.payment-link.issued.v1", { tenantId: HY, data: { ...ev, eventKey: "env-other" } });
+    expect(other.applied).toBe(false);
+    expect(await status()).toBe(before);
+    const ok = await service.handlePaymentLinkMessage("payments.payment-link.issued.v1", { tenantId: HX, data: { ...ev, tenantId: HX } });
+    expect(ok.applied).toBe(true);
+    expect(await status()).toBe("LINK_ISSUED");
+  });
+
   test("GET /payment: checkoutUrl only while LINK_ISSUED; expiry is derived; not approval-ready", async () => {
     const view = await service.getApplicationPayment(A, "app-1");
     expect(view).toMatchObject({ mode: "LINK", status: "LINK_ISSUED", approvalReady: false, amount: 29900 });

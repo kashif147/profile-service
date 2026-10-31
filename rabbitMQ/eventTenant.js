@@ -27,6 +27,29 @@ function resolveEventTenantId(payload) {
   return { ok: true, tenantId };
 }
 
+const INTERNAL_TENANT_ID = /^[0-9a-f]{24}$/;
+
+/**
+ * Strict tenant for the payment-link events from account-service (payments.payment-link.*,
+ * payments.application-payment.*). No body fallback: the envelope tenantId (set by the
+ * producer's publisher from its own trusted context) is required and must be an internal
+ * ProjectShell tenant id; a data.tenantId, when present, must equal it. Other consumers keep
+ * resolveEventTenantId.
+ * @returns {{ ok: true, tenantId: string } | { ok: false, reason: "missing_envelope_tenant"|"invalid_envelope_tenant"|"tenant_mismatch" }}
+ */
+function requireEnvelopeTenantId(payload) {
+  const raw = payload && payload.tenantId;
+  if (raw !== undefined && raw !== null && typeof raw !== "string") return { ok: false, reason: "invalid_envelope_tenant" };
+  const envelope = typeof raw === "string" ? raw.trim() : "";
+  if (!envelope) return { ok: false, reason: "missing_envelope_tenant" };
+  if (!INTERNAL_TENANT_ID.test(envelope)) return { ok: false, reason: "invalid_envelope_tenant" };
+  const body = payload && payload.data && typeof payload.data === "object" ? payload.data.tenantId : undefined;
+  if (body !== undefined && body !== null && (typeof body !== "string" || (body.trim() && body.trim() !== envelope))) {
+    return { ok: false, reason: "tenant_mismatch" };
+  }
+  return { ok: true, tenantId: envelope };
+}
+
 /** Escape a string for literal use inside a RegExp. */
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -37,4 +60,4 @@ function exactEmailRegex(email) {
   return new RegExp(`^${escapeRegex(String(email).trim())}$`, "i");
 }
 
-module.exports = { resolveEventTenantId, escapeRegex, exactEmailRegex };
+module.exports = { resolveEventTenantId, requireEnvelopeTenantId, escapeRegex, exactEmailRegex };

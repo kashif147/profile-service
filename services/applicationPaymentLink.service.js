@@ -516,10 +516,26 @@ async function resolveApprovalPaymentIntent({ personal, applicationId, tenantId,
   return { ...inline, mode: "INLINE" };
 }
 
+/**
+ * Consumer entry point for one payment-link message: the strict envelope tenant check runs
+ * before anything is read or written; a refused message is logged (no tenant values) and
+ * acknowledged.
+ */
+async function handlePaymentLinkMessage(routingKey, payload) {
+  const { requireEnvelopeTenantId } = require("../rabbitMQ/eventTenant.js");
+  const tenant = requireEnvelopeTenantId(payload);
+  if (!tenant.ok) {
+    console.warn("[profile.payment-link.events] untrusted tenant; skip", { reason: tenant.reason, routingKey, eventId: payload && payload.eventId });
+    return { applied: false, reason: tenant.reason };
+  }
+  return handlePaymentLinkEvent(routingKey, tenant.tenantId, (payload && payload.data) || {});
+}
+
 module.exports = {
   requestPaymentLink,
   getApplicationPayment,
   handlePaymentLinkEvent,
+  handlePaymentLinkMessage,
   resolveApprovalPaymentIntent,
   paymentView,
   setAccountClient,

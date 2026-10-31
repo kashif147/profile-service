@@ -123,19 +123,11 @@ async function setupConsumers() {
     try {
       await consumer.createQueue(PAYMENT_LINK_QUEUE, { durable: true, messageTtl: 3600000 });
       await consumer.bindQueue(PAYMENT_LINK_QUEUE, "payment.events", PAYMENT_LINK_INBOUND_KEYS);
-      const { resolveEventTenantId } = require("./eventTenant.js");
-      const { handlePaymentLinkEvent } = require("../services/applicationPaymentLink.service.js");
+      const { handlePaymentLinkMessage } = require("../services/applicationPaymentLink.service.js");
       for (const key of PAYMENT_LINK_INBOUND_KEYS) {
-        consumer.registerHandler(key, async (payload, context) => {
-          const tenant = resolveEventTenantId(payload);
-          if (!tenant.ok) {
-            console.warn("[profile.payment-link.events] tenant unresolved; skip", {
-              reason: tenant.reason,
-              routingKey: context?.routingKey || key,
-            });
-            return;
-          }
-          await handlePaymentLinkEvent(key, tenant.tenantId, payload.data || {});
+        // Strict envelope tenant (no body fallback, mismatch refused) - see handlePaymentLinkMessage.
+        consumer.registerHandler(key, async (payload) => {
+          await handlePaymentLinkMessage(key, payload);
         });
       }
       await consumer.consume(PAYMENT_LINK_QUEUE, { prefetch: 10 });
