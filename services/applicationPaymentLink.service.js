@@ -441,7 +441,22 @@ async function handlePaymentLinkEvent(routingKey, tenantId, data) {
         reason: null,
         emailSequence: 1,
       }, eventKey);
-      if (updated) await enqueueEmailRequest(tenantId, updated, 1);
+      if (updated) {
+        await enqueueEmailRequest(tenantId, updated, 1);
+      } else if (eventKey) {
+        // Redelivery after the transition committed but the email outbox write failed: the
+        // state shows this very event applied, so enqueue the first email again (idempotent on
+        // its outbox eventKey, so an email already queued is not queued twice).
+        const applied = await PersonalDetails.findOne({
+          tenantId,
+          applicationId,
+          "payment.mode": "LINK",
+          "payment.linkVersion": linkVersion,
+          "payment.status": "LINK_ISSUED",
+          "payment.lastEventKey": eventKey,
+        }).lean();
+        if (applied) await enqueueEmailRequest(tenantId, applied, 1);
+      }
       break;
     case "payments.payment-link.failed.v1":
       updated = await transition(tenantId, applicationId, linkVersion, "FAILED", { reason: data.reason || "UNKNOWN" }, eventKey);

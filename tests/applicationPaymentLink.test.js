@@ -217,6 +217,31 @@ d("application payment links (profile-service)", () => {
     expect(email.data.templateCode).toBe("APPLICATION_PAYMENT_LINK");
   });
 
+  test("listener: issued redelivered after the email outbox write failed still queues the email once", async () => {
+    await seedApplication(A, "app-em");
+    await issue("app-em", "k-em");
+    const spy = jest.spyOn(OutboxEvent, "updateOne").mockRejectedValueOnce(new Error("mongo blip"));
+    try {
+      await expect(
+        service.handlePaymentLinkEvent("payments.payment-link.issued.v1", A, issuedEvent("app-em"))
+      ).rejects.toThrow("mongo blip");
+    } finally {
+      spy.mockRestore();
+    }
+    const mid = await PersonalDetails.findOne({ tenantId: A, applicationId: "app-em" }).lean();
+    expect(mid.payment.status).toBe("LINK_ISSUED");
+    expect(await OutboxEvent.countDocuments({ eventKey: `link:${A}:app-em:v1:email:1` })).toBe(0);
+
+    // consumer retry
+    const r = await service.handlePaymentLinkEvent("payments.payment-link.issued.v1", A, issuedEvent("app-em"));
+    expect(r.reason).toBe("not_applicable");
+    expect(await OutboxEvent.countDocuments({ eventKey: `link:${A}:app-em:v1:email:1` })).toBe(1);
+    // and once processed, a further delivery is a plain duplicate
+    const r3 = await service.handlePaymentLinkEvent("payments.payment-link.issued.v1", A, issuedEvent("app-em"));
+    expect(r3.reason).toBe("duplicate");
+    expect(await OutboxEvent.countDocuments({ eventKey: `link:${A}:app-em:v1:email:1` })).toBe(1);
+  });
+
   test("listener: event for the right application but another tenant is not applied", async () => {
     const r = await service.handlePaymentLinkEvent(
       "payments.application-payment.status-changed.v1",
