@@ -22,8 +22,14 @@ npm test -- <pattern>      # filter by file/name
 npm run test:watch
 npm run test:coverage
 npm run migrate:batch-status              # scripts/add-status-to-batches.js
-npm run seed:grid-system-default          # scripts/seed-grid-system-default-template.js --env=staging
 ```
+
+## Grid "Save View" system defaults
+Tenant-owned only: one active system default per tenant and template type, inserted (never
+overwritten) by explicit-tenant, insert-only tooling. The tenantless/`--force` seed paths
+(`seed-grid-system-default-template.js`, the root `seed-grid-system-defaults.cjs` npm alias,
+`seed-system-default-template.js`, and `reset-templates-and-seed-system-default.js`, which
+deleted every tenant's templates) are retired; `tests/templateSeedGuard.test.js` keeps them out.
 
 ## Which docs are actually worth reading
 @.claude/rules/docs-triage.md
