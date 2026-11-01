@@ -331,10 +331,13 @@ exports.getDefaultTemplate = async (req, res, next) => {
       );
     }
 
+    // Read-only: the user's default, else the system default, else null (= the client's built-in
+    // default). Never creates a view.
     const template =
       await applicationFilterTemplateService.getDefaultTemplate(
         creatorId,
-        tenantId || null
+        tenantId || null,
+        req.query.type || req.query.templateType || "application"
       );
 
     return res.success(template);
