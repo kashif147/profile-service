@@ -2,8 +2,7 @@
   "version": 1,
   "source": {
     "kind": "dev-shared-row-snapshot",
-    "provisional": true,
-    "note": "No CRM grid-column-defaults page exists for the 'profile' grid; v1 is the live DEV shared tenantless system default, copied field-for-field (columns, labels, filters, visibleFilters, isDefault/pinned flags). Content needs owner confirmation before provisioning relies on it.",
+    "note": "No CRM grid-column-defaults page exists for the 'profile' grid; v1 is the live DEV shared tenantless system default, copied field-for-field (columns, labels, filters, visibleFilters, isDefault/pinned flags). Owner-validated and accepted as the canonical v1 default (2026-11-01, provisioning P1); provisional status cleared.",
     "row": "…0d4664",
     "rowUpdatedAt": "2026-07-22T22:48:03.036Z",
     "snapshotTaken": "2026-11-01"
