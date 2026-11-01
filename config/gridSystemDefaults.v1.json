@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "source": {
+    "kind": "dev-shared-row-snapshot",
+    "provisional": true,
+    "note": "No CRM grid-column-defaults page exists for the 'profile' grid; v1 is the live DEV shared tenantless system default, copied field-for-field (columns, labels, filters, visibleFilters, isDefault/pinned flags). Content needs owner confirmation before provisioning relies on it.",
+    "row": "…0d4664",
+    "rowUpdatedAt": "2026-07-22T22:48:03.036Z",
+    "snapshotTaken": "2026-11-01"
+  },
+  "templates": {
+    "profile": {
+      "name": "System default",
+      "templateType": "profile",
+      "aliases": [
+        "Profile"
+      ],
+      "columns": [
+        "membershipNumber",
+        "fullName",
+        "normalizedEmail",
+        "contactInfo.mobileNumber",
+        "professionalDetails.branch",
+        "isActive",
+        "professionalDetails.workLocation",
+        "professionalDetails.primarySection",
+        "professionalDetails.grade",
+        "contactInfo.fullAddress"
+      ],
+      "columnLabels": {
+        "membershipNumber": "Membership No",
+        "fullName": "Full Name",
+        "normalizedEmail": "Email Address",
+        "contactInfo.mobileNumber": "Mobile Number",
+        "professionalDetails.branch": "Branch",
+        "isActive": "Active",
+        "professionalDetails.workLocation": "Work Location",
+        "professionalDetails.primarySection": "Primary Section",
+        "professionalDetails.grade": "Grade",
+        "contactInfo.fullAddress": "Full Address",
+        "personalInfo.dateOfBirth": "Date Of Birth",
+        "personalInfo.gender": "Gender",
+        "contactDetails.contactInfo.notAtAddress": "Not At Address",
+        "membershipCategory": "Membership Category",
+        "professionalDetails.region": "Region",
+        "professionalDetails.secondarySection": "Secondary Section",
+        "professionalDetails.retiredDate": "Retired Date",
+        "professionalDetails.pensionNo": "Pension No",
+        "professionalDetails.payrollNo": "Payroll No",
+        "professionalDetails.nmbiNumber": "Nmbi Number",
+        "professionalDetails.otherGrade": "Other Grade",
+        "additionalInformation.otherIrishTradeUnion": "Other Irish Trade Union",
+        "preferences.consent": "Consent",
+        "cornMarket.incomeProtectionScheme": "Income Protection Scheme",
+        "cornMarket.inmoRewards": "Inmo Rewards",
+        "preferences.valueAddedServices": "Value Added Services",
+        "joiningDate": "Joining Date",
+        "membershipFee": "Membership Fee",
+        "outstandingBalance": "Outstanding Balance",
+        "reminderNo": "Reminder No",
+        "reminderDate": "Reminder Date",
+        "cancellationFlag": "Cancellation Flag"
+      },
+      "filters": {},
+      "visibleFilters": [],
+      "isDefault": true,
+      "pinned": true
+    }
+  }
+}
