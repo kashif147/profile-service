@@ -6,7 +6,6 @@ const {
   assertSharedTemplateUpdateAllowed,
   isFrozenSharedTemplate,
 } = require("./sharedTemplateFreeze");
-const { APPLICATION_STATUS } = require("../constants/enums");
 
 /** Return template for API response (no meta, no __v) */
 function toTemplateResponse(doc) {
@@ -379,38 +378,39 @@ class TemplateService {
     }
   }
 
-  async getDefaultTemplate(userId, tenantId = null) {
+  /**
+   * Resolve (never create) the caller's default view for a template type: the user's own isDefault
+   * view, else the system default (tenant-owned first, then the transitional tenantless row), else
+   * null = the client's built-in (code-defined) default. Read-only: it used to persist a blank user
+   * view (columns: []) when the user had no default.
+   */
+  async getDefaultTemplate(userId, tenantId = null, type = "application") {
     try {
-      const dq = { userId, isDefault: true, "meta.deleted": false };
+      const dq = {
+        userId,
+        templateType: templateTypeMatchForList(type),
+        isDefault: true,
+        "meta.deleted": false,
+      };
       Object.assign(dq, tenantOrLegacyMatch(tenantId));
 
-      let template = await Template.findOne(dq);
+      const own = await Template.findOne(dq);
+      if (own) return toTemplateResponse(own);
 
-      if (!template) {
-        template = new Template({
-          userId,
-          tenantId: tenantId || undefined,
-          templateType: "application",
-          filters: {
-            applicationStatus: {
-              operator: "equal_to",
-              values: [APPLICATION_STATUS.SUBMITTED],
-            },
-          },
-          columns: [],
-          isDefault: true,
-          pinned: false,
-        });
-
-        template = await template.save();
+      const systemDefault = await findSystemDefaultTemplateDoc(type, tenantId);
+      if (systemDefault) {
+        const out = toTemplateResponse(systemDefault);
+        out.isDefault = true;
+        return out;
       }
 
-      return template;
+      return null;
     } catch (error) {
       console.error("TemplateService [getDefaultTemplate] Error:", error);
       throw error;
     }
   }
+
 
   async getDefaultTemplateForType(userId, type = "application", tenantId = null) {
     try {
