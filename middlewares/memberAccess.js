@@ -21,6 +21,7 @@
 const mongoose = require("mongoose");
 const Profile = require("../models/profile.model.js");
 const User = require("../models/user.model.js");
+const PersonalDetails = require("../models/personal.details.model.js");
 const { AppError } = require("../errors/AppError");
 const { defaultPolicyMiddleware } = require("./policy.middleware");
 const { resolveInternalCallerTenant } = require("./internalTenant.js");
@@ -202,6 +203,63 @@ function requestedProfileIds(req) {
   return [];
 }
 
+/**
+ * Application-step routes (/personal-details, /professional-details, /subscription-details keyed
+ * by :applicationId). The application root (PersonalDetails) is bound to the portal member that
+ * created it: PersonalDetails.userId == the verified user-service id (the token sub / gateway
+ * x-user-id, see helpers/get.user.info.js). Every child step (professional / subscription) hangs
+ * off that root, so ownership of the root decides ownership of the step - including a step that
+ * does not exist yet (create).
+ *
+ *   CRM    -> the existing PDP permission (unchanged behaviour, tenant-scoped in the handlers).
+ *   PORTAL -> the existing PDP permission AND the application must be the caller's own
+ *             (same tenant AND same user). Another member's, another tenant's, a missing and a
+ *             CRM-created (userId null) application are indistinguishable: 403 NOT_OWNER.
+ *   other  -> 403 CRM_ONLY (fail closed; the services' `else` branches used to treat an unknown
+ *             caller type as a portal caller with userId null, which matched userId-null records).
+ */
+async function isOwnApplication(req, applicationId) {
+  const tenantId = callerTenantId(req);
+  const userId = verifiedCallerId(req);
+  if (!tenantId || !userId || applicationId == null || applicationId === "") return false;
+  const appId = String(applicationId);
+  const root = await PersonalDetails.findOne({
+    tenantId,
+    $or: [{ applicationId: appId }, { ApplicationId: appId }],
+  })
+    .select("userId")
+    .lean();
+  return Boolean(root && root.userId != null && String(root.userId) === userId);
+}
+
+function crmOrOwnApplication(resource, action, param = "applicationId") {
+  const pdp = defaultPolicyMiddleware.requirePermission(resource, action);
+  return async function crmOrOwnApplicationMiddleware(req, res, next) {
+    try {
+      if (isCrmCaller(req)) return pdp(req, res, next);
+      if (!isPortalCaller(req)) return next(crmOnlyError());
+      const applicationId = req.params && req.params[param];
+      if (!(await isOwnApplication(req, applicationId))) return next(notOwnerError());
+      return pdp(req, res, next);
+    } catch (err) {
+      return next(err);
+    }
+  };
+}
+
+/**
+ * Application-step routes that are not keyed by an application id (create the root, "my"
+ * details): CRM or PORTAL with the existing PDP permission; the controller binds a portal caller
+ * to its verified user id. Anything else is denied.
+ */
+function crmOrPortal(resource, action) {
+  const pdp = defaultPolicyMiddleware.requirePermission(resource, action);
+  return function crmOrPortalMiddleware(req, res, next) {
+    if (isCrmCaller(req) || isPortalCaller(req)) return pdp(req, res, next);
+    return next(crmOnlyError());
+  };
+}
+
 module.exports = {
   CRM_ONLY,
   NOT_OWNER,
@@ -219,6 +277,9 @@ module.exports = {
   crmOrOwnProfile,
   crmOrOwnProfileParam,
   crmOrSelfLookup,
+  crmOrOwnApplication,
+  crmOrPortal,
+  isOwnApplication,
   crmOnlyError,
   notOwnerError,
 };

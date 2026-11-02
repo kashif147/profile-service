@@ -3,6 +3,7 @@ const subscriptionDetailsHandler = require("../handlers/subscription.details.han
 const personalDetailsHandler = require("../handlers/personal.details.handler");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
 const joischemas = require("../validation/index.js");
+const { AppError } = require("../errors/AppError");
 const {
   extractMembershipCategoryFromRequestBody,
 } = require("../helpers/membershipCategory.helper.js");

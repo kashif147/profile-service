@@ -3,7 +3,7 @@
  * Minimal in-memory stand-in for a Mongoose model, for tenant-isolation tests
  * (no DB). Supports the query/update surface the profile-service controllers
  * actually use: find/findOne/findById/countDocuments/exists/distinct,
- * updateOne/updateMany/findOneAndUpdate (with upsert), deleteOne, create,
+ * updateOne/updateMany/findOneAndUpdate (with upsert), findOneAndDelete, deleteOne, create,
  * `new Model(data).save()`, and chainable .select/.lean/.sort/.skip/.limit/
  * .populate/.session. Matching covers equality (ObjectId-as-string), dot paths,
  * array membership, RegExp, $in/$nin/$ne/$exists/$gt/$gte/$lt/$lte, $or/$and.
@@ -344,6 +344,15 @@ function createMemoryModel(name) {
       const idx = store.findIndex((d) => matches(d, filter));
       if (idx >= 0) store.splice(idx, 1);
       return { deletedCount: idx >= 0 ? 1 : 0 };
+    });
+  };
+  Model.findOneAndDelete = (filter) => {
+    calls.push({ op: "findOneAndDelete", filter });
+    return Query(({ lean }) => {
+      const idx = store.findIndex((d) => matches(d, filter));
+      if (idx < 0) return null;
+      const [row] = store.splice(idx, 1);
+      return lean ? clone(row) : hydrate(row);
     });
   };
   Model.collection = {

@@ -1,31 +1,35 @@
 const express = require("express");
 const router = express.Router();
 const professionalDetailsController = require("../controllers/professional.details.controller");
-const { defaultPolicyMiddleware } = require("../middlewares/policy.middleware");
+const { requireCrm, crmOrPortal, crmOrOwnApplication } = require("../middlewares/memberAccess");
+
+// P5 portal object authorization: a portal caller reaches only steps of its own application
+// (middlewares/memberAccess.js crmOrOwnApplication); CRM keeps the existing PDP permission.
 
 router.post(
   "/:applicationId",
-  defaultPolicyMiddleware.requirePermission("portal", "create"),
+  crmOrOwnApplication("portal", "create"),
   professionalDetailsController.createProfessionalDetails
 );
 router.get(
   "/",
-  defaultPolicyMiddleware.requirePermission("portal", "read"),
+  crmOrPortal("portal", "read"),
   professionalDetailsController.getMyProfessionalDetails
 );
 router.get(
   "/:applicationId",
-  defaultPolicyMiddleware.requirePermission("portal", "read"),
+  crmOrOwnApplication("portal", "read"),
   professionalDetailsController.getProfessionalDetails
 );
 router.put(
   "/:applicationId",
-  defaultPolicyMiddleware.requirePermission("portal", "write"),
+  crmOrOwnApplication("portal", "write"),
   professionalDetailsController.updateProfessionalDetails
 );
 router.delete(
   "/:applicationId",
-  defaultPolicyMiddleware.requirePermission("portal", "delete"),
+  // Not a portal product flow (no portal / mobile caller): CRM + the existing permission only.
+  requireCrm("portal", "delete"),
   professionalDetailsController.deleteProfessionalDetails
 );
 
