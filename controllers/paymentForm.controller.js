@@ -323,11 +323,8 @@ exports.portalListMine = async (req, res, next) => {
 
 exports.portalGetById = async (req, res, next) => {
   try {
-    const { tenantId, userId } = extractUserAndCreatorContext(req);
-    const data = await paymentFormService.getById(req.params.id, tenantId, {
-      includeSensitive: false,
-      portalUserId: userId,
-    });
+    const { tenantId } = extractUserAndCreatorContext(req);
+    const data = await paymentFormService.getByIdForPortal(req.params.id, tenantId, req);
     return res.success({ paymentForm: data });
   } catch (e) {
     return next(e);

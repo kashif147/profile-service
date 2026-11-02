@@ -680,7 +680,7 @@ async function createForm({
 
   pushAudit(form, "created", req, { channel: source });
   await form.save();
-  return getById(String(form._id), tenantId, { includeSensitive: true });
+  return getById(String(form._id), tenantId, { includeSensitive: source !== "portal" });
 }
 
 async function listWithFilter({ tenantId, filters = {}, page = 1, limit = 500 }) {
@@ -822,9 +822,8 @@ function formatDetailedListRow(doc) {
 async function getById(id, tenantId, { includeSensitive = false, portalUserId = null }) {
   const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
   if (!form) throw AppError.notFound("Payment form not found");
-  if (portalUserId && form.userId && String(form.userId) !== String(portalUserId)) {
-    throw AppError.forbidden("Access denied");
-  }
+  // Ownership is asserted by every portal entry point (assertPortalOwnsForm) before this read;
+  // `portalUserId` only selects the portal visibility rule here.
   if (portalUserId && !form.visibility?.portalVisible && form.status !== "draft") {
     const allowed = ["submitted", "verified", "active"].includes(form.status);
     if (!allowed) throw AppError.forbidden("Form not available on portal");
@@ -890,10 +889,39 @@ function decodeSignatureInput({ file, imageBase64 }) {
   throw AppError.badRequest("Provide multipart file or imageBase64");
 }
 
-function assertPortalFormAccess(form, req, portal) {
-  if (portal && form.userId && String(form.userId) !== String(req.userId)) {
+// P5 portal object authorization: a portal caller may act only on a form of its OWN member profile,
+// resolved from the verified user id with the same binding portal create/list use
+// (findProfileForPortalUser). A form without an owner binding to the caller, another member's form,
+// another tenant's form and a missing id all answer the same 403.
+async function assertPortalOwnsForm(form, req) {
+  const callerId = req.userId || req.user?.id || null;
+  if (!form || !callerId) throw AppError.forbidden("Access denied");
+  const own = await findProfileForPortalUser(form.tenantId, callerId, req);
+  if (!own?._id || String(own._id) !== String(form.profileId)) {
     throw AppError.forbidden("Access denied");
   }
+  if (form.userId) {
+    const allowed = [String(callerId), own.userId ? String(own.userId) : null].filter(Boolean);
+    if (!allowed.includes(String(form.userId))) throw AppError.forbidden("Access denied");
+  }
+}
+
+async function loadFormForCaller(id, tenantId, req, portal) {
+  const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
+  if (portal) {
+    await assertPortalOwnsForm(form, req);
+    return form;
+  }
+  if (!form) throw AppError.notFound("Payment form not found");
+  return form;
+}
+
+async function getByIdForPortal(id, tenantId, req) {
+  await loadFormForCaller(id, tenantId, req, true);
+  return getById(id, tenantId, {
+    includeSensitive: false,
+    portalUserId: req.userId || req.user?.id,
+  });
 }
 
 function persistSignatureOnForm(form, blobPath, { slot = 0, signedDate } = {}) {
@@ -928,12 +956,7 @@ function persistSignatureOnForm(form, blobPath, { slot = 0, signedDate } = {}) {
 }
 
 async function updateForm(id, tenantId, body, req, { portal = false } = {}) {
-  const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
-  if (!form) throw AppError.notFound("Payment form not found");
-
-  if (portal && form.userId && String(form.userId) !== String(req.userId)) {
-    throw AppError.forbidden("Access denied");
-  }
+  const form = await loadFormForCaller(id, tenantId, req, portal);
 
   if (form.status === "active") {
     throw AppError.badRequest("Approved payment forms cannot be edited");
@@ -1019,11 +1042,7 @@ function assertFormReadyToSubmit(form) {
 }
 
 async function submitForm(id, tenantId, req, { portal = false } = {}) {
-  const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
-  if (!form) throw AppError.notFound("Payment form not found");
-  if (portal && form.userId && String(form.userId) !== String(req.userId)) {
-    throw AppError.forbidden("Access denied");
-  }
+  const form = await loadFormForCaller(id, tenantId, req, portal);
 
   assertFormReadyToSubmit(form);
 
@@ -1239,9 +1258,7 @@ async function uploadPaper(id, tenantId, file, req) {
 }
 
 async function uploadSignedPdf(id, tenantId, file, req, { portal = false } = {}) {
-  const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
-  if (!form) throw AppError.notFound("Payment form not found");
-  assertPortalFormAccess(form, req, portal);
+  const form = await loadFormForCaller(id, tenantId, req, portal);
   const blobPath = azureBlob.buildPaymentFormBlobPath(
     tenantId,
     form.profileId,
@@ -1273,9 +1290,7 @@ async function uploadSignature(
   req,
   { portal = false } = {}
 ) {
-  const form = await MemberPaymentForm.findOne({ _id: id, tenantId });
-  if (!form) throw AppError.notFound("Payment form not found");
-  assertPortalFormAccess(form, req, portal);
+  const form = await loadFormForCaller(id, tenantId, req, portal);
 
   const slotNum = Number(slot ?? 0);
   if (form.formType === "STANDING_ORDER" && slotNum > 1) {
@@ -1564,6 +1579,8 @@ module.exports = {
   createForm,
   listWithFilter,
   getById,
+  getByIdForPortal,
+  assertPortalOwnsForm,
   updateForm,
   submitForm,
   verifyForm,
