@@ -10,13 +10,40 @@ const {
 } = require("../controllers/profile.duplicateReview.controller.js");
 const aggregatedUserDetailsController = require("../controllers/aggregated.user.details.controller.js");
 const { authenticate, tenantContextWarn } = require("../middlewares/auth");
-const { defaultPolicyMiddleware } = require("../middlewares/policy.middleware");
+const {
+  requireCrm,
+  crmOrOwnProfileParam,
+  crmOrSelfLookup,
+  internalOrCrmOrSelfLookup,
+  requestedProfileIds,
+  verifiedCallerId,
+} = require("../middlewares/memberAccess");
+
+// P5 portal object authorization: CRM staff need the profile permission; a portal caller may only
+// look up its own profile / user id / membership number (see middlewares/memberAccess.js).
+const selfProfileIdLookup = {
+  requestedKeysOf: requestedProfileIds,
+  ownKeysOf: (own) => [own && own._id],
+};
+const selfUserIdLookup = {
+  requestedKeysOf: (req) => (Array.isArray(req.body && req.body.userIds) ? req.body.userIds : []),
+  ownKeysOf: (_own, req) => [verifiedCallerId(req)],
+};
+const selfMembershipLookup = {
+  requestedKeysOf: (req) =>
+    Array.isArray(req.body && req.body.membershipNumbers) ? req.body.membershipNumbers : [],
+  ownKeysOf: (own) => [own && own.membershipNumber],
+};
 
 router.post("/validate", profileValidationController.validateProfile);
 
 // Internal endpoints for service-to-service calls (before authenticate)
 router.get("/internal/by-email", profileController.getProfileByEmailInternal);
-router.post("/internal/by-user-ids", profileController.getProfilesByUserIds);
+router.post(
+  "/internal/by-user-ids",
+  internalOrCrmOrSelfLookup("profile", "read", selfUserIdLookup),
+  profileController.getProfilesByUserIds,
+);
 router.post(
   "/internal/find-or-create-attendee",
   profileController.findOrCreateAttendeeProfile,
@@ -38,8 +65,9 @@ router.post(
   profileController.updateAttendeeProfileFields,
 );
 
-router.post("/batch", profileController.getProfilesBatch);
-router.get("/batch", profileController.getProfilesBatch);
+const batchAccess = internalOrCrmOrSelfLookup("profile", "read", selfProfileIdLookup);
+router.post("/batch", batchAccess, profileController.getProfilesBatch);
+router.get("/batch", batchAccess, profileController.getProfilesBatch);
 
 router.use(authenticate, tenantContextWarn);
 
@@ -48,14 +76,19 @@ router.get(
   "/aggregated-user-details",
   aggregatedUserDetailsController.getAggregatedUserDetails,
 );
-router.get("/check-email", profileController.checkEmailExists);
-router.get("/", profileController.getAllProfiles);
-router.get("/search", profileController.searchProfiles);
+router.get("/check-email", requireCrm("profile", "read"), profileController.checkEmailExists);
+router.get("/", requireCrm("profile", "read"), profileController.getAllProfiles);
+router.get("/search", requireCrm("profile", "read"), profileController.searchProfiles);
 router.post(
   "/lookup-by-membership",
+  crmOrSelfLookup("profile", "read", selfMembershipLookup),
   profileController.lookupProfilesByMembershipNumbers,
 );
-router.post("/batch-lookup", profileController.getProfilesBatchAuthenticated);
+router.post(
+  "/batch-lookup",
+  crmOrSelfLookup("profile", "read", selfProfileIdLookup),
+  profileController.getProfilesBatchAuthenticated,
+);
 router.get("/my-profile", profileController.getMyProfile);
 router.put("/my-profile", profileController.updateMyProfile);
 router.get("/my-personal-details", profileController.getMyPersonalDetails);
@@ -70,31 +103,43 @@ router.get(
 router.get("/my-details", profileController.getMyAllDetails);
 router.put(
   "/filter",
-  defaultPolicyMiddleware.requirePermission("portal", "read"),
+  requireCrm("profile", "read"),
   profileController.getProfilesWithTemplate,
 );
-router.get("/corn-market/new", profileController.getCornMarketNew);
-router.get("/corn-market/graduate", profileController.getCornMarketGraduate);
+router.get("/corn-market/new", requireCrm("profile", "read"), profileController.getCornMarketNew);
+router.get(
+  "/corn-market/graduate",
+  requireCrm("profile", "read"),
+  profileController.getCornMarketGraduate,
+);
 
+// Duplicate review / merge is administrative: CRM + permission, never portal. The merge
+// deactivates a profile and moves its data, so it needs the delete permission.
 router.post(
   "/:profileId/detect-duplicates",
+  requireCrm("profile", "write"),
   detectProfileDuplicatesHandler,
 );
 router.get(
   "/:profileId/duplicate-matches",
+  requireCrm("profile", "read"),
   getProfileDuplicateMatches,
 );
 router.get(
   "/:profileId/duplicate-merge-compare/:targetProfileId",
+  requireCrm("profile", "read"),
   getProfileDuplicateMergeCompareHandler,
 );
 router.post(
   "/:profileId/duplicate-merge",
+  requireCrm("profile", "delete"),
   submitProfileDuplicateMerge,
 );
 
-router.get("/:profileId", profileController.getProfileById);
-router.put("/:profileId", profileController.updateProfile);
-router.delete("/:profileId", profileController.softDeleteProfile);
+// Portal: own profile only (field scope still enforced by the controller). Portal profile
+// deletion is not a product flow: DELETE is CRM-only.
+router.get("/:profileId", crmOrOwnProfileParam("profile", "read"), profileController.getProfileById);
+router.put("/:profileId", crmOrOwnProfileParam("profile", "write"), profileController.updateProfile);
+router.delete("/:profileId", requireCrm("profile", "delete"), profileController.softDeleteProfile);
 
 module.exports = router;

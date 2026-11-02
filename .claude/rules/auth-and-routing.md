@@ -23,3 +23,28 @@ intentionally unauthenticated internal/service-to-service routes).
 If you add a new route to `profile.routes.js`, check where in that file it lands relative to the
 internal `authenticate` call — don't assume `app.js`'s global middleware covers it just because it
 "should."
+
+## Portal object authorization (P5) — `middlewares/memberAccess.js`
+
+A permission code never means "every member object of the tenant": portal MEMBER / NON-MEMBER roles
+carry `profile:*`, `portal:*`, `application:*` and `payments:*`. Member-data routes therefore decide on
+the verified caller type first:
+
+- **CRM staff** (`userType` CRM): `requireCrm(resource, action)` = CRM caller + the existing PDP
+  permission. Profile list/search/grid/check-email/corn-market (`profile:read`), delete and
+  duplicate merge (`profile:delete`), duplicate tooling, application approve/reject/bulk/executive
+  council/review/duplicate tooling and the legacy `PUT /applications/status/:id`
+  (`application:write`/`read`), and every non-`/portal` payment-form route (`payments:read`/`write`).
+- **Portal member**: own objects only, from the verified user id via the synced User → Profile.userId
+  binding (`resolveOwnProfile`, no email/membership-number matching). `GET/PUT /profile/:profileId`
+  and `/payment-forms/prefill?profileId=` require the caller's own profile; the lookup routes
+  (`/profile/batch`, `/profile/internal/by-user-ids`, `/batch-lookup`, `/lookup-by-membership`) accept a
+  portal caller only when every requested key is its own. Portal DELETE of a profile is not a product
+  flow and is CRM-only. `/payment-forms/portal/*` is PORTAL-only and the service asserts the form
+  belongs to the caller's own profile (`assertPortalOwnsForm`); portal responses never include
+  plaintext IBAN/BIC.
+- **Internal** (`x-internal-request`, no user identity) is unchanged on the pre-auth routes.
+
+Denials: 403 `CRM_ONLY`, `NOT_OWNER` or `PORTAL_ONLY`; a portal caller gets the same 403 for another
+member's, another tenant's or a missing object. Tests: `tests/portalObjectAuthz.p5.test.js`,
+`tests/paymentFormPortalOwnership.p5.test.js`.

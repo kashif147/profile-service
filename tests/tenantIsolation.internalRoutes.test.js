@@ -142,6 +142,8 @@ const gateway = (tenant) => ({
   "x-auth-source": "gateway",
   "x-user-id": "gw-user",
   "x-tenant-id": tenant,
+  // The gateway forwards the verified userType; P5 requires CRM (or self) for user lookups.
+  "x-user-type": "CRM",
 });
 
 describe("/profile/batch (C-02, relaxTenant removed)", () => {
