@@ -44,7 +44,7 @@ the verified caller type first:
   belongs to the caller's own profile (`assertPortalOwnsForm`); portal responses never include
   plaintext IBAN/BIC.
 - **Application steps** (`/personal-details`, `/professional-details`, `/subscription-details`):
-  every `/:applicationId` route uses `crmOrOwnApplication("portal", action)` — CRM keeps the
+  every `/:applicationId` read / create / update route uses `crmOrOwnApplication("portal", action)` — CRM keeps the
   existing PDP permission; a PORTAL caller additionally needs the application root
   (`PersonalDetails`, tenant + `applicationId`/legacy `ApplicationId`) to have
   `userId == verified user id`. Ownership of the root decides every child step, including a create
@@ -53,7 +53,10 @@ the verified caller type first:
   routes (`POST /personal-details`, `GET /` "my details") use `crmOrPortal`; a caller type that is
   neither CRM nor PORTAL is denied (the services' `else` branches would otherwise query
   `userId: null`, which matches CRM-created records). `POST /personal-details/check-email` returns
-  another person's details by email and is `requireCrm("portal", "read")`.
+  another person's details by email and is `requireCrm("portal", "read")`. `DELETE /:applicationId`
+  on all three is `requireCrm("portal", "delete")`: deleting an application step is not a portal
+  product flow (no caller in the portal web app or Poral_App mobile app), so a portal member gets
+  403 CRM_ONLY even on its own application; it can still create / update its own steps.
 - **Internal** (`x-internal-request`, no user identity) is unchanged on the pre-auth routes.
 
 Denials: 403 `CRM_ONLY`, `NOT_OWNER` or `PORTAL_ONLY`; a portal caller gets the same 403 for another

@@ -215,22 +215,18 @@ const BODIES = {
 
 /**
  * [label, method, url(appId), body, seedOpts, verifyOwn(appId)] for every application-keyed
- * step operation. seedOpts drops the step being created so create starts from "not yet there".
+ * portal self-service step operation (DELETE is CRM-only, tested separately). seedOpts drops the step being created so create starts from "not yet there".
  */
 const OPS = [
   ["personal read", "GET", (id) => `/api/personal-details/${id}`, undefined, {}, (r) => r.body.data.applicationId === APP_A],
   ["personal status", "GET", (id) => `/api/personal-details/${id}/status`, undefined, {}, (r) => r.body.data.applicationStatus === "in-progress"],
   ["personal update", "PUT", (id) => `/api/personal-details/${id}`, BODIES.personalUpdate, {},
     () => PersonalDetails.all().find((d) => d.applicationId === APP_A).personalInfo.forename === "Changed"],
-  ["personal delete", "DELETE", (id) => `/api/personal-details/${id}`, undefined, {},
-    () => !PersonalDetails.all().some((d) => d.applicationId === APP_A)],
   ["professional create", "POST", (id) => `/api/professional-details/${id}`, BODIES.professional, { withProfessional: false },
     () => ProfessionalDetails.all().some((d) => d.applicationId === APP_A && String(d.userId) === SA)],
   ["professional read", "GET", (id) => `/api/professional-details/${id}`, undefined, {}, (r) => r.body.data.applicationId === APP_A],
   ["professional update", "PUT", (id) => `/api/professional-details/${id}`, BODIES.professional, {},
     () => ProfessionalDetails.all().find((d) => d.applicationId === APP_A).professionalDetails.grade === "G-changed"],
-  ["professional delete", "DELETE", (id) => `/api/professional-details/${id}`, undefined, {},
-    () => !ProfessionalDetails.all().some((d) => d.applicationId === APP_A)],
   ["subscription create", "POST", (id) => `/api/subscription-details/${id}`, BODIES.subscription, { withSubscription: false },
     () => SubscriptionDetails.all().some((d) => d.applicationId === APP_A && String(d.userId) === SA)],
   ["subscription create-over-existing", "POST", (id) => `/api/subscription-details/${id}`, BODIES.subscription, {},
@@ -238,8 +234,6 @@ const OPS = [
   ["subscription read", "GET", (id) => `/api/subscription-details/${id}`, undefined, {}, (r) => r.body.data.applicationId === APP_A],
   ["subscription update", "PUT", (id) => `/api/subscription-details/${id}`, BODIES.subscription, {},
     () => SubscriptionDetails.all().find((d) => d.applicationId === APP_A).subscriptionDetails.payrollNo === "P-changed"],
-  ["subscription delete", "DELETE", (id) => `/api/subscription-details/${id}`, undefined, {},
-    () => !SubscriptionDetails.all().some((d) => d.applicationId === APP_A)],
 ];
 
 describe.each(OPS)("P5 application step: %s", (_label, method, url, body, seedOpts, verifyOwn) => {
@@ -299,6 +293,49 @@ describe.each(OPS)("P5 application step: %s", (_label, method, url, body, seedOp
     const before = recordsOf(APP_K);
     const r = await call(method, url(APP_K), asUnknownType, body);
     expect(denied(r, "CRM_ONLY")).toBe(true);
+    expect(recordsOf(APP_K)).toBe(before);
+  });
+});
+
+describe.each([
+  ["personal", "/api/personal-details", () => PersonalDetails],
+  ["professional", "/api/professional-details", () => ProfessionalDetails],
+  ["subscription", "/api/subscription-details", () => SubscriptionDetails],
+])("P5 application step: DELETE %s is CRM-only", (_n, base, model) => {
+  const exists = (id) => model().all().some((d) => d.applicationId === id);
+
+  test("portal A on its OWN application: 403 CRM_ONLY, record unchanged", async () => {
+    const before = recordsOf(APP_A);
+    const r = await call("DELETE", `${base}/${APP_A}`, asA);
+    expect(denied(r, "CRM_ONLY")).toBe(true);
+    expect(recordsOf(APP_A)).toBe(before);
+  });
+
+  test.each([[APP_B], [APP_C], [APP_K], [APP_MISSING]])("portal A on %s: 403 CRM_ONLY, unchanged", async (id) => {
+    const before = recordsOf(id);
+    const r = await call("DELETE", `${base}/${id}`, asA);
+    expect(denied(r, "CRM_ONLY")).toBe(true);
+    expect(recordsOf(id)).toBe(before);
+  });
+
+  test("CRM + permission on B: deleted; another tenant's C untouched", async () => {
+    const r = await call("DELETE", `${base}/${APP_B}`, asCrm);
+    expect(r.status).toBe(200);
+    expect(exists(APP_B)).toBe(false);
+    const beforeC = recordsOf(APP_C);
+    await call("DELETE", `${base}/${APP_C}`, asCrm);
+    expect(recordsOf(APP_C)).toBe(beforeC);
+  });
+
+  test("CRM without permission: denied, B unchanged", async () => {
+    const before = recordsOf(APP_B);
+    expect(denied(await call("DELETE", `${base}/${APP_B}`, asCrmNoPerm), "PDP_DENY")).toBe(true);
+    expect(recordsOf(APP_B)).toBe(before);
+  });
+
+  test("unknown caller type: 403 CRM_ONLY, CRM-created record unchanged", async () => {
+    const before = recordsOf(APP_K);
+    expect(denied(await call("DELETE", `${base}/${APP_K}`, asUnknownType), "CRM_ONLY")).toBe(true);
     expect(recordsOf(APP_K)).toBe(before);
   });
 });

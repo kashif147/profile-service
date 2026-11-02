@@ -42,7 +42,8 @@ router.put(
 );
 router.delete(
   "/:applicationId",
-  crmOrOwnApplication("portal", "delete"),
+  // Not a portal product flow (no portal / mobile caller): CRM + the existing permission only.
+  requireCrm("portal", "delete"),
   personalDetailsController.deletePersonalDetails
 );
 

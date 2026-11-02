@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const subscriptionDetailsController = require("../controllers/subscription.details.controller");
-const { crmOrPortal, crmOrOwnApplication } = require("../middlewares/memberAccess");
+const { requireCrm, crmOrPortal, crmOrOwnApplication } = require("../middlewares/memberAccess");
 
 // P5 portal object authorization: a portal caller reaches only steps of its own application
 // (middlewares/memberAccess.js crmOrOwnApplication); CRM keeps the existing PDP permission.
@@ -28,7 +28,8 @@ router.put(
 );
 router.delete(
   "/:applicationId",
-  crmOrOwnApplication("portal", "delete"),
+  // Not a portal product flow (no portal / mobile caller): CRM + the existing permission only.
+  requireCrm("portal", "delete"),
   subscriptionDetailsController.deleteSubscriptionDetails
 );
 
