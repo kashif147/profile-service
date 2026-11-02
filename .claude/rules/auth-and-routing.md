@@ -43,8 +43,19 @@ the verified caller type first:
   flow and is CRM-only. `/payment-forms/portal/*` is PORTAL-only and the service asserts the form
   belongs to the caller's own profile (`assertPortalOwnsForm`); portal responses never include
   plaintext IBAN/BIC.
+- **Application steps** (`/personal-details`, `/professional-details`, `/subscription-details`):
+  every `/:applicationId` route uses `crmOrOwnApplication("portal", action)` — CRM keeps the
+  existing PDP permission; a PORTAL caller additionally needs the application root
+  (`PersonalDetails`, tenant + `applicationId`/legacy `ApplicationId`) to have
+  `userId == verified user id`. Ownership of the root decides every child step, including a create
+  where the step does not exist yet; the gate runs before the controllers, whose subscription
+  legacy-field sync and "already exists"/"not found" checks are not user-bound. The non-keyed
+  routes (`POST /personal-details`, `GET /` "my details") use `crmOrPortal`; a caller type that is
+  neither CRM nor PORTAL is denied (the services' `else` branches would otherwise query
+  `userId: null`, which matches CRM-created records). `POST /personal-details/check-email` returns
+  another person's details by email and is `requireCrm("portal", "read")`.
 - **Internal** (`x-internal-request`, no user identity) is unchanged on the pre-auth routes.
 
 Denials: 403 `CRM_ONLY`, `NOT_OWNER` or `PORTAL_ONLY`; a portal caller gets the same 403 for another
 member's, another tenant's or a missing object. Tests: `tests/portalObjectAuthz.p5.test.js`,
-`tests/paymentFormPortalOwnership.p5.test.js`.
+`tests/paymentFormPortalOwnership.p5.test.js`, `tests/applicationStepOwnership.p5.test.js`.
