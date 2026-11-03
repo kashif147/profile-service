@@ -29,6 +29,7 @@ const {
 const {
   claimPaymentDecision,
   releasePaymentDecision,
+  endPaymentDecisionLease,
 } = require("../services/applicationPaymentDecision.service.js");
 const {
   resolvePortalUserServiceId,
@@ -595,7 +596,7 @@ exports.approveApplication = async (req, res, next) => {
       );
       if (paymentActionResult.status === "succeeded") paymentMoved = true;
       if (paymentActionResult.status !== "succeeded") {
-        await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
+        await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId, leaseId: decisionClaim?.leaseId });
         return next(
           AppError.conflict(
             "Payment capture did not succeed. Application was not approved.",
@@ -820,6 +821,15 @@ exports.approveApplication = async (req, res, next) => {
         applicationId: claimedApplicationId,
         tenantId: claimedTenantId,
         claimId: decisionClaim.claimId,
+        leaseId: decisionClaim.leaseId,
+      });
+    } else if (decisionClaim) {
+      // Money moved: keep the claim, end this run's lease so the same action can be re-run.
+      await endPaymentDecisionLease({
+        applicationId: claimedApplicationId,
+        tenantId: claimedTenantId,
+        claimId: decisionClaim.claimId,
+        leaseId: decisionClaim.leaseId,
       });
     }
     console.error("ApplicationController [approveApplication] Error:", error);

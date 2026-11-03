@@ -172,6 +172,8 @@ module.exports = {
     mergeFieldChoices: z
       .record(z.enum(["APPLICATION", "PROFILE"]))
       .optional(),
+    // P5: the duplicate-review version the reviewer saw (GET returns duplicateReview.reviewVersion).
+    expectedReviewVersion: z.number().int().min(0).optional(),
   }).superRefine((data, ctx) => {
     if (
       (data.action === "LINK" || data.action === "MERGE") &&

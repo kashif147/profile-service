@@ -15,6 +15,12 @@
  * - A final application (processed / rejected) is never claimed -> 409 APPLICATION_ALREADY_DECIDED.
  * - Released only when the action failed BEFORE any payment command succeeded. Once money moved
  *   (captured / hold released) the claim stays, so the opposite action stays blocked.
+ * - P5 execution lease: each running attempt of the action holds a lease (leaseId, leaseUntil). A
+ *   second concurrent run of the same action gets 409 DECISION_IN_PROGRESS instead of sharing the
+ *   claim, so a failing duplicate can never release a claim another request is still acting on.
+ *   Release and lease-end are bound to the lease; an expired lease (crash) is taken over by the
+ *   next run of the same action. The approve claim also records the duplicate-review version it
+ *   was made against (paymentDecision.reviewVersion).
  */
 const crypto = require("crypto");
 const PersonalDetails = require("../models/personal.details.model.js");
@@ -23,18 +29,23 @@ const { APPLICATION_STATUS } = require("../constants/enums");
 
 const FINAL = [APPLICATION_STATUS.PROCESSED, APPLICATION_STATUS.REJECTED];
 const ACTIONS = new Set(["approve", "reject"]);
+// Longer than one approval run (transaction retries + capture); short enough for crash recovery.
+const DECISION_LEASE_MS = Number(process.env.PAYMENT_DECISION_LEASE_MS) || 120000;
 
 function conflict(code, message) {
   return new AppError(message, 409, code);
 }
 
-async function claimPaymentDecision({ applicationId, tenantId, action, actorUserId }) {
+async function claimPaymentDecision({ applicationId, tenantId, action, actorUserId, reviewVersion }) {
   if (!ACTIONS.has(action)) throw new Error(`unknown payment decision action ${action}`);
   if (!tenantId) throw AppError.forbidden("Tenant context is required");
   const claimId = crypto.randomUUID();
+  const leaseId = crypto.randomUUID();
+  const now = new Date();
+  const leaseUntil = new Date(now.getTime() + DECISION_LEASE_MS);
   const base = { applicationId, tenantId: String(tenantId), applicationStatus: { $nin: FINAL } };
+  const versionSet = Number.isInteger(reviewVersion) ? { "paymentDecision.reviewVersion": reviewVersion } : {};
 
-  // Fresh claim (no decision held yet).
   let doc = await PersonalDetails.findOneAndUpdate(
     { ...base, $or: [{ "paymentDecision.action": { $exists: false } }, { "paymentDecision.action": null }] },
     {
@@ -43,19 +54,32 @@ async function claimPaymentDecision({ applicationId, tenantId, action, actorUser
           action,
           claimId,
           actorUserId: actorUserId ? String(actorUserId) : null,
-          claimedAt: new Date(),
+          claimedAt: now,
+          leaseId,
+          leaseUntil,
+          ...(Number.isInteger(reviewVersion) ? { reviewVersion } : {}),
         },
       },
     },
     { new: true },
   );
-  if (doc) return { claimId, reused: false };
+  if (doc) return { claimId, leaseId, reused: false };
 
-  // Same action already claimed: re-use it (retry / recovery).
-  doc = await PersonalDetails.findOne({ ...base, "paymentDecision.action": action })
-    .select("paymentDecision")
-    .lean();
-  if (doc) return { claimId: doc.paymentDecision.claimId, reused: true };
+  // Same action already claimed: take the lease only if no other run currently holds it.
+  doc = await PersonalDetails.findOneAndUpdate(
+    {
+      ...base,
+      "paymentDecision.action": action,
+      $or: [
+        { "paymentDecision.leaseUntil": { $exists: false } },
+        { "paymentDecision.leaseUntil": null },
+        { "paymentDecision.leaseUntil": { $lte: now } },
+      ],
+    },
+    { $set: { "paymentDecision.leaseId": leaseId, "paymentDecision.leaseUntil": leaseUntil, ...versionSet } },
+    { new: true },
+  );
+  if (doc) return { claimId: doc.paymentDecision.claimId, leaseId, reused: true };
 
   const current = await PersonalDetails.findOne({ applicationId, tenantId: String(tenantId) })
     .select("applicationStatus paymentDecision")
@@ -64,24 +88,53 @@ async function claimPaymentDecision({ applicationId, tenantId, action, actorUser
   if (FINAL.includes(current.applicationStatus)) {
     throw conflict("APPLICATION_ALREADY_DECIDED", "Application has already been processed.");
   }
+  if (current.paymentDecision?.action === action) {
+    throw conflict(
+      "DECISION_IN_PROGRESS",
+      `This ${action} is already in progress for this application. Wait for it to finish, then refresh.`,
+    );
+  }
   throw conflict(
     "PAYMENT_DECISION_CONFLICT",
     `A ${current.paymentDecision?.action || "different"} decision is already in progress for this application.`,
   );
 }
 
-/** Drops the claim only while it is still ours and the application is not final. Best-effort. */
-async function releasePaymentDecision({ applicationId, tenantId, claimId }) {
-  if (!claimId) return;
-  await PersonalDetails.updateOne(
-    {
-      applicationId,
-      tenantId: String(tenantId),
-      applicationStatus: { $nin: FINAL },
-      "paymentDecision.claimId": claimId,
-    },
-    { $unset: { paymentDecision: "" } },
-  ).catch(() => {});
+function leaseFilter(applicationId, tenantId, claimId, leaseId) {
+  return {
+    applicationId,
+    tenantId: String(tenantId),
+    applicationStatus: { $nin: FINAL },
+    "paymentDecision.claimId": claimId,
+    ...(leaseId ? { "paymentDecision.leaseId": leaseId } : {}),
+  };
 }
 
-module.exports = { claimPaymentDecision, releasePaymentDecision };
+/**
+ * Drops the claim only while it is still ours (same claim AND, when given, the same lease) and the
+ * application is not final. Best-effort.
+ */
+async function releasePaymentDecision({ applicationId, tenantId, claimId, leaseId }) {
+  if (!claimId) return;
+  await PersonalDetails.updateOne(leaseFilter(applicationId, tenantId, claimId, leaseId), {
+    $unset: { paymentDecision: "" },
+  }).catch(() => {});
+}
+
+/**
+ * Keeps the claim (money moved) but ends this run's lease, so re-running the same action - the
+ * recovery path - can proceed immediately instead of waiting for the lease to expire. Best-effort.
+ */
+async function endPaymentDecisionLease({ applicationId, tenantId, claimId, leaseId }) {
+  if (!claimId || !leaseId) return;
+  await PersonalDetails.updateOne(leaseFilter(applicationId, tenantId, claimId, leaseId), {
+    $unset: { "paymentDecision.leaseId": "", "paymentDecision.leaseUntil": "" },
+  }).catch(() => {});
+}
+
+module.exports = {
+  claimPaymentDecision,
+  releasePaymentDecision,
+  endPaymentDecisionLease,
+  DECISION_LEASE_MS,
+};

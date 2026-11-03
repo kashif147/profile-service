@@ -61,25 +61,44 @@ d("payment decision claim - real database concurrency", () => {
     }
   });
 
-  test("concurrent double approve: one claim, every caller gets the same claim id", async () => {
+  // P5 lease (supersedes "every caller gets the same claim id"): a shared claim let a failing
+  // duplicate run release the claim another run was capturing under. Now exactly one run holds the
+  // claim and its lease; the others get 409 DECISION_IN_PROGRESS and the stored claim is untouched.
+  test("concurrent double approve: exactly one run holds the claim; the others get DECISION_IN_PROGRESS", async () => {
     for (let round = 0; round < 20; round++) {
       const applicationId = await seedApplication();
-      const results = await Promise.all(
+      const results = await Promise.allSettled(
         Array.from({ length: 5 }, () =>
           decision.claimPaymentDecision({ applicationId, tenantId: T, action: "approve", actorUserId: "u1" }),
         ),
       );
-      expect(results.filter((r) => !r.reused)).toHaveLength(1);
-      expect(new Set(results.map((r) => r.claimId)).size).toBe(1);
+      const won = results.filter((r) => r.status === "fulfilled");
+      expect(won).toHaveLength(1);
+      expect(won[0].value.reused).toBe(false);
+      for (const r of results.filter((x) => x.status === "rejected")) {
+        expect(r.reason).toMatchObject({ status: 409, code: "DECISION_IN_PROGRESS" });
+      }
+      const stored = await PersonalDetails.collection.findOne({ applicationId });
+      expect(stored.paymentDecision.claimId).toBe(won[0].value.claimId);
+      expect(stored.paymentDecision.leaseId).toBe(won[0].value.leaseId);
     }
   });
 
   test("crash after claiming (no release): the same action recovers by reusing the claim; the opposite stays blocked", async () => {
     const applicationId = await seedApplication();
     const first = await decision.claimPaymentDecision({ applicationId, tenantId: T, action: "approve", actorUserId: "u1" });
-    // ...process dies here: no capture result, no release.
+    // ...process dies here: no capture result, no release. While its lease is live, a re-run waits.
+    await expect(
+      decision.claimPaymentDecision({ applicationId, tenantId: T, action: "approve", actorUserId: "u1" }),
+    ).rejects.toMatchObject({ status: 409, code: "DECISION_IN_PROGRESS" });
+    // Once the crashed run's lease has expired, the same action takes the claim over.
+    await PersonalDetails.collection.updateOne(
+      { applicationId },
+      { $set: { "paymentDecision.leaseUntil": new Date(Date.now() - 1000) } },
+    );
     const retry = await decision.claimPaymentDecision({ applicationId, tenantId: T, action: "approve", actorUserId: "u1" });
-    expect(retry).toEqual({ claimId: first.claimId, reused: true });
+    expect(retry).toMatchObject({ claimId: first.claimId, reused: true });
+    expect(retry.leaseId).not.toBe(first.leaseId);
     await expect(
       decision.claimPaymentDecision({ applicationId, tenantId: T, action: "reject", actorUserId: "u2" }),
     ).rejects.toMatchObject({ status: 409, code: "PAYMENT_DECISION_CONFLICT" });

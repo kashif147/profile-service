@@ -10,7 +10,12 @@ const {
 const {
   detectDuplicates,
   findDuplicateMatches,
+  applicationInputFingerprint,
 } = require("./duplicate.detection.service.js");
+const {
+  currentReviewVersion,
+  reviewVersionFilter,
+} = require("./duplicate.review.version.js");
 const {
   findOrCreateProfileByEmail,
   pickPrimaryEmail,
@@ -91,6 +96,8 @@ function buildDuplicateReviewState(personal, extras = {}) {
     },
     applicationStatus: personal?.applicationStatus || null,
     isReadOnly: isApplicationProcessed(personal),
+    // P5: send back as expectedReviewVersion with the next decision.
+    reviewVersion: currentReviewVersion(personal),
     ...extras,
   };
 }
@@ -158,6 +165,7 @@ async function runDuplicateDetection(applicationId, tenantId, actorId = null) {
     ...result,
     duplicateReview: updatedPersonal.duplicateReview,
     applicationStatus: updatedPersonal.applicationStatus || null,
+    reviewVersion: currentReviewVersion(updatedPersonal),
     isReadOnly: false,
     matchingApplications: result.matchingApplications.filter((m) => !m.ignored),
     matchingProfiles: result.matchingProfiles.filter((m) => !m.ignored),
@@ -203,6 +211,7 @@ async function recordDuplicateDecision({
   sourceId,
   decisionReason,
   mergeFieldChoices,
+  expectedReviewVersion,
 }) {
   if (action === DUPLICATE_REVIEW_ACTION.IGNORE_MATCH) {
     throw AppError.badRequest(
@@ -220,6 +229,31 @@ async function recordDuplicateDecision({
 
   const effectiveTenantId = resolveApplicationTenantId(personal, tenantId);
   assertApplicationDuplicateReviewMutable(personal);
+
+  // P5: a decision is bound to the review version the reviewer saw. A stale decision gets 409 and
+  // changes nothing. (Callers that do not yet send expectedReviewVersion decide against the current
+  // version; the compatibility window is logged.)
+  const reviewVersion = currentReviewVersion(personal);
+  if (expectedReviewVersion === undefined || expectedReviewVersion === null) {
+    console.warn("[duplicate-review] decision without expectedReviewVersion (compatibility window)", {
+      applicationId,
+      reviewVersion,
+    });
+  } else if (Number(expectedReviewVersion) !== reviewVersion) {
+    throw AppError.conflict(
+      "The duplicate review changed since it was loaded. Refresh and review again.",
+      { code: "REVIEW_VERSION_CONFLICT", reviewVersion },
+    );
+  }
+  const inputFingerprint = await applicationInputFingerprint(applicationId, effectiveTenantId);
+  await assertDecisionTargetValid({
+    action,
+    sourceType,
+    sourceId,
+    personal,
+    tenantId: effectiveTenantId,
+  });
+
   const beforeReview = personal.duplicateReview?.toObject?.()
     ? personal.duplicateReview.toObject()
     : personal.duplicateReview
@@ -303,6 +337,9 @@ async function recordDuplicateDecision({
     reviewedAt: now,
     matchSummary,
     auditHistory: appendAuditEntry(personal, auditEntry),
+    reviewVersion: reviewVersion + 1,
+    inputFingerprint,
+    invalidatedAt: null,
   };
 
   personal.duplicateDetection = {
@@ -314,7 +351,7 @@ async function recordDuplicateDecision({
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-      await personal.save({ session });
+      await saveReviewDecision(personal, applicationId, effectiveTenantId, reviewVersion, session);
 
       const { submission } = await loadSubmission(
         applicationId,
@@ -345,7 +382,7 @@ async function recordDuplicateDecision({
       session.endSession();
     }
   } else {
-    await personal.save();
+    await saveReviewDecision(personal, applicationId, effectiveTenantId, reviewVersion, null);
   }
 
   const afterReview = personal.duplicateReview?.toObject?.()
@@ -371,7 +408,81 @@ async function recordDuplicateDecision({
   return {
     duplicateReview: personal.duplicateReview,
     hasPotentialDuplicate: personal.duplicateDetection.isPotentialDuplicate,
+    reviewVersion: reviewVersion + 1,
   };
+}
+
+/**
+ * Compare-and-set the reviewer decision: written only while the review is still at the version the
+ * decision was made against and the application is not processed. Otherwise 409, nothing written.
+ */
+async function saveReviewDecision(personal, applicationId, tenantId, reviewVersion, session) {
+  const plain = personal.toObject({ depopulate: true });
+  const res = await PersonalDetails.updateOne(
+    {
+      applicationId,
+      tenantId,
+      applicationStatus: { $nin: [APPLICATION_STATUS.PROCESSED, APPLICATION_STATUS.REJECTED] },
+      ...reviewVersionFilter(reviewVersion),
+    },
+    {
+      $set: {
+        duplicateReview: plain.duplicateReview,
+        "duplicateDetection.isPotentialDuplicate": !!plain.duplicateDetection?.isPotentialDuplicate,
+      },
+    },
+    session ? { session } : {},
+  );
+  if (!res.matchedCount) {
+    throw AppError.conflict(
+      "The duplicate review changed while this decision was being saved. Refresh and review again.",
+      { code: "REVIEW_VERSION_CONFLICT" },
+    );
+  }
+}
+
+/**
+ * P5: LINK/MERGE must name a profile of the request tenant that is one of the application's current,
+ * unignored profile matches. MARKED_NEW (Create New Profile) is refused when a profile in the tenant
+ * already holds the applicant's email: profiles are unique per tenant+email, so approval would
+ * otherwise silently update that existing profile instead of creating a new one.
+ */
+async function assertDecisionTargetValid({ action, sourceType, sourceId, personal, tenantId }) {
+  if (action === DUPLICATE_REVIEW_ACTION.LINK || action === DUPLICATE_REVIEW_ACTION.MERGE) {
+    if (sourceType !== "PROFILE" || !sourceId || !mongoose.Types.ObjectId.isValid(String(sourceId))) {
+      throw AppError.badRequest(`${action === DUPLICATE_REVIEW_ACTION.LINK ? "Link" : "Merge"} action requires a profile match`);
+    }
+    const profile = await Profile.findOne({ _id: String(sourceId), tenantId }).select("_id").lean();
+    if (!profile) {
+      throw AppError.notFound("Matched profile not found", { code: "MATCHED_PROFILE_NOT_FOUND" });
+    }
+    const isCurrentMatch = (personal.duplicateReview?.matchSummary || []).some(
+      (m) => m.sourceType === "PROFILE" && String(m.sourceId) === String(sourceId) && !m.ignored,
+    );
+    if (!isCurrentMatch) {
+      throw AppError.conflict("The selected profile is not a current match for this application.", {
+        code: "MATCH_NOT_CURRENT",
+      });
+    }
+  }
+  if (action === DUPLICATE_REVIEW_ACTION.MARKED_NEW) {
+    await assertNoProfileHoldsApplicantEmail(personal?.contactInfo, tenantId);
+  }
+}
+
+async function assertNoProfileHoldsApplicantEmail(contactInfo, tenantId, session = null) {
+  const email = pickPrimaryEmail(contactInfo || {});
+  const nEmail = email ? normalizeEmail(email) : null;
+  if (!nEmail) return;
+  const query = Profile.findOne({ tenantId, normalizedEmail: nEmail }).select("_id membershipNumber");
+  if (session) query.session(session);
+  const existing = await query.lean();
+  if (existing) {
+    throw AppError.conflict(
+      "A profile with this applicant's email already exists. Create New Profile would update that profile; use Tag this Profile or Merge this Profile instead.",
+      { code: "PROFILE_EMAIL_EXISTS", existingProfileId: String(existing._id) },
+    );
+  }
 }
 
 async function ensureDuplicateReviewAllowsApproval(applicationId, tenantId) {
@@ -556,6 +667,12 @@ async function resolveProfileForApproval({
     };
   }
 
+  // P5: "Create New Profile" must create a new profile. Profiles are unique per tenant+email, so if
+  // one already holds the (possibly patched) applicant email, refuse rather than silently updating it.
+  if (status === DUPLICATE_REVIEW_STATUS.MARKED_NEW) {
+    await assertNoProfileHoldsApplicantEmail(effective.contactInfo, tenantId, session);
+  }
+
   const email =
     effective.contactInfo?.personalEmail || effective.contactInfo?.workEmail;
   const normalizedEmail = email ? email.toLowerCase() : null;
@@ -585,6 +702,7 @@ module.exports = {
   ensureDuplicateReviewAllowsApproval,
   resolveProfileForApproval,
   activeMatchesFromSummary,
+  assertNoProfileHoldsApplicantEmail,
   assertApplicationDuplicateReviewMutable,
   isApplicationProcessed,
   isDuplicateReviewBlockingApproval,

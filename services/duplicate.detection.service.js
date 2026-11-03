@@ -21,6 +21,12 @@ const {
 const {
   fetchCurrentSubscriptionByProfileId,
 } = require("./subscription.service.client.js");
+const {
+  REVIEWER_DECISION_STATUSES,
+  matchingInputFingerprint,
+  currentReviewVersion,
+  reviewVersionFilter,
+} = require("./duplicate.review.version.js");
 
 const NON_PROCESSED_STATUSES = [
   APPLICATION_STATUS.IN_PROGRESS,
@@ -410,10 +416,12 @@ async function findDuplicateMatches(applicationId, requestTenantId) {
       matchingProfiles: [],
       matchSummary: [],
       hasPotentialDuplicate: false,
+      inputFingerprint: null,
     };
   }
 
   const source = bundleToRecord(bundle);
+  const inputFingerprint = matchingInputFingerprint(source);
 
   const applicationCandidateIds = new Set([
     ...(await findExactApplicationCandidates(source, applicationId, tenantId)),
@@ -439,7 +447,14 @@ async function findDuplicateMatches(applicationId, requestTenantId) {
     matchingProfiles: profileMatches,
     matchSummary,
     hasPotentialDuplicate: matchSummary.some((m) => !m.ignored && m.score >= 40),
+    inputFingerprint,
   };
+}
+
+/** Fingerprint of the application's current matching-relevant input (null if not found). */
+async function applicationInputFingerprint(applicationId, requestTenantId) {
+  const bundle = await loadApplicationBundle(applicationId, requireTenant(requestTenantId));
+  return bundle ? matchingInputFingerprint(bundleToRecord(bundle)) : null;
 }
 
 async function findProfileDuplicateMatches(sourceProfileId, tenantId) {
@@ -542,33 +557,104 @@ async function detectDuplicates(applicationId, requestTenantId, actorId = null) 
     const isDuplicate = activeMatches.length > 0;
     const topMatch = activeMatches[0] || null;
 
-    const reviewStatus = isDuplicate
+    const detectionSet = {
+      "duplicateDetection.isPotentialDuplicate": isDuplicate,
+      "duplicateDetection.detectedAt": new Date(),
+      "duplicateDetection.matchType": topMatch?.score === 100
+        ? "exact"
+        : topMatch
+          ? "fuzzy_scored"
+          : null,
+      "duplicateDetection.matchedApplicationIds": result.matchingApplications.map(
+        (m) => m.sourceId,
+      ),
+      "duplicateDetection.matchedProfileIds": result.matchingProfiles.map(
+        (m) => m.sourceId,
+      ),
+    };
+
+    // P5: compare-and-set against the review version read here, so a reviewer decision recorded
+    // concurrently is never overwritten, and an explicit decision survives a re-run whose matching
+    // input is unchanged. A changed input invalidates the decision (fresh review, version bumped).
+    let reviewStatus = isDuplicate
       ? DUPLICATE_REVIEW_STATUS.POTENTIAL_MATCH
       : DUPLICATE_REVIEW_STATUS.NO_MATCH;
+    let preservedDecision = false;
+    let invalidatedDecision = false;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const current = await PersonalDetails.findOne({ applicationId, tenantId })
+        .select("applicationStatus duplicateReview.status duplicateReview.reviewVersion duplicateReview.inputFingerprint")
+        .lean();
+      if (!current) break;
+      // A processed application's review is final (managed from the Profile section).
+      if (String(current.applicationStatus || "").toLowerCase() === APPLICATION_STATUS.PROCESSED) {
+        reviewStatus = current.duplicateReview?.status || reviewStatus;
+        break;
+      }
+      const version = currentReviewVersion(current);
+      const currentStatus = current.duplicateReview?.status || DUPLICATE_REVIEW_STATUS.NOT_CHECKED;
+      const storedFingerprint = current.duplicateReview?.inputFingerprint || null;
+      const isDecision = REVIEWER_DECISION_STATUSES.has(currentStatus);
+      // A decision recorded before fingerprints existed is adopted for the current input.
+      const sameInput = !storedFingerprint || storedFingerprint === result.inputFingerprint;
+      const filter = {
+        applicationId,
+        tenantId,
+        applicationStatus: { $ne: APPLICATION_STATUS.PROCESSED },
+        ...reviewVersionFilter(version),
+      };
 
-    await PersonalDetails.updateOne(
-      { applicationId, tenantId },
-      {
-        $set: {
-          "duplicateDetection.isPotentialDuplicate": isDuplicate,
-          "duplicateDetection.detectedAt": new Date(),
-          "duplicateDetection.matchType": topMatch?.score === 100
-            ? "exact"
-            : topMatch
-              ? "fuzzy_scored"
-              : null,
-          "duplicateDetection.matchedApplicationIds": result.matchingApplications.map(
-            (m) => m.sourceId,
-          ),
-          "duplicateDetection.matchedProfileIds": result.matchingProfiles.map(
-            (m) => m.sourceId,
-          ),
+      let update;
+      if (isDecision && sameInput) {
+        preservedDecision = true;
+        invalidatedDecision = false;
+        reviewStatus = currentStatus;
+        update = {
+          $set: {
+            ...detectionSet,
+            "duplicateDetection.isPotentialDuplicate": false,
+            "duplicateReview.detectedAt": new Date(),
+            "duplicateReview.inputFingerprint": result.inputFingerprint,
+          },
+        };
+      } else {
+        preservedDecision = false;
+        invalidatedDecision = isDecision && !sameInput;
+        reviewStatus = isDuplicate
+          ? DUPLICATE_REVIEW_STATUS.POTENTIAL_MATCH
+          : DUPLICATE_REVIEW_STATUS.NO_MATCH;
+        const reviewSet = {
           "duplicateReview.status": reviewStatus,
           "duplicateReview.matchSummary": result.matchSummary,
           "duplicateReview.detectedAt": new Date(),
-        },
-      },
-    );
+          "duplicateReview.inputFingerprint": result.inputFingerprint,
+          "duplicateReview.reviewVersion": version + 1,
+        };
+        if (invalidatedDecision) {
+          Object.assign(reviewSet, {
+            "duplicateReview.matchedProfileId": null,
+            "duplicateReview.matchedApplicationId": null,
+            "duplicateReview.mergeFieldChoices": null,
+            "duplicateReview.invalidatedAt": new Date(),
+          });
+        }
+        update = { $set: { ...detectionSet, ...reviewSet } };
+        if (invalidatedDecision) {
+          update.$push = {
+            "duplicateReview.auditHistory": {
+              action: "INVALIDATED_INPUT_CHANGED",
+              reviewedBy: null,
+              reviewedAt: new Date(),
+              decisionReason: `Matching input changed after ${currentStatus}; a fresh review is required`,
+            },
+          };
+        }
+      }
+
+      const res = await PersonalDetails.updateOne(filter, update);
+      if (res.matchedCount) break;
+      // The review moved under us (a decision or another run): re-read and decide again.
+    }
 
     const updatedPersonal = await PersonalDetails.findOne({ applicationId, tenantId })
       .select("duplicateReview tenantId")
@@ -579,11 +665,17 @@ async function detectDuplicates(applicationId, requestTenantId, actorId = null) 
       applicationId,
       actorId,
       matchSummary: updatedPersonal?.duplicateReview?.matchSummary || result.matchSummary,
-      hasPotentialDuplicate: isDuplicate,
+      hasPotentialDuplicate: isDuplicate && !preservedDecision,
       duplicateReviewStatus: reviewStatus,
     });
 
-    return result;
+    return {
+      ...result,
+      duplicateReviewStatus: reviewStatus,
+      reviewVersion: currentReviewVersion(updatedPersonal),
+      preservedDecision,
+      invalidatedDecision,
+    };
   } catch (error) {
     console.error("❌ [DUPLICATE_DETECTION] Error:", {
       error: error.message,
@@ -638,6 +730,7 @@ module.exports = {
   findExactProfileCandidates,
   findFuzzyProfileCandidates,
   queueDuplicateDetection,
+  applicationInputFingerprint,
   findDuplicateMatches,
   loadApplicationBundle,
   bundleToRecord,

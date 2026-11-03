@@ -76,6 +76,7 @@ const accountClient = require("../services/account.service.client.js");
 const decision = {
   claimPaymentDecision: (...a) => require("../services/applicationPaymentDecision.service.js").claimPaymentDecision(...a),
   releasePaymentDecision: (...a) => require("../services/applicationPaymentDecision.service.js").releasePaymentDecision(...a),
+  endPaymentDecisionLease: (...a) => require("../services/applicationPaymentDecision.service.js").endPaymentDecisionLease(...a),
 };
 const applicationController = require("../controllers/application.controller");
 const profileApproval = require("../controllers/profileApproval.controller");
@@ -239,8 +240,20 @@ describe("decision claim", () => {
   test("approve and reject are mutually exclusive; same action re-uses the claim", async () => {
     const a = await decision.claimPaymentDecision({ applicationId: APP, tenantId: T, action: "approve", actorUserId: ACTOR });
     expect(a.reused).toBe(false);
+    // P5 lease: a second run of the same action while the first still holds the lease is refused
+    // (it must not share - and possibly release - a claim another request is acting on) ...
+    await expect(
+      decision.claimPaymentDecision({ applicationId: APP, tenantId: T, action: "approve", actorUserId: ACTOR }),
+    ).rejects.toMatchObject({ status: 409, code: "DECISION_IN_PROGRESS" });
+    // ... and once that run's lease has ended (money moved, claim kept) the same action re-uses it.
+    await decision.endPaymentDecisionLease({ applicationId: APP, tenantId: T, claimId: a.claimId, leaseId: a.leaseId });
     const again = await decision.claimPaymentDecision({ applicationId: APP, tenantId: T, action: "approve", actorUserId: ACTOR });
-    expect(again).toEqual({ claimId: a.claimId, reused: true });
+    expect(again).toMatchObject({ claimId: a.claimId, reused: true });
+    expect(again.leaseId).not.toBe(a.leaseId);
+    // An expired lease (crashed run) is taken over the same way.
+    PersonalDetails.store.find((p) => p.applicationId === APP).paymentDecision.leaseUntil = new Date(Date.now() - 1);
+    const takeover = await decision.claimPaymentDecision({ applicationId: APP, tenantId: T, action: "approve", actorUserId: ACTOR });
+    expect(takeover).toMatchObject({ claimId: a.claimId, reused: true });
     await expect(
       decision.claimPaymentDecision({ applicationId: APP, tenantId: T, action: "reject", actorUserId: ACTOR }),
     ).rejects.toMatchObject({ status: 409, code: "PAYMENT_DECISION_CONFLICT" });

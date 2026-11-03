@@ -117,6 +117,11 @@ const ProfileSchema = new mongoose.Schema(
       actorUserId: String,
       claimedAt: Date,
       completedAt: Date,
+      // P5: duplicate-review version the approve decision was made against.
+      reviewVersion: Number,
+      // P5: execution lease of the run currently acting on the claim.
+      leaseId: String,
+      leaseUntil: Date,
     },
     profileId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -167,6 +172,12 @@ const ProfileSchema = new mongoose.Schema(
         index: true,
       },
       detectedAt: Date,
+      // P5: bumped on every review-state change; decisions/approvals are bound to it
+      // (services/duplicate.review.version.js).
+      reviewVersion: { type: Number, default: 0 },
+      // P5: hash of the matching-relevant applicant input the current review was made against.
+      inputFingerprint: { type: String, default: null },
+      invalidatedAt: { type: Date, default: null },
       matchedProfileId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Profile",

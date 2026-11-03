@@ -8,6 +8,9 @@ const {
 } = require("../services/duplicate.merge.service.js");
 const { DUPLICATE_REVIEW_ACTION } = require("../constants/enums.js");
 const { AppError } = require("../errors/AppError.js");
+const PersonalDetails = require("../models/personal.details.model.js");
+const reviewIdempotency = require("../services/reviewDecisionIdempotency.js");
+const { currentReviewVersion } = require("../services/duplicate.review.version.js");
 
 async function detectDuplicatesForApplication(req, res, next) {
   try {
@@ -51,11 +54,12 @@ async function getDuplicateMatches(req, res, next) {
 }
 
 async function submitDuplicateReviewDecision(req, res, next) {
+  let opKey = null;
   try {
     const { applicationId } = req.params;
     const tenantId = req.tenantId;
     const reviewerId = req.user?.id || req.userId;
-    const { action, sourceType, sourceId, decisionReason, mergeFieldChoices } =
+    const { action, sourceType, sourceId, decisionReason, mergeFieldChoices, expectedReviewVersion } =
       req.body;
 
     if (!tenantId) {
@@ -75,6 +79,44 @@ async function submitDuplicateReviewDecision(req, res, next) {
       );
     }
 
+    // P5: explicit operation idempotency (services/reviewDecisionIdempotency.js).
+    const clientKey = String(req.get?.("Idempotency-Key") || req.headers?.["idempotency-key"] || "").trim();
+    const hash = reviewIdempotency.payloadHash(req.body);
+    if (clientKey) {
+      if (clientKey.length > 200) return next(AppError.badRequest("Idempotency-Key is too long"));
+      const key = reviewIdempotency.operationKey({
+        tenantId: String(tenantId),
+        reviewerId: String(reviewerId),
+        applicationId,
+        key: clientKey,
+      });
+      const started = reviewIdempotency.begin(key, hash);
+      if (started.kind === "reused") {
+        return next(
+          new AppError("Idempotency-Key was used with a different decision", 422, "IDEMPOTENCY_KEY_REUSED"),
+        );
+      }
+      if (started.kind === "in_flight") {
+        return next(AppError.conflict("This decision is still being processed", { code: "IDEMPOTENCY_IN_FLIGHT" }));
+      }
+      if (started.kind === "replay") {
+        const current = await PersonalDetails.findOne({ applicationId, tenantId: String(tenantId) })
+          .select("duplicateReview.reviewVersion")
+          .lean();
+        const nowVersion = currentReviewVersion(current);
+        if (nowVersion !== started.entry.resultVersion) {
+          return next(
+            AppError.conflict(
+              "The duplicate review changed after this decision was recorded. Refresh and review again.",
+              { code: "REVIEW_VERSION_CONFLICT", reviewVersion: nowVersion },
+            ),
+          );
+        }
+        return res.success({ ...started.entry.response, replayed: true });
+      }
+      opKey = key;
+    }
+
     const result = await recordDuplicateDecision({
       applicationId,
       tenantId,
@@ -84,13 +126,17 @@ async function submitDuplicateReviewDecision(req, res, next) {
       sourceId,
       decisionReason,
       mergeFieldChoices,
+      expectedReviewVersion,
     });
 
-    return res.success({
-      applicationId,
-      ...result,
-    });
+    const response = { applicationId, ...result };
+    if (opKey) {
+      reviewIdempotency.complete(opKey, hash, JSON.parse(JSON.stringify(response)), result.reviewVersion);
+      opKey = null;
+    }
+    return res.success(response);
   } catch (error) {
+    if (opKey) reviewIdempotency.abandon(opKey);
     return next(error);
   }
 }

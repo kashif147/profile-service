@@ -64,6 +64,7 @@ const {
 const {
   claimPaymentDecision,
   releasePaymentDecision,
+  endPaymentDecisionLease,
 } = require("../services/applicationPaymentDecision.service.js");
 const {
   assertSalaryDeductionAllowedForWorkLocation,
@@ -647,8 +648,11 @@ async function bulkApproveApplications(req, res, next) {
         continue;
       }
       const releaseIfNothingCaptured = async () => {
+        const ids = { applicationId, tenantId, claimId: decisionClaim.claimId, leaseId: decisionClaim.leaseId };
         if (!paymentState.captured) {
-          await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim.claimId });
+          await releasePaymentDecision(ids);
+        } else {
+          await endPaymentDecisionLease(ids);
         }
       };
       try {
