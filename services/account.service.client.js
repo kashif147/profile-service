@@ -5,6 +5,7 @@
 
 const axios = require("axios");
 const { AppError } = require("../errors/AppError");
+const { signatureHeaders } = require("./accountCommandSigning");
 
 const ACCOUNT_SERVICE_URL =
   process.env.ACCOUNT_SERVICE_URL ||
@@ -255,13 +256,19 @@ async function callBoundPaymentIntentAction({ intentId, action, tenantId, req, c
   };
 
   const base = process.env.ACCOUNT_SERVICE_URL.replace(/\/$/, "");
+  const url = `${base}/api/payments/intents/${encodeURIComponent(intentId)}/${action}`;
+  // P5 S3: sign the exact bytes that go on the wire (transformRequest sends `raw` unchanged) when
+  // this service's own signing credential is configured; a retry signs again with a fresh nonce.
+  const raw = JSON.stringify(body);
+  Object.assign(headers, signatureHeaders({ method: "POST", url, tenant: headers["x-tenant-id"], idem: headers["Idempotency-Key"], raw }));
   let response;
   try {
-    response = await axios.post(
-      `${base}/api/payments/intents/${encodeURIComponent(intentId)}/${action}`,
-      body,
-      { headers, timeout: 30000, validateStatus: (status) => status < 500 },
-    );
+    response = await axios.post(url, body, {
+      headers,
+      timeout: 30000,
+      validateStatus: (status) => status < 500,
+      transformRequest: [() => raw],
+    });
   } catch (err) {
     // Network failure / 5xx: account state is unknown - the caller must not record a decision.
     throw commandError(`Payment ${action} unavailable. Nothing was recorded; retry the action.`, 503, "ACCOUNT_UNAVAILABLE");
