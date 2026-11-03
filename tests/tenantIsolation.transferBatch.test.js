@@ -10,6 +10,8 @@ const fs = require("fs");
 process.env.LOG_ROOT =
   process.env.LOG_ROOT || fs.mkdtempSync(path.join(os.tmpdir(), "ps-transfer-"));
 process.env.NODE_ENV = process.env.NODE_ENV || "test";
+// Batch/corn-market subscription lookups have no fallback host (P5): configure the internal URL.
+process.env.SUBSCRIPTION_SERVICE_URL = "http://subscription-service.test";
 
 jest.mock("uuid", () => ({ v4: () => "00000000-0000-4000-8000-000000000000" }));
 const mm = () => require("./helpers/memoryModel");

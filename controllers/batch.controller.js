@@ -2,7 +2,10 @@ const Batch = require("../models/batch.model.js");
 const Profile = require("../models/profile.model.js");
 const User = require("../models/user.model.js");
 const { AppError } = require("../errors/AppError");
-const axios = require("axios");
+const {
+  fetchSubscriptionStartDates,
+  subscriptionServiceBase,
+} = require("../services/subscriptionStartDate.client.js");
 const {
   publishProfileAudit,
   cloneForAudit,
@@ -28,54 +31,6 @@ function requireCrmTenant(req, next) {
     return null;
   }
   return tenantId;
-}
-
-/**
- * Helper function to fetch subscription startDate for profiles
- */
-async function fetchSubscriptionStartDates(profileIds, authHeader, tenantId) {
-  const subscriptionStartMap = new Map();
-  if (profileIds.length === 0) return subscriptionStartMap;
-
-  const subscriptionServiceUrl =
-    process.env.SUBSCRIPTION_SERVICE_URL ||
-    "https://subscriptionserviceshell-ambyf5dsa8c9dhcg.northeurope-01.azurewebsites.net";
-
-  const subscriptionPromises = profileIds.map(async (profileId) => {
-    try {
-      const response = await axios.get(
-        `${subscriptionServiceUrl}/api/v1/subscriptions/profile/${profileId}/current`,
-        {
-          timeout: 10000,
-          validateStatus: (status) => status < 500,
-          headers: {
-            Authorization: authHeader || "",
-            "x-internal-request": "true",
-            "x-tenant-id": tenantId || "",
-          },
-        }
-      );
-
-      if (response.status === 200 && response.data?.data?.startDate) {
-        return {
-          profileId: profileId.toString(),
-          startDate: response.data.data.startDate,
-        };
-      }
-      return null;
-    } catch (error) {
-      console.warn(
-        `Failed to fetch subscription for profile ${profileId}:`,
-        error.message
-      );
-      return null;
-    }
-  });
-
-  const subscriptionResults = await Promise.all(subscriptionPromises);
-  return new Map(
-    subscriptionResults.filter(Boolean).map((s) => [s.profileId, s.startDate])
-  );
 }
 
 /**
@@ -162,6 +117,8 @@ async function createBatch(req, res, next) {
   try {
     const tenantId = requireCrmTenant(req, next);
     if (!tenantId) return;
+    // Fail closed before any write if the subscription lookup is not configured (no fallback host).
+    subscriptionServiceBase();
 
     const { name, type, date } = req.body;
     const userId = req.user?.id || req.user?.sub || req.userId;
@@ -221,8 +178,7 @@ async function createBatch(req, res, next) {
       const profileIdStrings = profileIds.map((id) => id.toString());
       const subscriptionStartMap = await fetchSubscriptionStartDates(
         profileIdStrings,
-        req.headers.authorization,
-        req.tenantId
+        tenantId
       );
 
       // Create profile snapshots (all fields stored in batch)
@@ -285,6 +241,7 @@ async function createBatch(req, res, next) {
       },
     });
   } catch (error) {
+    if (error instanceof AppError) return next(error);
     console.error("Error creating batch:", error);
     return next(
       AppError.internalServerError("Failed to create batch")
@@ -574,6 +531,8 @@ async function refreshBatch(req, res, next) {
   try {
     const tenantId = requireCrmTenant(req, next);
     if (!tenantId) return;
+    // Fail closed before any write if the subscription lookup is not configured (no fallback host).
+    subscriptionServiceBase();
 
     const { batchId } = req.params;
 
@@ -640,8 +599,7 @@ async function refreshBatch(req, res, next) {
       const profileIdStrings = profileIds.map((id) => id.toString());
       const subscriptionStartMap = await fetchSubscriptionStartDates(
         profileIdStrings,
-        req.headers.authorization,
-        req.tenantId
+        tenantId
       );
 
       // Create new profile snapshots
@@ -689,6 +647,7 @@ async function refreshBatch(req, res, next) {
       profileCount: profileIds.length,
     });
   } catch (error) {
+    if (error instanceof AppError) return next(error);
     console.error("Error refreshing batch:", error);
     return next(
       AppError.internalServerError("Failed to refresh batch")
