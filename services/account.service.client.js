@@ -4,6 +4,7 @@
  */
 
 const axios = require("axios");
+const { AppError } = require("../errors/AppError");
 
 const ACCOUNT_SERVICE_URL =
   process.env.ACCOUNT_SERVICE_URL ||
@@ -152,15 +153,146 @@ function normalizePaymentStatus(status) {
   return status || null;
 }
 
+/**
+ * P5 bound payment commands (S2). `ACCOUNT_PAYMENT_COMMAND_MODE=bound` switches application
+ * capture/cancel to the bound internal command (b5 payment-mutation contract section 3):
+ * internal-only headers (no authorization / x-jwt-verified / x-auth-source / x-user-*), a body that
+ * names the business object and transition, actorUserId as audit metadata only, and a
+ * deterministic Idempotency-Key. Default `legacy` sends exactly today's request, so this service
+ * can deploy before account-service understands the command (contract 8.3: account S1 first,
+ * then flip the mode).
+ */
+const TENANT_ID_RE = /^[a-f0-9]{24}$/i;
+
+/**
+ * Canonical Idempotency-Key (contracts/p5-bound-payment-commands.v1.json):
+ * <domain>:<transition>:<objectId>:<paymentRef>; for application capture/cancel the paymentRef
+ * is the PaymentIntent id in the route, so the key never depends on a payment lookup.
+ */
+function boundIdempotencyKey(action, applicationId, paymentIntentId) {
+  return ["application", action, applicationId, paymentIntentId].join(":");
+}
+
+function paymentCommandMode() {
+  return String(process.env.ACCOUNT_PAYMENT_COMMAND_MODE || "legacy").trim().toLowerCase() === "bound"
+    ? "bound"
+    : "legacy";
+}
+
+function commandError(message, status, code) {
+  const error = new AppError(message, status, code);
+  error.statusCode = status;
+  return error;
+}
+
+/** The bound command must stay inside the service network: a gateway URL strips x-internal-request. */
+function assertInternalAccountUrl() {
+  const raw = process.env.ACCOUNT_SERVICE_URL;
+  let host = null;
+  try {
+    const u = new URL(raw);
+    if (u.protocol === "http:" || u.protocol === "https:") host = u.hostname;
+  } catch {
+    host = null;
+  }
+  const internal = host && (!host.includes(".") || host === "127.0.0.1");
+  if (!internal) {
+    throw commandError(
+      "Account service is not configured for internal payment commands.",
+      503,
+      "ACCOUNT_INTERNAL_URL_REQUIRED",
+    );
+  }
+}
+
+function buildInternalCommandHeaders(tenantId, req) {
+  const tenant = tenantId ? String(tenantId) : "";
+  if (!TENANT_ID_RE.test(tenant)) {
+    throw commandError("A verified tenant is required for a payment command.", 400, "TENANT_REQUIRED");
+  }
+  const headers = {
+    "Content-Type": "application/json",
+    "x-internal-request": "true",
+    "x-tenant-id": tenant,
+  };
+  const correlationId = req?.correlationId || req?.headers?.["x-correlation-id"];
+  if (correlationId) headers["x-correlation-id"] = String(correlationId);
+  return headers;
+}
+
+/** Bound-mode response -> the `status` shape the call sites already read. */
+function normalizeCommandResult(action, data) {
+  const out = { ...(data || {}) };
+  if (!out.status) {
+    if (action === "capture" && (out.captured || out.alreadyCaptured)) out.status = "succeeded";
+    if (action === "cancel" && (out.canceled || out.alreadyCanceled)) out.status = "canceled";
+  }
+  return out;
+}
+
+const APPLICATION_REASONS = { capture: "approve", cancel: "reject" };
+
+async function callBoundPaymentIntentAction({ intentId, action, tenantId, req, command }) {
+  const applicationId = command?.applicationId ? String(command.applicationId) : "";
+  const actorUserId = command?.actorUserId ? String(command.actorUserId) : "";
+  if (!applicationId) throw commandError("applicationId is required for a payment command.", 400, "PAYMENT_BINDING_REQUIRED");
+  if (!actorUserId) throw commandError("A verified actor is required for a payment command.", 400, "ACTOR_REQUIRED");
+  assertInternalAccountUrl();
+  const headers = buildInternalCommandHeaders(tenantId, req);
+  const paymentId = command?.paymentId ? String(command.paymentId) : null;
+  headers["Idempotency-Key"] = boundIdempotencyKey(action, applicationId, intentId);
+
+  const body = {
+    binding: {
+      domain: "application",
+      applicationId,
+      purpose: "applicationFee",
+      ...(paymentId ? { paymentId } : {}),
+    },
+    transition: action,
+    reason: APPLICATION_REASONS[action],
+    actorUserId,
+  };
+
+  const base = process.env.ACCOUNT_SERVICE_URL.replace(/\/$/, "");
+  let response;
+  try {
+    response = await axios.post(
+      `${base}/api/payments/intents/${encodeURIComponent(intentId)}/${action}`,
+      body,
+      { headers, timeout: 30000, validateStatus: (status) => status < 500 },
+    );
+  } catch (err) {
+    // Network failure / 5xx: account state is unknown - the caller must not record a decision.
+    throw commandError(`Payment ${action} unavailable. Nothing was recorded; retry the action.`, 503, "ACCOUNT_UNAVAILABLE");
+  }
+  if (response.status >= 400) {
+    const message =
+      response.data?.error?.message || response.data?.message || `Payment ${action} failed (${response.status})`;
+    const code = response.data?.error?.code || response.data?.code || "PAYMENT_COMMAND_REFUSED";
+    const error = commandError(message, response.status === 404 ? 404 : 409, code);
+    error.responseData = response.data;
+    throw error;
+  }
+  const data = normalizeCommandResult(action, response.data?.data || response.data || {});
+  if (data.status) data.displayStatus = normalizePaymentStatus(data.status);
+  return data;
+}
+
 async function callPaymentIntentAction({
   paymentIntentId,
   action,
   tenantId,
   req = null,
+  command = null,
 }) {
   const intentId = String(paymentIntentId || "").trim();
   if (!intentId) {
     throw new Error("PaymentIntent ID is required");
+  }
+
+  if (paymentCommandMode() === "bound") {
+    return callBoundPaymentIntentAction({ intentId, action, tenantId, req, command });
   }
 
   const base = ACCOUNT_SERVICE_URL.replace(/\/$/, "");
@@ -235,21 +367,27 @@ async function fetchLatestApplicationPayment(applicationId, tenantId, req = null
   return response.data?.data || response.data || null;
 }
 
-async function capturePaymentIntent(paymentIntentId, tenantId, req = null) {
+/**
+ * `command` = { applicationId, actorUserId, paymentId? } - the business object being decided.
+ * Ignored in legacy mode; required in bound mode.
+ */
+async function capturePaymentIntent(paymentIntentId, tenantId, req = null, command = null) {
   return callPaymentIntentAction({
     paymentIntentId,
     action: "capture",
     tenantId,
     req,
+    command,
   });
 }
 
-async function cancelPaymentIntent(paymentIntentId, tenantId, req = null) {
+async function cancelPaymentIntent(paymentIntentId, tenantId, req = null, command = null) {
   return callPaymentIntentAction({
     paymentIntentId,
     action: "cancel",
     tenantId,
     req,
+    command,
   });
 }
 
@@ -262,5 +400,7 @@ module.exports = {
   capturePaymentIntent,
   cancelPaymentIntent,
   normalizePaymentStatus,
+  paymentCommandMode,
+  boundIdempotencyKey,
   ACCOUNT_SERVICE_URL,
 };

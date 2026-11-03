@@ -45,6 +45,16 @@ const {
   normalizePaymentStatus,
 } = require("../services/account.service.client.js");
 const {
+  claimPaymentDecision,
+  releasePaymentDecision,
+} = require("../services/applicationPaymentDecision.service.js");
+
+// Account Payment document id from the latest-payment lookup (shape differs by account version).
+function paymentIdOf(latestPayment) {
+  const id = latestPayment?.paymentId || latestPayment?.id || latestPayment?._id || null;
+  return id ? String(id) : null;
+}
+const {
   assertSalaryDeductionAllowedForWorkLocation,
 } = require("../helpers/workLocationPayment.helper.js");
 const {
@@ -240,6 +250,20 @@ async function approveApplication(req, res, next) {
     console.log("[approveApplication] reviewerId (approver user ID):", reviewerId, "userType:", req.user?.userType);
   }
 
+  // Committed approve decision BEFORE any capture (P5 bound payment commands): a concurrent reject
+  // gets 409 and can never release the hold this approval is capturing.
+  let decisionClaim;
+  try {
+    decisionClaim = await claimPaymentDecision({
+      applicationId,
+      tenantId,
+      action: "approve",
+      actorUserId: reviewerId,
+    });
+  } catch (claimError) {
+    return next(claimError);
+  }
+
   let captureResult = null;
   let capturedPaymentIntentId = null;
   let capturedLatestPayment = null;
@@ -367,10 +391,13 @@ async function approveApplication(req, res, next) {
             paymentIntentId,
             tenantId,
             req,
+            { applicationId, actorUserId: reviewerId, paymentId: paymentIdOf(latestPayment) },
           );
           capturedPaymentIntentId = paymentIntentId;
           capturedLatestPayment = latestPayment;
         } catch (captureError) {
+          // Bound-command errors already carry the right status (400/404/409/503).
+          if (captureError instanceof AppError) throw captureError;
           throw AppError.conflict(
             captureError.message ||
               "Payment capture failed. Application was not approved.",
@@ -438,6 +465,7 @@ async function approveApplication(req, res, next) {
         "meta.isActive": true,
         "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
         "approvalDetails.approvedAt": new Date(),
+        "paymentDecision.completedAt": new Date(),
       };
       if (linkedUserId) {
         const linkedUserObjectId = toObjectIdOrNull(linkedUserId);
@@ -573,6 +601,11 @@ async function approveApplication(req, res, next) {
         tenantId,
         attempt,
       });
+      // Nothing was captured: drop the claim so the application can be decided again. Once a
+      // capture succeeded the claim stays (re-running approve is the recovery; reject stays blocked).
+      if (!captureResult) {
+        await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
+      }
       return next(e);
     } finally {
       session.endSession();
@@ -608,6 +641,20 @@ async function rejectApplication(req, res, next) {
     return next(AppError.notFound("Application not found"));
   }
 
+  // Committed reject decision BEFORE any cancel (P5 bound payment commands).
+  let decisionClaim;
+  try {
+    decisionClaim = await claimPaymentDecision({
+      applicationId,
+      tenantId,
+      action: "reject",
+      actorUserId: reviewerId,
+    });
+  } catch (claimError) {
+    return next(claimError);
+  }
+
+  let cancelResult = null;
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
@@ -623,13 +670,17 @@ async function rejectApplication(req, res, next) {
       req,
       fallbackSubscription: existingSubscription,
     });
-    let cancelResult = null;
-
     if (paymentIntentId) {
       try {
-        cancelResult = await cancelPaymentIntent(paymentIntentId, tenantId, req);
+        cancelResult = await cancelPaymentIntent(paymentIntentId, tenantId, req, {
+          applicationId,
+          actorUserId: reviewerId,
+          paymentId: paymentIdOf(latestPayment),
+        });
       } catch (cancelError) {
         await session.abortTransaction();
+        await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
+        if (cancelError instanceof AppError) return next(cancelError);
         return next(
           AppError.conflict(
             cancelError.message ||
@@ -648,10 +699,12 @@ async function rejectApplication(req, res, next) {
       }).session(session);
       if (!overlay) {
         await session.abortTransaction();
+        if (!cancelResult) await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
         return next(AppError.notFound("Overlay not found"));
       }
       if (overlay.overlayVersion !== overlayVersion) {
         await session.abortTransaction();
+        if (!cancelResult) await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
         return next(AppError.conflict("Overlay version conflict"));
       }
       overlay.status = "decided";
@@ -694,6 +747,7 @@ async function rejectApplication(req, res, next) {
           "approvalDetails.approvedAt": new Date(),
           "approvalDetails.rejectionReason": reason,
           "approvalDetails.comments": notes ?? null,
+          "paymentDecision.completedAt": new Date(),
         },
       },
       { session }
@@ -754,6 +808,8 @@ async function rejectApplication(req, res, next) {
     });
   } catch (e) {
     await session.abortTransaction();
+    // A released hold keeps the claim (approve must stay blocked); otherwise free it.
+    if (!cancelResult) await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
     next(e);
   } finally {
     session.endSession();

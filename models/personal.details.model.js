@@ -107,6 +107,17 @@ const ProfileSchema = new mongoose.Schema(
       processedAt: Date,
       comments: String,
     },
+    // P5 bound payment commands: the committed approve/reject decision claim, written (atomically,
+    // outside the approval transaction) BEFORE account-service is asked to capture/cancel, so the
+    // payment action is always backed by persisted business state and approve/reject can never both
+    // move money for one application. See services/applicationPaymentDecision.service.js.
+    paymentDecision: {
+      action: { type: String, enum: ["approve", "reject"] },
+      claimId: String,
+      actorUserId: String,
+      claimedAt: Date,
+      completedAt: Date,
+    },
     profileId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Profile",

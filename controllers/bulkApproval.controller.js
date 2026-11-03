@@ -62,6 +62,10 @@ const {
   capturePaymentIntent,
 } = require("../services/account.service.client.js");
 const {
+  claimPaymentDecision,
+  releasePaymentDecision,
+} = require("../services/applicationPaymentDecision.service.js");
+const {
   assertSalaryDeductionAllowedForWorkLocation,
 } = require("../helpers/workLocationPayment.helper.js");
 const {
@@ -186,6 +190,7 @@ async function approveSingleApplication({
   req,
   session,
   bulkDateJoined = null, // Optional dateJoined from bulk approval request
+  paymentState = {}, // set .captured once account-service captured this application's payment
 }) {
   try {
     // First check if application exists in database
@@ -312,7 +317,13 @@ async function approveSingleApplication({
     });
     let captureResult = null;
     if (paymentIntentId) {
-      captureResult = await capturePaymentIntent(paymentIntentId, tenantId, req);
+      const latestPaymentId = latestPayment?.paymentId || latestPayment?.id || latestPayment?._id || null;
+      captureResult = await capturePaymentIntent(paymentIntentId, tenantId, req, {
+        applicationId,
+        actorUserId: reviewerId,
+        paymentId: latestPaymentId ? String(latestPaymentId) : null,
+      });
+      if (captureResult.status === "succeeded") paymentState.captured = true;
       if (captureResult.status !== "succeeded") {
         throw new Error(
           "Payment capture did not succeed. Application was not processed.",
@@ -470,6 +481,7 @@ async function approveSingleApplication({
         "meta.isActive": true,
         "approvalDetails.approvedBy": getReviewerIdForDb(reviewerId),
         "approvalDetails.approvedAt": new Date(),
+        "paymentDecision.completedAt": new Date(),
       };
       if (linkedUserDocumentId) {
         personalSet.userId = linkedUserDocumentId;
@@ -615,6 +627,30 @@ async function bulkApproveApplications(req, res, next) {
     // Process each application independently
     // Each application gets its own transaction to ensure one failure doesn't affect others
     for (const applicationId of applicationIds) {
+      // Committed approve decision per row BEFORE any capture (P5 bound payment commands).
+      let decisionClaim = null;
+      const paymentState = { captured: false };
+      try {
+        decisionClaim = await claimPaymentDecision({
+          applicationId,
+          tenantId,
+          action: "approve",
+          actorUserId: reviewerId,
+        });
+      } catch (claimError) {
+        results.push({
+          applicationId,
+          status: "failed",
+          success: false,
+          error: claimError.message,
+        });
+        continue;
+      }
+      const releaseIfNothingCaptured = async () => {
+        if (!paymentState.captured) {
+          await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim.claimId });
+        }
+      };
       try {
         // Start a new session for each application to ensure isolation
         const appSession = await mongoose.startSession();
@@ -628,9 +664,11 @@ async function bulkApproveApplications(req, res, next) {
             req,
             session: appSession,
             bulkDateJoined, // Pass bulkDateJoined to use for all subscriptions
+            paymentState,
           });
 
           await appSession.commitTransaction();
+          if (!result.success) await releaseIfNothingCaptured();
           if (result.postApprovalPayload) {
             await publishPostApprovalEvents(result.postApprovalPayload);
           }
@@ -642,6 +680,7 @@ async function bulkApproveApplications(req, res, next) {
           });
         } catch (error) {
           await appSession.abortTransaction();
+          await releaseIfNothingCaptured();
           results.push({
             applicationId,
             status: "failed",
@@ -652,6 +691,7 @@ async function bulkApproveApplications(req, res, next) {
           appSession.endSession();
         }
       } catch (error) {
+        await releaseIfNothingCaptured();
         results.push({
           applicationId,
           status: "failed",
