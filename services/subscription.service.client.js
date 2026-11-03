@@ -5,32 +5,42 @@
 
 const axios = require("axios");
 
-const SUBSCRIPTION_SERVICE_URL =
-  process.env.SUBSCRIPTION_SERVICE_URL ||
-  "http://projectshell-vm.northeurope.cloudapp.azure.com/subscription-service";
+// No hard-coded fallback host: an unset SUBSCRIPTION_SERVICE_URL must never send the internal header
+// and the trusted tenant to a public address. Missing configuration fails closed (503) before any request.
+const SUBSCRIPTION_SERVICE_URL = (process.env.SUBSCRIPTION_SERVICE_URL || "").trim();
+
+function subscriptionServiceBase() {
+  const configured = (process.env.SUBSCRIPTION_SERVICE_URL || "").trim();
+  if (!configured) {
+    const err = new Error("SUBSCRIPTION_SERVICE_URL is not configured");
+    err.status = 503;
+    err.statusCode = 503;
+    err.code = "SUBSCRIPTION_SERVICE_URL_REQUIRED";
+    throw err;
+  }
+  return configured.replace(/\/$/, "");
+}
 
 /**
- * Build headers for subscription-service request (internal call).
- * @param {Object} req - Express request (optional)
- * @param {string} tenantId - Tenant ID
+ * Headers for a subscription-service call: a genuine internal call (x-internal-request + the
+ * trusted tenant) and NEVER the caller's identity.
+ *
+ * P5 (subscription #30 prerequisite): every caller of this client has already authorized the
+ * business action in profile-service (route-level requireCrm / crmOrOwnProfile* / portal own-profile
+ * resolution, or an internal path) and passes a profileId it resolved server-side. Forwarding the
+ * user's Authorization / x-user-* alongside x-internal-request made subscription-service treat a
+ * user request as internal; once internal stops accepting a forwarded identity, such a mixed
+ * request would be evaluated as the user instead (non-ASU CRM is denied subscriptions:read by the
+ * PDP category rule; /internal/profile-merge refuses users), breaking enrichment and merges.
+ * @param {string} tenantId - Trusted tenant ID
  * @returns {Object} Headers
  */
-function buildHeaders(req, tenantId) {
-  const headers = {
+function buildHeaders(tenantId) {
+  return {
     "Content-Type": "application/json",
     "x-internal-request": "true",
-    "x-tenant-id": tenantId || "",
+    "x-tenant-id": tenantId,
   };
-  if (req?.headers?.authorization) {
-    headers.authorization = req.headers.authorization;
-  }
-  if (req?.headers?.["x-user-id"]) {
-    headers["x-user-id"] = req.headers["x-user-id"];
-  }
-  if (req?.headers?.["x-user-email"]) {
-    headers["x-user-email"] = req.headers["x-user-email"];
-  }
-  return headers;
 }
 
 /**
@@ -51,7 +61,7 @@ function parseSubscriptionsFromResponse(body) {
  * When currentSubscriptionId is provided, picks that subscription by _id; otherwise picks isCurrent or most recent.
  * @param {string} profileId - Profile ID (MongoDB ObjectId string)
  * @param {string} tenantId - Tenant ID
- * @param {Object} req - Express request (for auth/headers)
+ * @param {Object} req - Unused (kept for call compatibility; the caller identity is never forwarded)
  * @param {string|null} [currentSubscriptionId] - Optional subscription _id from Profile.currentSubscriptionId
  * @returns {Promise<Object|null>} Current subscription or null
  */
@@ -68,12 +78,12 @@ async function fetchCurrentSubscriptionByProfileId(
   const trustedTenant = tenantId == null ? "" : String(tenantId).trim();
   if (!trustedTenant) return null;
 
-  const base = SUBSCRIPTION_SERVICE_URL.replace(/\/$/, "");
+  const base = subscriptionServiceBase();
   const url = `${base}/api/v1/subscriptions/profile/${profileId}`;
 
   try {
     const response = await axios.get(url, {
-      headers: buildHeaders(req, trustedTenant),
+      headers: buildHeaders(trustedTenant),
       timeout: 8000,
       validateStatus: (status) => status < 500,
     });
@@ -188,7 +198,11 @@ async function reassignSubscriptionsForProfileMerge({
   absorbedMembershipNumber = null,
   req = null,
 }) {
-  const base = SUBSCRIPTION_SERVICE_URL.replace(/\/$/, "");
+  // Internal-only route: never call it without the trusted tenant.
+  const trustedTenant = tenantId == null ? "" : String(tenantId).trim();
+  if (!trustedTenant) throw new Error("Subscription merge requires a trusted tenant");
+
+  const base = subscriptionServiceBase();
   const url = `${base}/api/v1/subscriptions/internal/profile-merge`;
 
   const response = await axios.post(
@@ -200,7 +214,7 @@ async function reassignSubscriptionsForProfileMerge({
       absorbedMembershipNumber,
     },
     {
-      headers: buildHeaders(req, tenantId || ""),
+      headers: buildHeaders(trustedTenant),
       timeout: 30000,
       validateStatus: (status) => status < 500,
     },
@@ -218,8 +232,10 @@ async function reassignSubscriptionsForProfileMerge({
 }
 
 module.exports = {
+  buildHeaders,
   fetchCurrentSubscriptionByProfileId,
   mergeSubscriptionServiceData,
   reassignSubscriptionsForProfileMerge,
   SUBSCRIPTION_SERVICE_URL,
+  subscriptionServiceBase,
 };
