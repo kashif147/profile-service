@@ -336,8 +336,9 @@ async function enrichWithSubscriptionService(result, req) {
   const { profileId, currentSubscriptionId } = await resolveProfileId(req, result);
   if (!profileId || !currentSubscriptionId) return;
 
-  const tenantId =
-    result.personalDetails?.tenantId ?? req.tenantId;
+  // The subscription lookup is an internal call scoped by this tenant, so it must be the caller's
+  // verified tenant - never one read back from a stored document.
+  const tenantId = req.tenantId;
   const sub = await fetchCurrentSubscriptionByProfileId(
     profileId,
     tenantId,
