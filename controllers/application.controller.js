@@ -27,6 +27,10 @@ const {
   normalizePaymentStatus,
 } = require("../services/account.service.client.js");
 const {
+  claimPaymentDecision,
+  releasePaymentDecision,
+} = require("../services/applicationPaymentDecision.service.js");
+const {
   resolvePortalUserServiceId,
 } = require("../helpers/portalUserIdentity.js");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
@@ -508,6 +512,11 @@ exports.getApplicationById = async (req, res, next) => {
 };
 
 exports.approveApplication = async (req, res, next) => {
+  // P5 bound payment commands: committed decision claim before capture/cancel (legacy route too).
+  let decisionClaim = null;
+  let paymentMoved = false;
+  let claimedApplicationId = null;
+  let claimedTenantId = null;
   try {
     // Check if user is CRM
     const { userType, creatorId, tenantId } = extractUserAndCreatorContext(req);
@@ -554,13 +563,39 @@ exports.approveApplication = async (req, res, next) => {
       latestPayment?.paymentIntentId || resolvePaymentIntentId(existingSubscription);
     let paymentActionResult = null;
 
+    const claimAction =
+      decision === APPLICATION_STATUS.PROCESSED
+        ? "approve"
+        : decision === APPLICATION_STATUS.REJECTED
+          ? "reject"
+          : null;
+    if (claimAction) {
+      decisionClaim = await claimPaymentDecision({
+        applicationId,
+        tenantId,
+        action: claimAction,
+        actorUserId: creatorId,
+      });
+      claimedApplicationId = applicationId;
+      claimedTenantId = String(tenantId);
+    }
+    const latestPaymentId = latestPayment?.paymentId || latestPayment?.id || latestPayment?._id || null;
+    const paymentCommand = {
+      applicationId,
+      actorUserId: creatorId,
+      paymentId: latestPaymentId ? String(latestPaymentId) : null,
+    };
+
     if (paymentIntentId && decision === APPLICATION_STATUS.PROCESSED) {
       paymentActionResult = await capturePaymentIntent(
         paymentIntentId,
         tenantId,
         req,
+        paymentCommand,
       );
+      if (paymentActionResult.status === "succeeded") paymentMoved = true;
       if (paymentActionResult.status !== "succeeded") {
+        await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
         return next(
           AppError.conflict(
             "Payment capture did not succeed. Application was not approved.",
@@ -572,7 +607,9 @@ exports.approveApplication = async (req, res, next) => {
         paymentIntentId,
         tenantId,
         req,
+        paymentCommand,
       );
+      paymentMoved = true;
     }
 
     // Use the application service
@@ -583,6 +620,12 @@ exports.approveApplication = async (req, res, next) => {
       comments,
       tenantId,
     );
+    if (decisionClaim) {
+      await PersonalDetails.updateOne(
+        { applicationId, tenantId: String(tenantId), "paymentDecision.claimId": decisionClaim.claimId },
+        { $set: { "paymentDecision.completedAt": new Date() } },
+      );
+    }
 
     if (paymentIntentId && paymentActionResult?.status) {
       await SubscriptionDetails.updateOne(
@@ -772,6 +815,13 @@ exports.approveApplication = async (req, res, next) => {
       approvalDetails: updatedApplication.approvalDetails,
     });
   } catch (error) {
+    if (decisionClaim && !paymentMoved) {
+      await releasePaymentDecision({
+        applicationId: claimedApplicationId,
+        tenantId: claimedTenantId,
+        claimId: decisionClaim.claimId,
+      });
+    }
     console.error("ApplicationController [approveApplication] Error:", error);
     if (error.isJoi) {
       return next(AppError.badRequest("Validation error: " + error.message));
