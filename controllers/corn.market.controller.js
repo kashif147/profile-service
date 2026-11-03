@@ -1,6 +1,6 @@
 const Profile = require("../models/profile.model.js");
 const { AppError } = require("../errors/AppError");
-const axios = require("axios");
+const { fetchSubscriptionStartDates } = require("../services/subscriptionStartDate.client.js");
 const {
   computeFullNameFromPersonalInfo,
 } = require("../helpers/personal.info.fullName.js");
@@ -58,53 +58,12 @@ async function getCornMarketProfiles(req, res, next) {
       Profile.countDocuments(query),
     ]);
 
-    // Fetch current subscription startDate for these profiles from subscription service
-    let subscriptionStartMap = new Map();
-    if (profiles.length > 0) {
-      const subscriptionServiceUrl =
-        process.env.SUBSCRIPTION_SERVICE_URL || "https://subscriptionserviceshell-ambyf5dsa8c9dhcg.northeurope-01.azurewebsites.net";
-      const profileIds = profiles.map((p) => p._id.toString());
-
-      // Fetch subscriptions for all profiles in parallel
-      const subscriptionPromises = profileIds.map(async (profileId) => {
-        try {
-          const response = await axios.get(
-            `${subscriptionServiceUrl}/api/v1/subscriptions/profile/${profileId}/current`,
-            {
-              timeout: 10000, // 10 second timeout
-              validateStatus: (status) => status < 500, // Don't throw on 4xx
-              headers: {
-                Authorization: req.headers.authorization || "",
-                "x-internal-request": "true",
-                "x-tenant-id": req.tenantId || "",
-              },
-            }
-          );
-
-          if (response.status === 200 && response.data?.data?.startDate) {
-            return {
-              profileId,
-              startDate: response.data.data.startDate,
-            };
-          }
-          return null;
-        } catch (error) {
-          // Log error but don't fail the entire request
-          console.warn(
-            `Failed to fetch subscription for profile ${profileId}:`,
-            error.message
-          );
-          return null;
-        }
-      });
-
-      const subscriptionResults = await Promise.all(subscriptionPromises);
-      subscriptionStartMap = new Map(
-        subscriptionResults
-          .filter(Boolean)
-          .map((s) => [s.profileId, s.startDate])
-      );
-    }
+    // Current subscription startDate: internal-only service call (the route already authorized
+    // CRM + profile:read; ids come from this tenant-scoped query). No fallback host - fails closed.
+    const subscriptionStartMap = await fetchSubscriptionStartDates(
+      profiles.map((p) => p._id.toString()),
+      req.tenantId
+    );
 
     // Field selectors for different membership statuses
     const formatForNew = (p) => {
@@ -188,6 +147,7 @@ async function getCornMarketProfiles(req, res, next) {
       results: resultsWithStartDate,
     });
   } catch (error) {
+    if (error instanceof AppError) return next(error);
     return next(
       AppError.internalServerError(
         "Failed to fetch CORN market profiles"

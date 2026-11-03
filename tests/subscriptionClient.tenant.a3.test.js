@@ -1,5 +1,7 @@
 // Phase A / A3 — profile-service never calls subscription-service without the caller's trusted tenant
 // and never retries with an empty tenant (that unscoped retry leaked other tenants' subscriptions).
+// Test-only: the client has no fallback host (P5 fail-closed); point it at an internal test host.
+process.env.SUBSCRIPTION_SERVICE_URL = process.env.SUBSCRIPTION_SERVICE_URL || "http://subscription-service.test";
 jest.mock("axios", () => ({ get: jest.fn(), post: jest.fn() }));
 const axios = require("axios");
 const { fetchCurrentSubscriptionByProfileId } = require("../services/subscription.service.client.js");
