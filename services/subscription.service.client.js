@@ -5,9 +5,21 @@
 
 const axios = require("axios");
 
-const SUBSCRIPTION_SERVICE_URL =
-  process.env.SUBSCRIPTION_SERVICE_URL ||
-  "http://projectshell-vm.northeurope.cloudapp.azure.com/subscription-service";
+// No hard-coded fallback host: an unset SUBSCRIPTION_SERVICE_URL must never send the internal header
+// and the trusted tenant to a public address. Missing configuration fails closed (503) before any request.
+const SUBSCRIPTION_SERVICE_URL = (process.env.SUBSCRIPTION_SERVICE_URL || "").trim();
+
+function subscriptionServiceBase() {
+  const configured = (process.env.SUBSCRIPTION_SERVICE_URL || "").trim();
+  if (!configured) {
+    const err = new Error("SUBSCRIPTION_SERVICE_URL is not configured");
+    err.status = 503;
+    err.statusCode = 503;
+    err.code = "SUBSCRIPTION_SERVICE_URL_REQUIRED";
+    throw err;
+  }
+  return configured.replace(/\/$/, "");
+}
 
 /**
  * Headers for a subscription-service call: a genuine internal call (x-internal-request + the
@@ -66,7 +78,7 @@ async function fetchCurrentSubscriptionByProfileId(
   const trustedTenant = tenantId == null ? "" : String(tenantId).trim();
   if (!trustedTenant) return null;
 
-  const base = SUBSCRIPTION_SERVICE_URL.replace(/\/$/, "");
+  const base = subscriptionServiceBase();
   const url = `${base}/api/v1/subscriptions/profile/${profileId}`;
 
   try {
@@ -190,7 +202,7 @@ async function reassignSubscriptionsForProfileMerge({
   const trustedTenant = tenantId == null ? "" : String(tenantId).trim();
   if (!trustedTenant) throw new Error("Subscription merge requires a trusted tenant");
 
-  const base = SUBSCRIPTION_SERVICE_URL.replace(/\/$/, "");
+  const base = subscriptionServiceBase();
   const url = `${base}/api/v1/subscriptions/internal/profile-merge`;
 
   const response = await axios.post(
@@ -225,4 +237,5 @@ module.exports = {
   mergeSubscriptionServiceData,
   reassignSubscriptionsForProfileMerge,
   SUBSCRIPTION_SERVICE_URL,
+  subscriptionServiceBase,
 };
