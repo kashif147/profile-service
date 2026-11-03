@@ -186,7 +186,7 @@ describe("client: bound command", () => {
     const [url, body, cfg] = post.mock.calls[0];
     expect(url).toBe("http://account-service:4000/api/payments/intents/pi_app/capture");
     expectInternalOnly(cfg.headers);
-    expect(cfg.headers["Idempotency-Key"]).toBe(`profile-service:capture:${APP}:${PAYMENT_ID}`);
+    expect(cfg.headers["Idempotency-Key"]).toBe(`application:capture:${APP}:pi_app`); // canonical contract key
     expect(cfg.headers["x-correlation-id"]).toBe("corr-p1");
     expect(body).toEqual({
       binding: { domain: "application", applicationId: APP, purpose: "applicationFee", paymentId: PAYMENT_ID },

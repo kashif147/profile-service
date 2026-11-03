@@ -163,7 +163,15 @@ function normalizePaymentStatus(status) {
  * then flip the mode).
  */
 const TENANT_ID_RE = /^[a-f0-9]{24}$/i;
-const SERVICE_NAME = "profile-service";
+
+/**
+ * Canonical Idempotency-Key (contracts/p5-bound-payment-commands.v1.json):
+ * <domain>:<transition>:<objectId>:<paymentRef>; for application capture/cancel the paymentRef
+ * is the PaymentIntent id in the route, so the key never depends on a payment lookup.
+ */
+function boundIdempotencyKey(action, applicationId, paymentIntentId) {
+  return ["application", action, applicationId, paymentIntentId].join(":");
+}
 
 function paymentCommandMode() {
   return String(process.env.ACCOUNT_PAYMENT_COMMAND_MODE || "legacy").trim().toLowerCase() === "bound"
@@ -232,7 +240,7 @@ async function callBoundPaymentIntentAction({ intentId, action, tenantId, req, c
   assertInternalAccountUrl();
   const headers = buildInternalCommandHeaders(tenantId, req);
   const paymentId = command?.paymentId ? String(command.paymentId) : null;
-  if (paymentId) headers["Idempotency-Key"] = `${SERVICE_NAME}:${action}:${applicationId}:${paymentId}`;
+  headers["Idempotency-Key"] = boundIdempotencyKey(action, applicationId, intentId);
 
   const body = {
     binding: {
@@ -393,5 +401,6 @@ module.exports = {
   cancelPaymentIntent,
   normalizePaymentStatus,
   paymentCommandMode,
+  boundIdempotencyKey,
   ACCOUNT_SERVICE_URL,
 };
