@@ -196,6 +196,11 @@ app.get("/api", (req, res) => {
   });
 });
 
+// P5 signed service-to-service reads (no user token; p5-svc-sig/1 signature is the only authority,
+// gateway-identity requests get 404). Must stay BEFORE the global authenticate. See
+// routes/internal.routes.js and middlewares/serviceSignatureAuth.js.
+app.use("/api/internal", require("./routes/internal.routes"));
+
 // Initialize authentication middleware for protected routes
 app.use("/api/profile", require("./routes/profile.routes"));
 app.use(authenticate);
