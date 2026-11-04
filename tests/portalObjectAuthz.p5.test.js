@@ -353,6 +353,33 @@ describe("P5 payment forms", () => {
     expect(reached(await call("POST", url, asCrmBank, {}))).toBe(true);
   });
 
+  // PDP P3: payments.bank:read is a READ grant only - it never substitutes for payments:write on a CRM mutation,
+  // and a payments:write caller without it still reaches the write routes (responses masked in the service).
+  test("payments.bank:read never authorises a payment-form mutation; payments:write alone still does (masked)", async () => {
+    const asBankReadOnly = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", permissions: ["payments:read", "payments.bank:read"] }) };
+    const asWriteOnly = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", permissions: ["payments:write"] }) };
+    const mutations = [
+      ["PATCH", `/api/payment-forms/${FORM_B}`],
+      ["POST", `/api/payment-forms/${FORM_B}/submit`],
+      ["POST", `/api/payment-forms/${FORM_B}/verify`],
+      ["POST", `/api/payment-forms/${FORM_B}/approve`],
+      ["POST", `/api/payment-forms/${FORM_B}/reject`],
+      ["DELETE", `/api/payment-forms/${FORM_B}`],
+      ["POST", `/api/payment-forms/${FORM_B}/send-email`],
+      ["POST", "/api/payment-forms"],
+    ];
+    for (const [method, url] of mutations) {
+      const body = method === "DELETE" ? undefined : {};
+      expect([method, url, denied(await call(method, url, asBankReadOnly, body), "PDP_DENY")]).toEqual([method, url, true]);
+      expect([method, url, reached(await call(method, url, asWriteOnly, body))]).toEqual([method, url, true]);
+    }
+    // the SEPA feed is a bank READ: payments:write without payments:read / payments.bank:read is refused
+    expect(denied(await call("POST", "/api/payment-forms/direct-debit/mandates-for-prepare", asWriteOnly, {}), "PDP_DENY")).toBe(true);
+    // unknown caller type: refused before any permission check
+    expect(denied(await call("POST", "/api/payment-forms/direct-debit/mandates-for-prepare", asUnknownType, {}), "CRM_ONLY")).toBe(true);
+    expect(denied(await call("GET", `/api/payment-forms/${FORM_B}`, asUnknownType), "CRM_ONLY")).toBe(true);
+  });
+
   test("GET /prefill?profileId: portal own profile only", async () => {
     expect(reached(await call("GET", `/api/payment-forms/prefill?profileId=${PA}`, asA))).toBe(true);
     expect(denied(await call("GET", `/api/payment-forms/prefill?profileId=${PB}`, asA), "NOT_OWNER")).toBe(true);

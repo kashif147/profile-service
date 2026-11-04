@@ -47,36 +47,47 @@ async function fetchTenantContext(tenantId, req = null) {
 
 /**
  * PDP P3 (O6 / finding N3): the organisation's creditor / beneficiary details for payment-form hydration, from
- * user-service's internal-only GET /internal/tenants/:tenantId/creditor-profile (not gateway-proxied), as a
- * genuine service call: x-service-secret = INTERNAL_TENANT_PROFILE_SECRET, x-tenant-id = the tenant of the
- * verified caller; no user token is forwarded. The user-facing GET /api/tenants/:id is redacted per caller
- * (bank fields need payments.bank:read), and the forwarded-token fetch used to turn every non-ASU 403 into {}
- * -> forms persisted a blank creditor snapshot.
+ * user-service's internal-only GET /internal/tenants/:tenantId/creditor-profile (not gateway-proxied) as a SIGNED
+ * service read (p5-svc-sig/1, services/userServiceSigning.js: caller profile-service, audience user-service,
+ * signature over GET + exact path + x-tenant-id). No user token and no other identity header is sent (user-service
+ * answers 404 to any request carrying one). x-tenant-id is the tenant of the verified caller of this request.
  *
- * Fail closed: when the secret is configured, any failure throws 503 (no blank snapshot is ever stored).
- * Rollout: while the secret is not configured in this service, the previous forwarded-token fetch is used
- * unchanged (fetchTenantContext) and a warning is logged.
+ * Fail closed - every failure throws 503 CREDITOR_PROFILE_UNAVAILABLE (no blank snapshot is ever stored):
+ * signing not configured, misconfigured (503 USER_SIGNING_MISCONFIGURED), verifier off / not configured,
+ * rejected signature, network error, non-200.
+ *
+ * PAYMENT_FORM_CREDITOR_LEGACY_FETCH=on (default OFF) is an explicit, temporary rollback switch only: while signing
+ * is NOT configured it falls back to the previous forwarded-token GET /api/tenants/:id (fetchTenantContext), whose
+ * bank fields are now redacted unless the caller holds payments.bank:read / tenant:update / "*" - i.e. it restores
+ * exactly today's behaviour, including the blank-snapshot defect for other callers. It exists so a profile-service
+ * rollback / an out-of-order deploy can keep ASU form creation working without re-introducing a shared secret; it
+ * never applies once signing keys are configured.
  */
-async function fetchCreditorContext(tenantId, req = null) {
-  const secret = process.env.INTERNAL_TENANT_PROFILE_SECRET;
-  if (typeof secret !== "string" || secret.length < 32) {
-    console.warn("[tenant.service.client] INTERNAL_TENANT_PROFILE_SECRET not configured; creditor details via the caller's token (legacy)");
-    return fetchTenantContext(tenantId, req);
-  }
+function legacyFetchEnabled(env = process.env) {
+  return String(env.PAYMENT_FORM_CREDITOR_LEGACY_FETCH || "").trim().toLowerCase() === "on";
+}
+
+async function fetchCreditorContext(tenantId, req = null, { env = process.env } = {}) {
   const { AppError } = require("../errors/AppError.js");
+  const { signedGetHeaders } = require("./userServiceSigning.js");
   const unavailable = () =>
     new AppError("Organisation creditor details are unavailable", 503, "CREDITOR_PROFILE_UNAVAILABLE");
   if (!tenantId) throw unavailable();
   const base = USER_SERVICE_URL.replace(/\/$/, "");
+  const url = `${base}/internal/tenants/${encodeURIComponent(String(tenantId))}/creditor-profile`;
+  const signed = signedGetHeaders({ url, tenant: String(tenantId), env });
+  if (!signed) {
+    if (legacyFetchEnabled(env)) {
+      console.warn("[tenant.service.client] creditor profile: signing not configured; PAYMENT_FORM_CREDITOR_LEGACY_FETCH=on (legacy forwarded-token fetch)");
+      return fetchTenantContext(tenantId, req);
+    }
+    console.error("[tenant.service.client] creditor profile: user-service signing not configured (USER_SIGNING_KID / USER_SIGNING_SECRET)");
+    throw unavailable();
+  }
   let response;
   try {
-    response = await axios.get(`${base}/internal/tenants/${encodeURIComponent(String(tenantId))}/creditor-profile`, {
-      headers: {
-        "x-service-secret": secret,
-        "x-tenant-id": String(tenantId),
-        "x-internal-request": "true",
-        "x-service-name": "profile-service",
-      },
+    response = await axios.get(url, {
+      headers: { "x-tenant-id": String(tenantId), ...signed },
       timeout: 8000,
       validateStatus: () => true,
     });
@@ -85,8 +96,8 @@ async function fetchCreditorContext(tenantId, req = null) {
     throw unavailable();
   }
   const data = response && response.status === 200 ? response.data && response.data.data : null;
-  if (!data || typeof data !== "object") {
-    console.warn("[tenant.service.client] creditor profile non-success:", response && response.status);
+  if (!data || typeof data !== "object" || String(data.tenantId) !== String(tenantId)) {
+    console.warn("[tenant.service.client] creditor profile non-success:", response && response.status, response && response.data && response.data.code);
     throw unavailable();
   }
   return {

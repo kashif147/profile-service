@@ -39,6 +39,10 @@ also in the PDF). `POST /direct-debit/mandates-for-prepare` and `PUT /filter` wi
 `direct-debit-prepare` need the claim (403 `BANK_DATA_PERMISSION_REQUIRED`) and a non-empty valid
 `profileIds` (400 `PROFILE_IDS_REQUIRED`; the old "no ids = every active mandate" mode is gone). Portal
 routes are unchanged (never plaintext). Form hydration (prefill / create) reads the organisation's creditor
-details via `fetchCreditorContext` -> user-service `GET /internal/tenants/:id/creditor-profile` (service
-secret `INTERNAL_TENANT_PROFILE_SECRET`, no user token; 503 `CREDITOR_PROFILE_UNAVAILABLE` on failure instead
-of a blank snapshot). While that secret is not configured here, the old forwarded-token fetch is used.
+details via `fetchCreditorContext` -> user-service `GET /internal/tenants/:id/creditor-profile`, a SIGNED service
+read (p5-svc-sig/1, `services/userServiceSigning.js`: caller profile-service, audience user-service, keys
+`USER_SIGNING_KID` / `USER_SIGNING_SECRET`; no user token or identity header). Any failure (signing not configured,
+verifier off, rejected, unreachable) -> 503 `CREDITOR_PROFILE_UNAVAILABLE`, never a blank snapshot. Shared vectors:
+`contracts/p5-service-signing.tenant-creditor-profile.v1.json` (byte-identical in user-service).
+`PAYMENT_FORM_CREDITOR_LEGACY_FETCH=on` (default off) is a rollback-only switch: while signing is not configured it
+restores the previous forwarded-token fetch.

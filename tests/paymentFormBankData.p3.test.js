@@ -233,6 +233,17 @@ describe("SEPA prepare feed", () => {
   });
 });
 
+describe("cross-tenant", () => {
+  test("a bank reader of another tenant gets 404 on detail / PDF / mutation and no mandate of this tenant", async () => {
+    const other = () => ({ ...crm(["payments:read", "payments:write", "payments.bank:read"]), tenantId: "bbbbbbbbbbbbbbbbbbbbbbbb", user: { id: "x", userType: "CRM", tenantId: "bbbbbbbbbbbbbbbbbbbbbbbb", permissions: ["payments:read", "payments:write", "payments.bank:read"] } });
+    const d = await run(controller.getPaymentFormById, { ...other(), params: { id: F_DD } });
+    expect(d.err).toMatchObject({ status: 404 });
+    await expect(svc.exportFormPdf(F_DD, "bbbbbbbbbbbbbbbbbbbbbbbb", { includeSensitive: true })).rejects.toMatchObject({ status: 404 });
+    await expect(svc.rejectForm(F_DD, "bbbbbbbbbbbbbbbbbbbbbbbb", other(), "r")).rejects.toMatchObject({ status: 404 });
+    expect(await svc.listDirectDebitMandatesForPrepare({ tenantId: "bbbbbbbbbbbbbbbbbbbbbbbb", profileIds: [PA] })).toEqual([]);
+  });
+});
+
 describe("portal unchanged", () => {
   test("portal getById never returns plaintext, even with payments.bank:read / * claims", async () => {
     MemberPaymentForm.seed([form("f00000000000000000000009", "draft", { userId: SA })]);
