@@ -31,3 +31,14 @@ IBAN/BIC are encrypted at rest (`helpers/paymentFormCrypto.js`, AES-256-GCM,
 direct-debit prepare call. Approving a form auto-supersedes any other active form for the same
 profile, syncs `paymentType` onto the subscription via a best-effort HTTP call to
 subscription-service, and publishes `members.payment-form.approved.v1` for notification-service.
+
+**PDP P3 (bank data).** Plaintext debtor IBAN/BIC (CRM detail, every CRM write response, the CRM PDF) only
+when the CRM caller's token carries the literal claim `payments.bank:read` or `*` (`helpers/bankDataAccess.js`,
+never the PDP, never `payments:*`); otherwise the masked view (`debtorIbanDisplay` first4****last4, no BIC,
+also in the PDF). `POST /direct-debit/mandates-for-prepare` and `PUT /filter` with purpose
+`direct-debit-prepare` need the claim (403 `BANK_DATA_PERMISSION_REQUIRED`) and a non-empty valid
+`profileIds` (400 `PROFILE_IDS_REQUIRED`; the old "no ids = every active mandate" mode is gone). Portal
+routes are unchanged (never plaintext). Form hydration (prefill / create) reads the organisation's creditor
+details via `fetchCreditorContext` -> user-service `GET /internal/tenants/:id/creditor-profile` (service
+secret `INTERNAL_TENANT_PROFILE_SECRET`, no user token; 503 `CREDITOR_PROFILE_UNAVAILABLE` on failure instead
+of a blank snapshot). While that secret is not configured here, the old forwarded-token fetch is used.

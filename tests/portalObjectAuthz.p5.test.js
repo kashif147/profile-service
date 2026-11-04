@@ -330,7 +330,6 @@ describe("P5 payment forms", () => {
     ["DELETE", `/api/payment-forms/${FORM_B}`],
     ["POST", `/api/payment-forms/${FORM_B}/send-email`],
     ["PUT", "/api/payment-forms/filter"],
-    ["POST", "/api/payment-forms/direct-debit/mandates-for-prepare"],
     ["POST", "/api/payment-forms"],
     ["GET", `/api/payment-forms/profile/${PB}`],
   ];
@@ -340,6 +339,18 @@ describe("P5 payment forms", () => {
     expect(denied(await call(method, url, asC, body), "CRM_ONLY")).toBe(true);
     expect(reached(await call(method, url, asCrm, body))).toBe(true);
     expect(denied(await call(method, url, asCrmNoPerm, body), "PDP_DENY")).toBe(true);
+  });
+
+  // PDP P3 (Q2): the SEPA prepare feed additionally needs payments.bank:read (helpers/bankDataAccess.js);
+  // controller-level behaviour (empty profileIds, the filter purpose) is in paymentFormBankData.p3.test.js.
+  test("POST /direct-debit/mandates-for-prepare is CRM + payments permission + payments.bank:read", async () => {
+    const url = "/api/payment-forms/direct-debit/mandates-for-prepare";
+    const asCrmBank = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", permissions: [...CRM_PERMS, "payments.bank:read"] }) };
+    expect(denied(await call("POST", url, asA, {}), "CRM_ONLY")).toBe(true);
+    expect(denied(await call("POST", url, asC, {}), "CRM_ONLY")).toBe(true);
+    expect(denied(await call("POST", url, asCrmNoPerm, {}), "PDP_DENY")).toBe(true);
+    expect(denied(await call("POST", url, asCrm, {}), "BANK_DATA_PERMISSION_REQUIRED")).toBe(true);
+    expect(reached(await call("POST", url, asCrmBank, {}))).toBe(true);
   });
 
   test("GET /prefill?profileId: portal own profile only", async () => {
