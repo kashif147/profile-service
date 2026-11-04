@@ -407,6 +407,9 @@ d("GET /api/internal/applications/:applicationId/refund-state (real app, real mo
       expect(r.json.code).toBe("APPLICATION_STATE_LOOKUP_DISABLED");
       const u = await call(target(id), { "x-tenant-id": TA });
       expect(u.status).toBe(503);
+      // gateway-routed requests stay 404 even in off mode (the route is never revealed)
+      const g = await call(target(id), { "x-jwt-verified": "true", "x-auth-source": "gateway", "x-user-id": "u1", "x-tenant-id": TA });
+      expect(g.status).toBe(404);
     }
     process.env.APPLICATION_STATE_SERVICE_AUTH_MODE = "report";
     expect((await call(target(id), signed(target(id)))).status).toBe(200);

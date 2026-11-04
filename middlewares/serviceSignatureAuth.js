@@ -14,9 +14,9 @@
  * one method/path); idem and body are empty for this GET (no Idempotency-Key, no body).
  *
  * Checks, in order (each failure is a DISTINCT code; nothing below the verifier runs on failure):
- *   0. mode off                                           -> 503 APPLICATION_STATE_LOOKUP_DISABLED
- *   1. request carries gateway identity (x-jwt-verified / x-auth-source): the route is not
- *      exposed through the gateway                       -> 404 NOT_FOUND (same as an unknown route)
+ *   0. request carries gateway identity (x-jwt-verified / x-auth-source): the route is not
+ *      exposed through the gateway, in any mode          -> 404 NOT_FOUND (same as an unknown route)
+ *   1. mode off                                           -> 503 APPLICATION_STATE_LOOKUP_DISABLED
  *   2. a request body is present                          -> 401 SERVICE_AUTH_MALFORMED
  *   3. no signature headers at all                        -> 401 SERVICE_AUTH_REQUIRED
  *      headers malformed / wrong version / tenant malformed -> 401 SERVICE_AUTH_MALFORMED
@@ -195,7 +195,10 @@ function createServiceSignatureAuth(operation, deps = {}) {
     const mode = serviceAuthMode(env);
     res.set("Cache-Control", "no-store");
     let result;
-    if (mode === "off") {
+    if (hasGatewayIdentity(req)) {
+      // Not exposed through the gateway in ANY mode (also not as a 503 that would reveal it).
+      result = { outcome: "NOT_FOUND", caller: null, kid: null };
+    } else if (mode === "off") {
       result = { outcome: "APPLICATION_STATE_LOOKUP_DISABLED", caller: null, kid: null };
     } else {
       try {
