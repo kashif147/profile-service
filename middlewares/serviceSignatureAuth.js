@@ -14,8 +14,10 @@
  * one method/path); idem and body are empty for this GET (no Idempotency-Key, no body).
  *
  * Checks, in order (each failure is a DISTINCT code; nothing below the verifier runs on failure):
- *   0. request carries gateway identity (x-jwt-verified / x-auth-source): the route is not
- *      exposed through the gateway, in any mode          -> 404 NOT_FOUND (same as an unknown route)
+ *   0. request carries ANY user / gateway identity header (Authorization, x-jwt-verified,
+ *      x-auth-source, x-user-*, x-token-expires-at, x-gateway-*, x-platform-*): the route is not
+ *      exposed through the gateway, in any mode, even with a valid signature
+ *                                                         -> 404 NOT_FOUND (same as an unknown route)
  *   1. mode off                                           -> 503 APPLICATION_STATE_LOOKUP_DISABLED
  *   2. a request body is present                          -> 401 SERVICE_AUTH_MALFORMED
  *   3. no signature headers at all                        -> 401 SERVICE_AUTH_REQUIRED
@@ -89,8 +91,20 @@ function header(req, name) {
   return Array.isArray(v) ? v[0] : v;
 }
 
+// Any user / gateway identity marker. The DEV gateway sets x-jwt-verified, x-auth-source, x-user-*
+// and x-token-expires-at on every JWT location and passes Authorization through; the signed caller
+// (account-service) never sends any of them. A request carrying ANY of them is treated as
+// gateway / user traffic and answered 404, in every mode and even with a valid signature, so a
+// user identity can never be mixed into (or substituted for) the service authority and the route
+// is never revealed (no 401/503 that would confirm it exists).
+const IDENTITY_HEADER_PREFIXES = ["x-user-", "x-gateway-", "x-platform-"];
+const IDENTITY_HEADERS = ["authorization", "x-jwt-verified", "x-auth-source", "x-token-expires-at", "x-service-secret", "x-ms-token-aad-access-token", "x-ms-token-aad-id-token"];
 function hasGatewayIdentity(req) {
-  return req.headers["x-jwt-verified"] != null || req.headers["x-auth-source"] != null;
+  for (const name of Object.keys(req.headers || {})) {
+    const n = name.toLowerCase();
+    if (IDENTITY_HEADERS.includes(n) || IDENTITY_HEADER_PREFIXES.some((p) => n.startsWith(p))) return true;
+  }
+  return false;
 }
 
 function hasBody(req) {

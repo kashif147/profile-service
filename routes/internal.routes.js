@@ -2,7 +2,8 @@
  * Signed service-to-service reads (P5). Mounted at /api/internal in app.js BEFORE the global
  * `authenticate`: these routes take no user token. Their only authority is the p5-svc-sig/1
  * signature verified by middlewares/serviceSignatureAuth.js, which also refuses (404) any request
- * carrying gateway identity, so they are not reachable through the gateway's JWT locations.
+ * carrying any user / gateway identity header (Authorization, x-jwt-verified, x-auth-source, x-user-*,
+ * ...), so they are not reachable through the gateway's JWT locations even with a valid signature.
  *
  *   GET /api/internal/applications/:applicationId/refund-state
  *       caller: account-service only; operation application_refund_state.

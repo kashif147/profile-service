@@ -202,10 +202,10 @@ d("GET /api/internal/applications/:applicationId/refund-state (real app, real mo
 
   const target = (id) => `/api/internal/applications/${id}/refund-state`;
 
-  function signed(pathAndQuery, { tenant = TA, caller = "account-service", kid = KID, secret = SECRET, ts, nonce, method = "GET" } = {}) {
+  function signed(pathAndQuery, { tenant = TA, caller = "account-service", kid = KID, secret = SECRET, ts, nonce, method = "GET", aud = "profile-service" } = {}) {
     const tsV = String(ts ?? Math.floor(Date.now() / 1000));
     const nonceV = nonce || crypto.randomBytes(18).toString("base64url");
-    const canonical = S.canonicalString({ caller, kid, method, target: pathAndQuery, tenant, idem: "", bodySha256: S.sha256Hex(Buffer.alloc(0)), ts: tsV, nonce: nonceV });
+    const canonical = S.canonicalString({ aud, caller, kid, method, target: pathAndQuery, tenant, idem: "", bodySha256: S.sha256Hex(Buffer.alloc(0)), ts: tsV, nonce: nonceV });
     return {
       "x-svc-version": "1", "x-svc-caller": caller, "x-svc-kid": kid, "x-svc-ts": tsV,
       "x-svc-nonce": nonceV, "x-svc-sig": S.signCanonical(secret, canonical), "x-tenant-id": tenant,
@@ -378,23 +378,111 @@ d("GET /api/internal/applications/:applicationId/refund-state (real app, real mo
     expect((await call(target(id), signed(target(id), { kid: "as-next", secret: next }))).status).toBe(200);
   });
 
-  test("no user token accepted as a substitute (JWT, AUTH_BYPASS, x-internal-request, gateway identity)", async () => {
+  // Exactly what the DEV gateway forwards on a JWT location (frontend/ProjectShell-1/gateway:
+  // verify_jwt.lua sets x-jwt-verified, x-auth-source, x-user-id, x-tenant-id, x-user-type,
+  // x-user-email, x-user-roles, x-user-permissions, x-token-expires-at; Authorization is passed on).
+  function gatewayForwarded(userType) {
+    const claims = userType === "PORTAL"
+      ? { id: "p1", sub: "p1", tenantId: TA, userType: "PORTAL", email: "m@example.com", roles: ["MEMBER"], permissions: ["portal:read", "application:read"] }
+      : { id: "c1", sub: "c1", tenantId: TA, userType: "CRM", email: "s@example.com", roles: ["SU"], permissions: ["*"] };
+    const token = jwt.sign(claims, process.env.JWT_SECRET, { expiresIn: "1h" });
+    return {
+      authorization: `Bearer ${token}`,
+      "x-jwt-verified": "true",
+      "x-auth-source": "gateway",
+      "x-user-id": claims.id,
+      "x-tenant-id": TA,
+      "x-user-type": claims.userType,
+      "x-user-email": claims.email,
+      "x-user-roles": JSON.stringify(claims.roles),
+      "x-user-permissions": JSON.stringify(claims.permissions),
+      "x-token-expires-at": String(Date.now() + 3600000),
+    };
+  }
+
+  test("gateway-forwarded CRM / PORTAL requests -> 404 in EVERY mode, even with a valid signature", async () => {
     const id = await seed(TA, "submitted");
-    const token = jwt.sign({ id: "u1", sub: "u1", tenantId: TA, userType: "CRM", roles: ["SU"], permissions: ["*"] }, process.env.JWT_SECRET, { expiresIn: "1h" });
-    const r1 = await call(target(id), { authorization: `Bearer ${token}`, "x-tenant-id": TA });
-    expect(r1.status).toBe(401);
-    expect(r1.json.code).toBe("SERVICE_AUTH_REQUIRED");
-    const r2 = await call(target(id), { authorization: `Bearer ${token}`, "x-internal-request": "true", "x-tenant-id": TA });
-    expect(r2.json.code).toBe("SERVICE_AUTH_REQUIRED");
-    // Gateway identity headers (what the DEV gateway sets on every JWT location): not exposed -> 404,
-    // with or without a valid signature.
-    const gw = { "x-jwt-verified": "true", "x-auth-source": "gateway", "x-user-id": "u1", "x-user-type": "CRM", "x-tenant-id": TA };
-    for (const h of [gw, { ...signed(target(id)), ...gw }]) {
+    for (const mode of [undefined, "off", "report", "enforce"]) {
+      if (mode === undefined) delete process.env.APPLICATION_STATE_SERVICE_AUTH_MODE;
+      else process.env.APPLICATION_STATE_SERVICE_AUTH_MODE = mode;
+      for (const userType of ["CRM", "PORTAL"]) {
+        for (const withSig of [false, true]) {
+          const h = { ...(withSig ? signed(target(id)) : {}), ...gatewayForwarded(userType) };
+          const r = await call(target(id), h);
+          expect({ mode, userType, withSig, status: r.status }).toEqual({ mode, userType, withSig, status: 404 });
+          expect(r.json).toEqual({ error: "NOT_FOUND", message: "Not found", path: target(id) });
+          expect(r.text).not.toContain("submitted");
+        }
+      }
+      // any single identity marker is enough, also with a valid signature
+      for (const marker of [
+        { authorization: `Bearer ${jwt.sign({ id: "c1", tenantId: TA, userType: "CRM" }, process.env.JWT_SECRET)}` },
+        { "x-jwt-verified": "true" }, { "x-auth-source": "gateway" }, { "x-user-id": "u1" }, { "x-user-type": "CRM" },
+        { "x-token-expires-at": "1" }, { "x-gateway-signature": "x" }, { "x-platform-admin": "1" },
+      ]) {
+        const r = await call(target(id), { ...signed(target(id)), ...marker });
+        expect(r.status).toBe(404);
+      }
+    }
+    // the same valid signature WITHOUT identity markers succeeds (the rule is the markers, not the key)
+    process.env.APPLICATION_STATE_SERVICE_AUTH_MODE = "enforce";
+    expect((await call(target(id), signed(target(id)))).status).toBe(200);
+  });
+
+  test("no user token accepted as a substitute (AUTH_BYPASS, x-internal-request): unsigned -> 401", async () => {
+    const id = await seed(TA, "submitted");
+    expect(process.env.AUTH_BYPASS_ENABLED).toBe("true");
+    for (const h of [{ "x-tenant-id": TA }, { "x-internal-request": "true", "x-tenant-id": TA }, { "x-internal-request": "1", "x-tenant-id": TA, "x-service-caller": "account-service" }]) {
       const r = await call(target(id), h);
-      expect(r.status).toBe(404);
-      expect(r.json.error).toBe("NOT_FOUND");
+      expect(r.status).toBe(401);
+      expect(r.json.code).toBe("SERVICE_AUTH_REQUIRED");
+    }
+  });
+
+  test("invalid or missing signatures fail closed in every mode (off 503; report/enforce 401/403)", async () => {
+    const id = await seed(TA, "submitted");
+    const bad = {
+      missing: () => ({ "x-tenant-id": TA }),
+      malformed: () => ({ ...signed(target(id)), "x-svc-sig": "x" }),
+      wrongKey: () => signed(target(id), { secret: crypto.randomBytes(32).toString("hex") }),
+      stale: () => signed(target(id), { ts: Math.floor(Date.now() / 1000) - 120 }),
+      unknownKid: () => signed(target(id), { kid: "as-nope" }),
+      wrongCaller: () => signed(target(id), { caller: "events-service" }),
+    };
+    const expected = { missing: [401, "SERVICE_AUTH_REQUIRED"], malformed: [401, "SERVICE_AUTH_MALFORMED"], wrongKey: [401, "SERVICE_AUTH_INVALID"], stale: [401, "SERVICE_AUTH_STALE"], unknownKid: [401, "SERVICE_AUTH_UNKNOWN_KID"], wrongCaller: [403, "SERVICE_NOT_ALLOWED"] };
+    for (const mode of [undefined, "off", "report", "enforce"]) {
+      if (mode === undefined) delete process.env.APPLICATION_STATE_SERVICE_AUTH_MODE;
+      else process.env.APPLICATION_STATE_SERVICE_AUTH_MODE = mode;
+      for (const [name, mk] of Object.entries(bad)) {
+        const r = await call(target(id), mk());
+        const want = mode === "report" || mode === "enforce" ? expected[name] : [503, "APPLICATION_STATE_LOOKUP_DISABLED"];
+        expect({ mode, name, status: r.status, code: r.json.code }).toEqual({ mode, name, status: want[0], code: want[1] });
+        expect(r.text).not.toContain("submitted");
+      }
+    }
+  });
+
+  test("signed caller / audience / tenant / path binding: each change fails", async () => {
+    const id = await seed(TA, "submitted");
+    const idB = await seed(TB, "submitted");
+    const cases = [
+      ["wrong caller (allow-list)", target(id), signed(target(id), { caller: "events-service" }), 403, "SERVICE_NOT_ALLOWED"],
+      ["wrong audience (signed for account-service)", target(id), signed(target(id), { aud: "account-service" }), 401, "SERVICE_AUTH_INVALID"],
+      ["tenant A signature replayed with x-tenant-id B", target(idB), { ...signed(target(idB), { tenant: TA }), "x-tenant-id": TB }, 401, "SERVICE_AUTH_INVALID"],
+      ["tenant B signature replayed with x-tenant-id A", target(id), { ...signed(target(id), { tenant: TB }), "x-tenant-id": TA }, 401, "SERVICE_AUTH_INVALID"],
+      ["path changed (other application)", target(idB), signed(target(id)), 401, "SERVICE_AUTH_INVALID"],
+      ["query appended", `${target(id)}?tenantId=${TB}`, signed(target(id)), 401, "SERVICE_AUTH_INVALID"],
+      ["query removed", target(id), signed(`${target(id)}?x=1`), 401, "SERVICE_AUTH_INVALID"],
+      ["path case / encoding changed", target(id).replace("refund-state", "refund%2Dstate"), signed(target(id)), 404, null],
+    ];
+    for (const [name, p, h, status, code] of cases) {
+      const r = await call(p, h);
+      expect({ name, status: r.status }).toEqual({ name, status });
+      if (code) expect({ name, code: r.json.code }).toEqual({ name, code });
       expect(r.text).not.toContain("submitted");
     }
+    // a valid signature with a tenant-B header for a tenant-B application, signed as B: found
+    expect((await call(target(idB), signed(target(idB), { tenant: TB }))).json.data.tenantId).toBe(TB);
   });
 
   test("mode: off (and unset) = 503 kill switch; report rejects failures exactly like enforce", async () => {
