@@ -31,3 +31,18 @@ IBAN/BIC are encrypted at rest (`helpers/paymentFormCrypto.js`, AES-256-GCM,
 direct-debit prepare call. Approving a form auto-supersedes any other active form for the same
 profile, syncs `paymentType` onto the subscription via a best-effort HTTP call to
 subscription-service, and publishes `members.payment-form.approved.v1` for notification-service.
+
+**PDP P3 (bank data).** Plaintext debtor IBAN/BIC (CRM detail, every CRM write response, the CRM PDF) only
+when the CRM caller's token carries the literal claim `payments.bank:read` or `*` (`helpers/bankDataAccess.js`,
+never the PDP, never `payments:*`); otherwise the masked view (`debtorIbanDisplay` first4****last4, no BIC,
+also in the PDF). `POST /direct-debit/mandates-for-prepare` and `PUT /filter` with purpose
+`direct-debit-prepare` need the claim (403 `BANK_DATA_PERMISSION_REQUIRED`) and a non-empty valid
+`profileIds` (400 `PROFILE_IDS_REQUIRED`; the old "no ids = every active mandate" mode is gone). Portal
+routes are unchanged (never plaintext). Form hydration (prefill / create) reads the organisation's creditor
+details via `fetchCreditorContext` -> user-service `GET /internal/tenants/:id/creditor-profile`, a SIGNED service
+read (p5-svc-sig/1, `services/userServiceSigning.js`: caller profile-service, audience user-service, keys
+`USER_SIGNING_KID` / `USER_SIGNING_SECRET`; no user token or identity header). Any failure (signing not configured,
+verifier off, rejected, unreachable) -> 503 `CREDITOR_PROFILE_UNAVAILABLE`, never a blank snapshot. Shared vectors:
+`contracts/p5-service-signing.tenant-creditor-profile.v1.json` (byte-identical in user-service).
+`PAYMENT_FORM_CREDITOR_LEGACY_FETCH=on` (default off) is a rollback-only switch: while signing is not configured it
+restores the previous forwarded-token fetch.

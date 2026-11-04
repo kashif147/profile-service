@@ -1,0 +1,103 @@
+{
+  "contract": "p5-svc-sig",
+  "version": 1,
+  "operation": "tenant_creditor_profile",
+  "audience": "user-service",
+  "caller": "profile-service",
+  "maxSkewSeconds": 60,
+  "note": "TEST-ONLY secrets. Shared vectors for user-service (verifier) and profile-service (signer) of GET /internal/tenants/:tenantId/creditor-profile; byte-identical in both repos, SHA-256 pinned in each suite. Same p5-svc-sig/1 canonicalization as p5-service-signing.v1.json (first vector reproduces that file's first vector); audience user-service, idem and body empty (GET, no Idempotency-Key, no body). The operation is bound by method + exact target path, which the verifier allow-lists.",
+  "headers": [
+    "x-svc-version",
+    "x-svc-caller",
+    "x-svc-kid",
+    "x-svc-ts",
+    "x-svc-nonce",
+    "x-svc-sig"
+  ],
+  "vectors": [
+    {
+      "name": "protocol compatibility (p5-service-signing.v1.json vector 'events registration capture', audience account-service)",
+      "secret": "TEST-ONLY-p5-svc-sig-vector-secret-events-0001",
+      "input": {
+        "aud": "account-service",
+        "caller": "events-service",
+        "kid": "ev-2026-11",
+        "method": "POST",
+        "target": "/api/payments/intents/pi_vec_reg_1/capture",
+        "tenant": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "idem": "registration:capture:bbbbbbbbbbbbbbbbbbbbbbbb:pi_vec_reg_1",
+        "ts": "1793000000",
+        "nonce": "Zm9vYmFyYmF6cXV4MTIzNDU2",
+        "body": "{\"binding\":{\"domain\":\"registration\",\"registrationId\":\"bbbbbbbbbbbbbbbbbbbbbbbb\",\"purpose\":\"eventRegistration\"},\"transition\":\"capture\",\"reason\":\"approve\",\"actorUserId\":\"cccccccccccccccccccccccc\"}"
+      },
+      "expect": {
+        "bodySha256": "e907c4625f3b8eb00dae34ec589b22aa31e4eaedaaa9f2a4a20266ea7797ce15",
+        "canonical": "p5-svc-sig/1\naud=15:account-service\ncaller=14:events-service\nkid=10:ev-2026-11\nmethod=4:POST\ntarget=42:/api/payments/intents/pi_vec_reg_1/capture\ntenant=24:aaaaaaaaaaaaaaaaaaaaaaaa\nidem=58:registration:capture:bbbbbbbbbbbbbbbbbbbbbbbb:pi_vec_reg_1\nbody=64:e907c4625f3b8eb00dae34ec589b22aa31e4eaedaaa9f2a4a20266ea7797ce15\nts=10:1793000000\nnonce=24:Zm9vYmFyYmF6cXV4MTIzNDU2",
+        "sig": "lMHPglNMPDGOmqy_rsXS_gwnXGK8yLy72C9P3MqAciw"
+      }
+    },
+    {
+      "name": "profile creditor-profile lookup",
+      "secret": "TEST-ONLY-p5-svc-sig-vector-secret-profile-user-0001",
+      "input": {
+        "aud": "user-service",
+        "caller": "profile-service",
+        "idem": "",
+        "body": "",
+        "kid": "pr-2026-11",
+        "method": "GET",
+        "target": "/internal/tenants/aaaaaaaaaaaaaaaaaaaaaaaa/creditor-profile",
+        "tenant": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "ts": "1793000200",
+        "nonce": "Y3JlZGl0b3ItcHJvZmlsZS0x"
+      },
+      "expect": {
+        "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "canonical": "p5-svc-sig/1\naud=12:user-service\ncaller=15:profile-service\nkid=10:pr-2026-11\nmethod=3:GET\ntarget=59:/internal/tenants/aaaaaaaaaaaaaaaaaaaaaaaa/creditor-profile\ntenant=24:aaaaaaaaaaaaaaaaaaaaaaaa\nidem=0:\nbody=64:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\nts=10:1793000200\nnonce=24:Y3JlZGl0b3ItcHJvZmlsZS0x",
+        "sig": "lGFuJPLfe69oWHzm95P0APXiom_Mt0eeRFlQnsQ0l7E"
+      }
+    },
+    {
+      "name": "profile creditor-profile lookup (lowercase method)",
+      "secret": "TEST-ONLY-p5-svc-sig-vector-secret-profile-user-0001",
+      "input": {
+        "aud": "user-service",
+        "caller": "profile-service",
+        "idem": "",
+        "body": "",
+        "kid": "pr-2026-11",
+        "method": "get",
+        "target": "/internal/tenants/bbbbbbbbbbbbbbbbbbbbbbbb/creditor-profile",
+        "tenant": "bbbbbbbbbbbbbbbbbbbbbbbb",
+        "ts": "1793000201",
+        "nonce": "Y3JlZGl0b3ItcHJvZmlsZS0y"
+      },
+      "expect": {
+        "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "canonical": "p5-svc-sig/1\naud=12:user-service\ncaller=15:profile-service\nkid=10:pr-2026-11\nmethod=3:GET\ntarget=59:/internal/tenants/bbbbbbbbbbbbbbbbbbbbbbbb/creditor-profile\ntenant=24:bbbbbbbbbbbbbbbbbbbbbbbb\nidem=0:\nbody=64:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\nts=10:1793000201\nnonce=24:Y3JlZGl0b3ItcHJvZmlsZS0y",
+        "sig": "WL7uUY7hlxRTZNo7aJD0M2UtE8QHV1JO2Y-MlMU3Ia8"
+      }
+    },
+    {
+      "name": "same request, tenant header changed (signature must differ)",
+      "secret": "TEST-ONLY-p5-svc-sig-vector-secret-profile-user-0001",
+      "input": {
+        "aud": "user-service",
+        "caller": "profile-service",
+        "idem": "",
+        "body": "",
+        "kid": "pr-2026-11",
+        "method": "GET",
+        "target": "/internal/tenants/aaaaaaaaaaaaaaaaaaaaaaaa/creditor-profile",
+        "tenant": "bbbbbbbbbbbbbbbbbbbbbbbb",
+        "ts": "1793000200",
+        "nonce": "Y3JlZGl0b3ItcHJvZmlsZS0x"
+      },
+      "expect": {
+        "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "canonical": "p5-svc-sig/1\naud=12:user-service\ncaller=15:profile-service\nkid=10:pr-2026-11\nmethod=3:GET\ntarget=59:/internal/tenants/aaaaaaaaaaaaaaaaaaaaaaaa/creditor-profile\ntenant=24:bbbbbbbbbbbbbbbbbbbbbbbb\nidem=0:\nbody=64:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\nts=10:1793000200\nnonce=24:Y3JlZGl0b3ItcHJvZmlsZS0x",
+        "sig": "O9pcLSFiD17D-ucY2Yw669rjN9rpRcJOrpuBYEdli5M"
+      }
+    }
+  ]
+}

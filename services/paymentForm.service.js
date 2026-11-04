@@ -8,7 +8,9 @@ const {
   PAYMENT_FORM_STATUSES,
 } = require("../models/memberPaymentForm.model.js");
 const { AppError } = require("../errors/AppError.js");
-const { fetchTenantContext, formatOrgAddress, formatBankAddress } = require("./tenant.service.client.js");
+const { fetchCreditorContext, formatOrgAddress, formatBankAddress } = require("./tenant.service.client.js");
+// PDP P3 (Q2): plaintext debtor IBAN/BIC only for a CRM caller holding payments.bank:read (or ASU "*").
+const { canReadBankData } = require("../helpers/bankDataAccess.js");
 const {
   fetchCurrentSubscriptionByProfileId,
   SUBSCRIPTION_SERVICE_URL,
@@ -402,7 +404,7 @@ async function prefillForm({ tenantId, profileId, formType, req }) {
   );
   const resolvedFormType = allowedFormType;
 
-  const tenantCtx = await fetchTenantContext(tenantId, req);
+  const tenantCtx = await fetchCreditorContext(tenantId, req);
   const hydrated = await hydrateFormFields(
     profile,
     subscription,
@@ -650,7 +652,7 @@ async function createForm({
   );
   assertFormTypeMatchesSubscription(subscription, formType);
 
-  const tenantCtx = await fetchTenantContext(tenantId, req);
+  const tenantCtx = await fetchCreditorContext(tenantId, req);
   const hydrated = await hydrateFormFields(
     profile,
     subscription,
@@ -680,7 +682,9 @@ async function createForm({
 
   pushAudit(form, "created", req, { channel: source });
   await form.save();
-  return getById(String(form._id), tenantId, { includeSensitive: source !== "portal" });
+  return getById(String(form._id), tenantId, {
+    includeSensitive: source !== "portal" && canReadBankData(req),
+  });
 }
 
 async function listWithFilter({ tenantId, filters = {}, page = 1, limit = 500 }) {
@@ -993,7 +997,7 @@ async function updateForm(id, tenantId, body, req, { portal = false } = {}) {
   pushAudit(form, "updated", req);
   await form.save();
   return getById(id, tenantId, {
-    includeSensitive: !portal,
+    includeSensitive: !portal && canReadBankData(req),
     portalUserId: portal ? req.userId : null,
   });
 }
@@ -1065,7 +1069,7 @@ async function submitForm(id, tenantId, req, { portal = false } = {}) {
     channel: portal ? "portal" : "crm",
   });
   await form.save();
-  return getById(id, tenantId, { includeSensitive: !portal });
+  return getById(id, tenantId, { includeSensitive: !portal && canReadBankData(req) });
 }
 
 async function verifyForm(id, tenantId, req) {
@@ -1074,7 +1078,7 @@ async function verifyForm(id, tenantId, req) {
   form.status = "verified";
   pushAudit(form, "verified", req);
   await form.save();
-  return getById(id, tenantId, { includeSensitive: true });
+  return getById(id, tenantId, { includeSensitive: canReadBankData(req) });
 }
 
 async function syncSubscriptionPaymentType(form, req) {
@@ -1213,7 +1217,7 @@ async function approveForm(id, tenantId, req) {
     await form.save();
   }
 
-  return getById(id, tenantId, { includeSensitive: true });
+  return getById(id, tenantId, { includeSensitive: canReadBankData(req) });
 }
 
 async function rejectForm(id, tenantId, req, reason) {
@@ -1222,7 +1226,7 @@ async function rejectForm(id, tenantId, req, reason) {
   form.status = "rejected";
   pushAudit(form, "rejected", req, { reason });
   await form.save();
-  return getById(id, tenantId, { includeSensitive: true });
+  return getById(id, tenantId, { includeSensitive: canReadBankData(req) });
 }
 
 async function uploadPaper(id, tenantId, file, req) {
@@ -1254,7 +1258,7 @@ async function uploadPaper(id, tenantId, file, req) {
   }
   pushAudit(form, "paper_uploaded", req);
   await form.save();
-  return { ...getById(id, tenantId, { includeSensitive: true }), uploadUrl: url };
+  return { ...getById(id, tenantId, { includeSensitive: canReadBankData(req) }), uploadUrl: url };
 }
 
 async function uploadSignedPdf(id, tenantId, file, req, { portal = false } = {}) {
@@ -1278,7 +1282,7 @@ async function uploadSignedPdf(id, tenantId, file, req, { portal = false } = {})
   pushAudit(form, "signed_pdf_uploaded", req);
   await form.save();
   return getById(id, tenantId, {
-    includeSensitive: !portal,
+    includeSensitive: !portal && canReadBankData(req),
     portalUserId: portal ? req.userId : null,
   });
 }
@@ -1319,7 +1323,7 @@ async function uploadSignature(
   });
   await form.save();
   return getById(id, tenantId, {
-    includeSensitive: !portal,
+    includeSensitive: !portal && canReadBankData(req),
     portalUserId: portal ? req.userId : null,
   });
 }
@@ -1407,7 +1411,7 @@ async function sendFormEmail(id, tenantId, emailBody, req) {
 
   pushAudit(form, "email_queued", req);
   await form.save();
-  return getById(id, tenantId, { includeSensitive: true });
+  return getById(id, tenantId, { includeSensitive: canReadBankData(req) });
 }
 
 async function listForProfile(profileId, tenantId, { portalUserId = null } = {}) {
@@ -1450,8 +1454,10 @@ function collectPaymentFormBlobPaths(form) {
   return [...new Set(paths)];
 }
 
-async function exportFormPdf(id, tenantId) {
-  const form = await getById(id, tenantId, { includeSensitive: true });
+// PDP P3: the CRM download renders the plaintext debtor IBAN/BIC only for a bank-data reader; otherwise the
+// PDF prints the masked IBAN (first4****last4) and no BIC (decryptFormForResponse output).
+async function exportFormPdf(id, tenantId, { includeSensitive = false } = {}) {
+  const form = await getById(id, tenantId, { includeSensitive: includeSensitive === true });
   const {
     buildPaymentFormPdfBuffer,
     pdfFilenameForForm,
@@ -1489,6 +1495,9 @@ function resolveMemberNameFromProfile(profile) {
  * CRM-authenticated: active authorized DD mandates with decrypted debtor fields.
  * Called by account-service during DD run prepare (JWT forwarded from CRM user).
  */
+// PDP P3: the SEPA feed (plaintext debtor bank details). Callers must hold payments.bank:read (route /
+// controller); an explicit, non-empty list of valid profile ids is required - the former "no ids = every
+// active mandate of the tenant" mode is gone.
 async function listDirectDebitMandatesForPrepare({ tenantId, profileIds = [] }) {
   const query = {
     tenantId,
@@ -1510,9 +1519,12 @@ async function listDirectDebitMandatesForPrepare({ tenantId, profileIds = [] }) 
     })
     .filter(Boolean);
 
-  if (objectIds.length) {
-    query.profileId = { $in: objectIds };
+  if (!objectIds.length) {
+    throw AppError.badRequest("profileIds must list at least one valid profile id", {
+      code: "PROFILE_IDS_REQUIRED",
+    });
   }
+  query.profileId = { $in: objectIds };
 
   const forms = await MemberPaymentForm.find(query)
     .sort({ updatedAt: -1 })

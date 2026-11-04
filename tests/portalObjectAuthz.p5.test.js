@@ -330,7 +330,6 @@ describe("P5 payment forms", () => {
     ["DELETE", `/api/payment-forms/${FORM_B}`],
     ["POST", `/api/payment-forms/${FORM_B}/send-email`],
     ["PUT", "/api/payment-forms/filter"],
-    ["POST", "/api/payment-forms/direct-debit/mandates-for-prepare"],
     ["POST", "/api/payment-forms"],
     ["GET", `/api/payment-forms/profile/${PB}`],
   ];
@@ -340,6 +339,48 @@ describe("P5 payment forms", () => {
     expect(denied(await call(method, url, asC, body), "CRM_ONLY")).toBe(true);
     expect(reached(await call(method, url, asCrm, body))).toBe(true);
     expect(denied(await call(method, url, asCrmNoPerm, body), "PDP_DENY")).toBe(true);
+  });
+
+  // PDP P3 (Q2): the SEPA prepare feed additionally needs payments.bank:read (helpers/bankDataAccess.js);
+  // controller-level behaviour (empty profileIds, the filter purpose) is in paymentFormBankData.p3.test.js.
+  test("POST /direct-debit/mandates-for-prepare is CRM + payments permission + payments.bank:read", async () => {
+    const url = "/api/payment-forms/direct-debit/mandates-for-prepare";
+    const asCrmBank = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", permissions: [...CRM_PERMS, "payments.bank:read"] }) };
+    expect(denied(await call("POST", url, asA, {}), "CRM_ONLY")).toBe(true);
+    expect(denied(await call("POST", url, asC, {}), "CRM_ONLY")).toBe(true);
+    expect(denied(await call("POST", url, asCrmNoPerm, {}), "PDP_DENY")).toBe(true);
+    expect(denied(await call("POST", url, asCrm, {}), "BANK_DATA_PERMISSION_REQUIRED")).toBe(true);
+    expect(reached(await call("POST", url, asCrmBank, {}))).toBe(true);
+  });
+
+  // PDP P3: payments.bank:read is a READ grant only - it never substitutes for payments:write on a CRM mutation,
+  // and a payments:write caller without it still reaches the write routes (responses masked in the service).
+  test("payments.bank:read never authorises a payment-form mutation; payments:write alone still does (masked)", async () => {
+    const asBankReadOnly = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", permissions: ["payments:read", "payments.bank:read"] }) };
+    const asWriteOnly = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", permissions: ["payments:write"] }) };
+    const mutations = [
+      ["PATCH", `/api/payment-forms/${FORM_B}`],
+      ["POST", `/api/payment-forms/${FORM_B}/submit`],
+      ["POST", `/api/payment-forms/${FORM_B}/verify`],
+      ["POST", `/api/payment-forms/${FORM_B}/approve`],
+      ["POST", `/api/payment-forms/${FORM_B}/reject`],
+      ["DELETE", `/api/payment-forms/${FORM_B}`],
+      ["POST", `/api/payment-forms/${FORM_B}/send-email`],
+      ["POST", "/api/payment-forms"],
+    ];
+    for (const [method, url] of mutations) {
+      const body = method === "DELETE" ? undefined : {};
+      expect([method, url, denied(await call(method, url, asBankReadOnly, body), "PDP_DENY")]).toEqual([method, url, true]);
+      expect([method, url, reached(await call(method, url, asWriteOnly, body))]).toEqual([method, url, true]);
+    }
+    // reads (detail, PDF, SEPA feed) need payments:read: a write-only caller is refused there (PDP_DENY)
+    expect(denied(await call("GET", `/api/payment-forms/${FORM_B}`, asWriteOnly), "PDP_DENY")).toBe(true);
+    expect(denied(await call("GET", `/api/payment-forms/${FORM_B}/pdf`, asWriteOnly), "PDP_DENY")).toBe(true);
+    // the SEPA feed is a bank READ: payments:write without payments:read / payments.bank:read is refused
+    expect(denied(await call("POST", "/api/payment-forms/direct-debit/mandates-for-prepare", asWriteOnly, {}), "PDP_DENY")).toBe(true);
+    // unknown caller type: refused before any permission check
+    expect(denied(await call("POST", "/api/payment-forms/direct-debit/mandates-for-prepare", asUnknownType, {}), "CRM_ONLY")).toBe(true);
+    expect(denied(await call("GET", `/api/payment-forms/${FORM_B}`, asUnknownType), "CRM_ONLY")).toBe(true);
   });
 
   test("GET /prefill?profileId: portal own profile only", async () => {
