@@ -373,6 +373,9 @@ describe("P5 payment forms", () => {
       expect([method, url, denied(await call(method, url, asBankReadOnly, body), "PDP_DENY")]).toEqual([method, url, true]);
       expect([method, url, reached(await call(method, url, asWriteOnly, body))]).toEqual([method, url, true]);
     }
+    // reads (detail, PDF, SEPA feed) need payments:read: a write-only caller is refused there (PDP_DENY)
+    expect(denied(await call("GET", `/api/payment-forms/${FORM_B}`, asWriteOnly), "PDP_DENY")).toBe(true);
+    expect(denied(await call("GET", `/api/payment-forms/${FORM_B}/pdf`, asWriteOnly), "PDP_DENY")).toBe(true);
     // the SEPA feed is a bank READ: payments:write without payments:read / payments.bank:read is refused
     expect(denied(await call("POST", "/api/payment-forms/direct-debit/mandates-for-prepare", asWriteOnly, {}), "PDP_DENY")).toBe(true);
     // unknown caller type: refused before any permission check
