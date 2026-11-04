@@ -122,6 +122,8 @@ const ProfileSchema = new mongoose.Schema(
       // P5: execution lease of the run currently acting on the claim.
       leaseId: String,
       leaseUntil: Date,
+      // P5: client Idempotency-Keys of the runs of this decision (replay after completion).
+      operationKeys: { type: [String], default: undefined },
     },
     profileId: {
       type: mongoose.Schema.Types.ObjectId,

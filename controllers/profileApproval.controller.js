@@ -17,6 +17,7 @@ const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/applic
 const {
   ensureDuplicateReviewAllowsApproval,
   resolveProfileForApproval,
+  assertReviewedProfileTarget,
 } = require("../services/duplicate.review.service.js");
 const {
   publishPostApprovalEvents,
@@ -48,7 +49,15 @@ const {
   claimPaymentDecision,
   releasePaymentDecision,
   endPaymentDecisionLease,
+  findDecisionReplay,
 } = require("../services/applicationPaymentDecision.service.js");
+const {
+  readIdempotencyKey,
+  readExpectedReviewVersion,
+  assertExpectedReviewVersion,
+  logCompatibilityWindow,
+} = require("../services/decisionPreconditions.js");
+const { assertApprovalPaymentBinding } = require("../services/approvalPaymentBinding.js");
 const {
   currentReviewVersion,
   reviewVersionFilter,
@@ -267,12 +276,48 @@ async function approveApplication(req, res, next) {
     console.log("[approveApplication] reviewerId (approver user ID):", reviewerId, "userType:", req.user?.userType);
   }
 
+  // P5 preconditions (services/decisionPreconditions.js): malformed -> 400; enforce mode requires
+  // Idempotency-Key and expectedReviewVersion (428).
+  let operationKey;
+  let expectedReviewVersion;
+  try {
+    operationKey = readIdempotencyKey(req);
+    expectedReviewVersion = readExpectedReviewVersion(req.body?.expectedReviewVersion);
+  } catch (preconditionError) {
+    return next(preconditionError);
+  }
+  if (!operationKey || expectedReviewVersion === null) {
+    logCompatibilityWindow("approve", {
+      applicationId,
+      idempotencyKey: !!operationKey,
+      expectedReviewVersion: expectedReviewVersion !== null,
+    });
+  }
+
+  // P5: the same approval retried with its Idempotency-Key after it completed is a replay of the
+  // recorded outcome (tenant-scoped), not a new decision.
+  try {
+    const replay = await findDecisionReplay({ applicationId, tenantId, action: "approve", operationKey });
+    if (replay) {
+      return res.status(200).json({
+        applicationId,
+        profileId: replay.profileId,
+        status: "processed",
+        replayed: true,
+      });
+    }
+  } catch (replayError) {
+    return next(replayError);
+  }
+
   // P5: the duplicate-review gate runs BEFORE the claim and any capture, and the approval is bound
-  // to the review version it passed: a failed gate takes no claim and makes no payment call.
+  // to the review version it passed: a failed gate takes no claim and makes no payment call. A
+  // sent expectedReviewVersion must be that version (409 REVIEW_VERSION_CONFLICT, no claim).
   let gatedVersion;
   try {
     const gatedReview = await ensureDuplicateReviewAllowsApproval(applicationId, tenantId);
     gatedVersion = currentReviewVersion(gatedReview);
+    assertExpectedReviewVersion(expectedReviewVersion, gatedVersion);
   } catch (gateError) {
     return next(gateError);
   }
@@ -287,6 +332,7 @@ async function approveApplication(req, res, next) {
       action: "approve",
       actorUserId: reviewerId,
       reviewVersion: gatedVersion,
+      operationKey,
     });
   } catch (claimError) {
     return next(claimError);
@@ -412,6 +458,14 @@ async function approveApplication(req, res, next) {
       effective.professionalDetails,
       { req, tenantId },
     );
+    // P5 ownership, before any capture: the reviewed profile target is valid in this tenant
+    // (LINK/MERGE: a current same-tenant match; Create New: no profile holds the email).
+    await assertReviewedProfileTarget({
+      duplicateReview: personalForReview.duplicateReview,
+      effective,
+      tenantId,
+      session,
+    });
 
     const existingSubscription = await SubscriptionDetails.findOne({
       applicationId,
@@ -422,7 +476,7 @@ async function approveApplication(req, res, next) {
       .lean();
     // LINK mode: the link's own authorised PaymentIntent; INLINE: unchanged resolution.
     // Kept in sync with bulkApproval.controller.js.
-    const { paymentIntentId, latestPayment } = await resolveApprovalPaymentIntent({
+    const { paymentIntentId, latestPayment, mode: paymentMode } = await resolveApprovalPaymentIntent({
       personal: personalForReview,
       applicationId,
       tenantId,
@@ -435,6 +489,8 @@ async function approveApplication(req, res, next) {
           fallbackSubscription: existingSubscription,
         }),
     });
+    // P5 ownership: the payment captured must be bound to THIS application (fail closed).
+    assertApprovalPaymentBinding({ applicationId, paymentIntentId, latestPayment, mode: paymentMode });
 
     if (paymentIntentId) {
       if (!captureResult || capturedPaymentIntentId !== paymentIntentId) {
@@ -703,15 +759,39 @@ async function rejectApplication(req, res, next) {
   // This comes from the authenticated user's ID in the request (set by auth middleware)
   const reviewerId = req.user?.id || req.userId;
 
+  // P5 preconditions: Idempotency-Key (required in enforce mode); expectedReviewVersion is
+  // optional on reject (a reject does not depend on the duplicate review) but checked when sent.
+  let operationKey;
+  let expectedReviewVersion;
+  try {
+    operationKey = readIdempotencyKey(req);
+    expectedReviewVersion = readExpectedReviewVersion(req.body?.expectedReviewVersion, { required: false });
+  } catch (preconditionError) {
+    return next(preconditionError);
+  }
+  if (!operationKey) {
+    logCompatibilityWindow("reject", { applicationId, idempotencyKey: false });
+  }
+
   // Tenant-scoped existence check BEFORE cancelling any payment intent.
   const scopedApplication = await PersonalDetails.findOne({
     applicationId,
     tenantId,
   })
-    .select("_id")
+    .select("_id duplicateReview.reviewVersion")
     .lean();
   if (!scopedApplication) {
     return next(AppError.notFound("Application not found"));
+  }
+
+  try {
+    const replay = await findDecisionReplay({ applicationId, tenantId, action: "reject", operationKey });
+    if (replay) {
+      return res.status(200).json({ applicationId, status: "rejected", replayed: true });
+    }
+    assertExpectedReviewVersion(expectedReviewVersion, currentReviewVersion(scopedApplication));
+  } catch (preError) {
+    return next(preError);
   }
 
   // Committed reject decision BEFORE any cancel (P5 bound payment commands).
@@ -722,6 +802,7 @@ async function rejectApplication(req, res, next) {
       tenantId,
       action: "reject",
       actorUserId: reviewerId,
+      operationKey,
     });
   } catch (claimError) {
     return next(claimError);
@@ -743,6 +824,8 @@ async function rejectApplication(req, res, next) {
       req,
       fallbackSubscription: existingSubscription,
     });
+    // P5 ownership: never release a hold that is not bound to THIS application (fail closed).
+    assertApprovalPaymentBinding({ applicationId, paymentIntentId, latestPayment, mode: "INLINE" });
     if (paymentIntentId) {
       try {
         cancelResult = await cancelPaymentIntent(paymentIntentId, tenantId, req, {

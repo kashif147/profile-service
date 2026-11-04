@@ -43,3 +43,29 @@ Called after the transaction commits, each publish independently try/caught:
 at-least-once/best-effort boundary — if you're asked to make it more consistent, the fix is a
 retry/outbox mechanism around the publish calls, not wrapping the publish back into the DB
 transaction.
+
+## P5 decision guards (all decision paths)
+
+Every decision path (single approve/reject, bulk approval, legacy `PUT /applications/status/:id`,
+`POST /:applicationId/duplicate-review`) now shares the same guards — change them together:
+
+- **Preconditions** (`services/decisionPreconditions.js`): `DUPLICATE_REVIEW_VERSION_MODE` =
+  `compat` (default; anything other than exactly `enforce`) | `enforce`. Enforce requires an
+  `Idempotency-Key` header (428 `IDEMPOTENCY_KEY_REQUIRED`) and `expectedReviewVersion` (428
+  `REVIEW_VERSION_REQUIRED`) on approve, bulk rows (`items[]`), legacy approve and the review
+  decision; reject needs only the key. Malformed values are 400 in both modes; a sent version is
+  always checked (409 `REVIEW_VERSION_CONFLICT`). Compat omissions log
+  `[decision-preconditions] compatibility window`.
+- **Version lock**: duplicate gate before the claim; claim records `paymentDecision.reviewVersion`;
+  inside the transaction the review is re-checked and locked at that version before any capture.
+  Bulk does this per row (`bulkApproveOne`), with its own claim/lease/transaction, and aborts the
+  row's transaction on any failure (it used to commit partial work).
+- **Ownership**: `assertReviewedProfileTarget` before capture (LINK/MERGE target = same-tenant,
+  current unignored match: 404 `MATCHED_PROFILE_NOT_FOUND` / 409 `MATCH_NOT_CURRENT`; Create New:
+  409 `PROFILE_EMAIL_EXISTS`); `assertApprovalPaymentBinding` before capture/cancel (409
+  `PAYMENT_BINDING_MISSING` / `PAYMENT_APPLICATION_MISMATCH`). Bulk now resolves LINKED/MERGED
+  reviews through `resolveProfileForApproval` like single approval.
+- **Replay**: a run's `Idempotency-Key` is stored on the claim (`paymentDecision.operationKeys`);
+  the same key after completion replays the outcome (`replayed: true`) instead of 409.
+- Tests: `tests/duplicateReviewOwnership.p5.test.js`, `tests/duplicateReviewRace.p5.test.js`
+  (real replica set, `P5_DUPREVIEW_MONGO_URI`), `tests/decisionPreconditions.p5.test.js`.

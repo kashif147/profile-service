@@ -21,6 +21,10 @@
  *   Release and lease-end are bound to the lease; an expired lease (crash) is taken over by the
  *   next run of the same action. The approve claim also records the duplicate-review version it
  *   was made against (paymentDecision.reviewVersion).
+ * - P5 operation keys: a run started with a client Idempotency-Key records it on the claim
+ *   (paymentDecision.operationKeys, last 20). Once the decision completed, the same action with a
+ *   recorded key is a replay (findDecisionReplay) and returns the recorded outcome instead of 409
+ *   APPLICATION_ALREADY_DECIDED; any other key still gets the 409.
  */
 const crypto = require("crypto");
 const PersonalDetails = require("../models/personal.details.model.js");
@@ -36,7 +40,9 @@ function conflict(code, message) {
   return new AppError(message, 409, code);
 }
 
-async function claimPaymentDecision({ applicationId, tenantId, action, actorUserId, reviewVersion }) {
+const MAX_OPERATION_KEYS = 20;
+
+async function claimPaymentDecision({ applicationId, tenantId, action, actorUserId, reviewVersion, operationKey }) {
   if (!ACTIONS.has(action)) throw new Error(`unknown payment decision action ${action}`);
   if (!tenantId) throw AppError.forbidden("Tenant context is required");
   const claimId = crypto.randomUUID();
@@ -58,6 +64,7 @@ async function claimPaymentDecision({ applicationId, tenantId, action, actorUser
           leaseId,
           leaseUntil,
           ...(Number.isInteger(reviewVersion) ? { reviewVersion } : {}),
+          ...(operationKey ? { operationKeys: [String(operationKey)] } : {}),
         },
       },
     },
@@ -76,7 +83,12 @@ async function claimPaymentDecision({ applicationId, tenantId, action, actorUser
         { "paymentDecision.leaseUntil": { $lte: now } },
       ],
     },
-    { $set: { "paymentDecision.leaseId": leaseId, "paymentDecision.leaseUntil": leaseUntil, ...versionSet } },
+    {
+      $set: { "paymentDecision.leaseId": leaseId, "paymentDecision.leaseUntil": leaseUntil, ...versionSet },
+      ...(operationKey
+        ? { $push: { "paymentDecision.operationKeys": { $each: [String(operationKey)], $slice: -MAX_OPERATION_KEYS } } }
+        : {}),
+    },
     { new: true },
   );
   if (doc) return { claimId: doc.paymentDecision.claimId, leaseId, reused: true };
@@ -98,6 +110,31 @@ async function claimPaymentDecision({ applicationId, tenantId, action, actorUser
     "PAYMENT_DECISION_CONFLICT",
     `A ${current.paymentDecision?.action || "different"} decision is already in progress for this application.`,
   );
+}
+
+/**
+ * A completed decision of `action` that recorded `operationKey`: the original outcome, or null.
+ * Tenant-scoped; never matches another tenant's application.
+ */
+async function findDecisionReplay({ applicationId, tenantId, action, operationKey }) {
+  if (!operationKey || !tenantId) return null;
+  const status = action === "approve" ? APPLICATION_STATUS.PROCESSED : APPLICATION_STATUS.REJECTED;
+  const doc = await PersonalDetails.findOne({
+    applicationId,
+    tenantId: String(tenantId),
+    applicationStatus: status,
+    "paymentDecision.action": action,
+    "paymentDecision.operationKeys": String(operationKey),
+  })
+    .select("applicationId applicationStatus profileId paymentDecision.reviewVersion")
+    .lean();
+  if (!doc) return null;
+  return {
+    applicationId: doc.applicationId,
+    applicationStatus: doc.applicationStatus,
+    profileId: doc.profileId ? String(doc.profileId) : null,
+    reviewVersion: doc.paymentDecision?.reviewVersion ?? null,
+  };
 }
 
 function leaseFilter(applicationId, tenantId, claimId, leaseId) {
@@ -136,5 +173,6 @@ module.exports = {
   claimPaymentDecision,
   releasePaymentDecision,
   endPaymentDecisionLease,
+  findDecisionReplay,
   DECISION_LEASE_MS,
 };

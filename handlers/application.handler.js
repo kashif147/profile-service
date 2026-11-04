@@ -1,3 +1,4 @@
+const { currentReviewVersion } = require("../services/duplicate.review.version.js");
 const PersonalDetails = require("../models/personal.details.model");
 const ProfessionalDetails = require("../models/professional.details.model");
 const SubscriptionDetails = require("../models/subscription.model");
@@ -754,6 +755,8 @@ exports.getAllApplicationsWithDetails = (
                 !!application?.duplicateDetection?.isPotentialDuplicate,
               duplicateReviewStatus:
                 application?.duplicateReview?.status || "NOT_CHECKED",
+              // P5: sent back as expectedReviewVersion by approve / bulk approval.
+              duplicateReviewVersion: currentReviewVersion(application),
               createdAt: application.createdAt,
               updatedAt: application.updatedAt,
             };
@@ -1098,6 +1101,8 @@ exports.getApplicationsWithTemplateFilters = (
                 !!application?.duplicateDetection?.isPotentialDuplicate,
               duplicateReviewStatus:
                 application?.duplicateReview?.status || "NOT_CHECKED",
+              // P5: sent back as expectedReviewVersion by approve / bulk approval.
+              duplicateReviewVersion: currentReviewVersion(application),
               createdAt: application.createdAt,
               updatedAt: application.updatedAt,
             };
@@ -1127,6 +1132,7 @@ exports.getApplicationsWithTemplateFilters = (
               fullApplication?.duplicateReviewStatus ||
               fullApplication?.personalDetails?.duplicateReview?.status ||
               "NOT_CHECKED";
+            row.duplicateReviewVersion = fullApplication.duplicateReviewVersion;
             enrichApplicationRowPersonalFullName(row);
             return row;
           } catch (error) {

@@ -169,6 +169,8 @@ module.exports.application_approve = Joi.object({
     .valid(APPLICATION_STATUS.PROCESSED, APPLICATION_STATUS.REJECTED)
     .required(),
   comments: Joi.string().optional(),
+  // P5: validated by the controller (services/decisionPreconditions.js) for explicit codes.
+  expectedReviewVersion: Joi.any().optional(),
 });
 //
 module.exports.professional_details_create = Joi.object({

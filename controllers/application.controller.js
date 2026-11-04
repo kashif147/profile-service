@@ -30,7 +30,16 @@ const {
   claimPaymentDecision,
   releasePaymentDecision,
   endPaymentDecisionLease,
+  findDecisionReplay,
 } = require("../services/applicationPaymentDecision.service.js");
+const {
+  readIdempotencyKey,
+  readExpectedReviewVersion,
+  assertExpectedReviewVersion,
+  logCompatibilityWindow,
+} = require("../services/decisionPreconditions.js");
+const { assertApprovalPaymentBinding } = require("../services/approvalPaymentBinding.js");
+const { currentReviewVersion } = require("../services/duplicate.review.version.js");
 const {
   resolvePortalUserServiceId,
 } = require("../helpers/portalUserIdentity.js");
@@ -540,17 +549,44 @@ exports.approveApplication = async (req, res, next) => {
     if (!tenantId) {
       return next(AppError.forbidden("Tenant context is required"));
     }
+    // P5 preconditions (legacy route too): Idempotency-Key always in enforce mode;
+    // expectedReviewVersion required in enforce mode when approving, checked whenever sent.
+    const operationKey = readIdempotencyKey(req);
+    const expectedReviewVersion = readExpectedReviewVersion(validatedData.expectedReviewVersion, {
+      required: decision === APPLICATION_STATUS.PROCESSED,
+    });
+    if (!operationKey || expectedReviewVersion === null) {
+      logCompatibilityWindow("legacy-status", {
+        applicationId,
+        idempotencyKey: !!operationKey,
+        expectedReviewVersion: expectedReviewVersion !== null,
+      });
+    }
     // Tenant-scoped existence check BEFORE any payment capture/cancel: an
     // application from another tenant is indistinguishable from a missing one.
     const scopedApplication = await PersonalDetails.findOne({
       applicationId,
       tenantId: String(tenantId),
     })
-      .select("_id")
+      .select("_id duplicateReview.reviewVersion")
       .lean();
     if (!scopedApplication) {
       return res.notFoundRecord("Application not found");
     }
+    const legacyAction =
+      decision === APPLICATION_STATUS.PROCESSED
+        ? "approve"
+        : decision === APPLICATION_STATUS.REJECTED
+          ? "reject"
+          : null;
+    if (legacyAction) {
+      const replay = await findDecisionReplay({ applicationId, tenantId, action: legacyAction, operationKey });
+      if (replay) {
+        return res.success({ applicationId, applicationStatus: replay.applicationStatus, replayed: true });
+      }
+    }
+    const reviewVersionNow = currentReviewVersion(scopedApplication);
+    assertExpectedReviewVersion(expectedReviewVersion, reviewVersionNow);
     const subscriptionQuery = { applicationId, tenantId: String(tenantId) };
     const existingSubscription = await SubscriptionDetails.findOne(subscriptionQuery)
       .select("paymentDetails")
@@ -570,12 +606,18 @@ exports.approveApplication = async (req, res, next) => {
         : decision === APPLICATION_STATUS.REJECTED
           ? "reject"
           : null;
+    // P5 ownership: never capture/cancel a payment that is not bound to THIS application.
+    if (claimAction) {
+      assertApprovalPaymentBinding({ applicationId, paymentIntentId, latestPayment, mode: "INLINE" });
+    }
     if (claimAction) {
       decisionClaim = await claimPaymentDecision({
         applicationId,
         tenantId,
         action: claimAction,
         actorUserId: creatorId,
+        operationKey,
+        ...(claimAction === "approve" ? { reviewVersion: reviewVersionNow } : {}),
       });
       claimedApplicationId = applicationId;
       claimedTenantId = String(tenantId);

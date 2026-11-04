@@ -16,6 +16,7 @@ const {
   currentReviewVersion,
   reviewVersionFilter,
 } = require("./duplicate.review.version.js");
+const { assertExpectedReviewVersion } = require("./decisionPreconditions.js");
 const {
   findOrCreateProfileByEmail,
   pickPrimaryEmail,
@@ -239,11 +240,8 @@ async function recordDuplicateDecision({
       applicationId,
       reviewVersion,
     });
-  } else if (Number(expectedReviewVersion) !== reviewVersion) {
-    throw AppError.conflict(
-      "The duplicate review changed since it was loaded. Refresh and review again.",
-      { code: "REVIEW_VERSION_CONFLICT", reviewVersion },
-    );
+  } else {
+    assertExpectedReviewVersion(Number(expectedReviewVersion), reviewVersion);
   }
   const inputFingerprint = await applicationInputFingerprint(applicationId, effectiveTenantId);
   await assertDecisionTargetValid({
@@ -485,6 +483,50 @@ async function assertNoProfileHoldsApplicantEmail(contactInfo, tenantId, session
   }
 }
 
+/**
+ * P5: at approval, a LINKED/MERGED review's matchedProfileId must be a profile of the verified
+ * tenant (404 MATCHED_PROFILE_NOT_FOUND) and a current, unignored PROFILE match of the review
+ * (409 MATCH_NOT_CURRENT).
+ */
+async function assertApprovalLinkTarget({ duplicateReview, tenantId, session = null }) {
+  const profileId = String(duplicateReview?.matchedProfileId || "");
+  if (!mongoose.Types.ObjectId.isValid(profileId)) {
+    throw AppError.notFound("Matched profile not found for duplicate review", {
+      code: "MATCHED_PROFILE_NOT_FOUND",
+    });
+  }
+  const query = Profile.findOne({ _id: profileId, tenantId: requireRequestTenantId(tenantId) }).select("_id");
+  if (session) query.session(session);
+  if (!(await query.lean())) {
+    throw AppError.notFound("Matched profile not found for duplicate review", {
+      code: "MATCHED_PROFILE_NOT_FOUND",
+    });
+  }
+  const isCurrentMatch = (duplicateReview?.matchSummary || []).some(
+    (m) => m.sourceType === "PROFILE" && String(m.sourceId) === profileId && !m.ignored,
+  );
+  if (!isCurrentMatch) {
+    throw AppError.conflict(
+      "The linked profile is no longer a current match for this application. Review duplicates again.",
+      { code: "MATCH_NOT_CURRENT" },
+    );
+  }
+}
+
+/**
+ * P5: the profile target of the reviewed decision, checked BEFORE any capture (single and bulk
+ * approval): LINKED/MERGED -> assertApprovalLinkTarget; MARKED_NEW -> no profile of the tenant
+ * holds the (possibly patched) applicant email (409 PROFILE_EMAIL_EXISTS).
+ */
+async function assertReviewedProfileTarget({ duplicateReview, effective, tenantId, session = null }) {
+  const status = duplicateReview?.status;
+  if (status === DUPLICATE_REVIEW_STATUS.LINKED || status === DUPLICATE_REVIEW_STATUS.MERGED) {
+    await assertApprovalLinkTarget({ duplicateReview, tenantId, session });
+  } else if (status === DUPLICATE_REVIEW_STATUS.MARKED_NEW) {
+    await assertNoProfileHoldsApplicantEmail(effective?.contactInfo, tenantId, session);
+  }
+}
+
 async function ensureDuplicateReviewAllowsApproval(applicationId, tenantId) {
   let personal = await getPersonalDetailsForReview(applicationId, tenantId);
   let status = personal.duplicateReview?.status || DUPLICATE_REVIEW_STATUS.NOT_CHECKED;
@@ -602,8 +644,15 @@ async function resolveProfileForApproval({
   ) {
     const profileId = duplicateReview.matchedProfileId;
     if (!profileId) {
-      throw AppError.badRequest("Duplicate review is missing matched profile");
+      throw AppError.badRequest("Duplicate review is missing matched profile", {
+        code: "MATCHED_PROFILE_MISSING",
+      });
     }
+
+    // P5 ownership: the linked/merged target is exactly the recorded profile id (never a userId or
+    // membership-number fallback), a profile of the caller's verified tenant, and still one of the
+    // application's current, unignored profile matches. Checked before any profile write.
+    await assertApprovalLinkTarget({ duplicateReview, tenantId, session });
 
     const { profile: resolvedProfile } = await resolveProfileForDuplicateMerge(
       applicationId,
@@ -611,12 +660,19 @@ async function resolveProfileForApproval({
       tenantId,
       { requireAuthorizedMatch: false },
     );
+    if (String(resolvedProfile._id) !== String(profileId)) {
+      throw AppError.notFound("Matched profile not found for duplicate review", {
+        code: "MATCHED_PROFILE_NOT_FOUND",
+      });
+    }
     let profile = await Profile.findOne({
       _id: resolvedProfile._id,
       tenantId: requireRequestTenantId(tenantId),
     }).session(session);
     if (!profile) {
-      throw AppError.notFound("Matched profile not found for duplicate review");
+      throw AppError.notFound("Matched profile not found for duplicate review", {
+        code: "MATCHED_PROFILE_NOT_FOUND",
+      });
     }
 
     if (status === DUPLICATE_REVIEW_STATUS.LINKED) {
@@ -703,6 +759,8 @@ module.exports = {
   resolveProfileForApproval,
   activeMatchesFromSummary,
   assertNoProfileHoldsApplicantEmail,
+  assertApprovalLinkTarget,
+  assertReviewedProfileTarget,
   assertApplicationDuplicateReviewMutable,
   isApplicationProcessed,
   isDuplicateReviewBlockingApproval,

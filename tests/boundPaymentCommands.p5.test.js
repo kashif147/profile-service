@@ -166,7 +166,8 @@ beforeEach(() => {
   post = jest.spyOn(axios, "post");
   get = jest.spyOn(axios, "get").mockImplementation(async (url) => {
     const id = decodeURIComponent(url.split("/applications/")[1].split("/")[0]);
-    return { status: 200, data: { data: { paymentIntentId: id === APP ? "pi_app" : "pi_app2", id: PAYMENT_ID, attemptNumber: 1 } } };
+    // account's GET /payments/applications/:id/latest names the application it is bound to.
+    return { status: 200, data: { data: { paymentIntentId: id === APP ? "pi_app" : "pi_app2", id: PAYMENT_ID, attemptNumber: 1, applicationId: id } } };
   });
 });
 afterEach(() => {

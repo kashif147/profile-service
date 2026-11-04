@@ -101,7 +101,8 @@ d("duplicate review race (real replica set)", () => {
     reviewController = require("../controllers/duplicateReview.controller.js");
     idem = require("../services/reviewDecisionIdempotency.js");
     ({ mockRes } = require("./helpers/memoryModel"));
-  });
+    // Connect + index builds on a fresh database can exceed jest's 5s default under a parallel run.
+  }, 30000);
 
   afterAll(async () => {
     await mongoose.connection.db.dropDatabase();
@@ -126,7 +127,7 @@ d("duplicate review race (real replica set)", () => {
     });
     jest.spyOn(axios, "get").mockImplementation(async (url) => {
       const id = decodeURIComponent(url.split("/applications/")[1].split("/")[0]);
-      return { status: 200, data: { data: { paymentIntentId: `pi_${id}`, id: "d00000000000000000000001", attemptNumber: 1 } } };
+      return { status: 200, data: { data: { paymentIntentId: `pi_${id}`, id: "d00000000000000000000001", attemptNumber: 1, applicationId: id } } };
     });
     jest.spyOn(console, "log").mockImplementation(() => {});
     jest.spyOn(console, "warn").mockImplementation(() => {});

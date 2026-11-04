@@ -11,6 +11,11 @@ const { AppError } = require("../errors/AppError.js");
 const PersonalDetails = require("../models/personal.details.model.js");
 const reviewIdempotency = require("../services/reviewDecisionIdempotency.js");
 const { currentReviewVersion } = require("../services/duplicate.review.version.js");
+const {
+  readIdempotencyKey,
+  readExpectedReviewVersion,
+  logCompatibilityWindow,
+} = require("../services/decisionPreconditions.js");
 
 async function detectDuplicatesForApplication(req, res, next) {
   try {
@@ -79,11 +84,20 @@ async function submitDuplicateReviewDecision(req, res, next) {
       );
     }
 
+    // P5: mode-aware preconditions (services/decisionPreconditions.js): malformed -> 400; in
+    // DUPLICATE_REVIEW_VERSION_MODE=enforce a missing key / version -> 428.
+    const clientKey = readIdempotencyKey(req);
+    const expectedVersion = readExpectedReviewVersion(expectedReviewVersion);
+    if (!clientKey || expectedVersion === null) {
+      logCompatibilityWindow("duplicate-review", {
+        applicationId,
+        idempotencyKey: !!clientKey,
+        expectedReviewVersion: expectedVersion !== null,
+      });
+    }
     // P5: explicit operation idempotency (services/reviewDecisionIdempotency.js).
-    const clientKey = String(req.get?.("Idempotency-Key") || req.headers?.["idempotency-key"] || "").trim();
     const hash = reviewIdempotency.payloadHash(req.body);
     if (clientKey) {
-      if (clientKey.length > 200) return next(AppError.badRequest("Idempotency-Key is too long"));
       const key = reviewIdempotency.operationKey({
         tenantId: String(tenantId),
         reviewerId: String(reviewerId),
@@ -126,7 +140,7 @@ async function submitDuplicateReviewDecision(req, res, next) {
       sourceId,
       decisionReason,
       mergeFieldChoices,
-      expectedReviewVersion,
+      expectedReviewVersion: expectedVersion,
     });
 
     const response = { applicationId, ...result };

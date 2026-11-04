@@ -78,6 +78,8 @@ const ApproveBody = z
     overlayVersion: z.number().int().nonnegative().optional(),
     submission: Submission.optional(),
     proposedPatch: z.array(PatchOp).optional(),
+    // P5: duplicate-review version the approver saw (validated by the controller).
+    expectedReviewVersion: z.unknown().optional(),
   })
   .superRefine((data, ctx) => {
     const hasOverlay =
@@ -120,6 +122,8 @@ const RejectBody = z
     overlayVersion: z.number().int().nonnegative().optional(),
     submission: Submission.optional(),
     proposedPatch: z.array(PatchOp).optional(),
+    // P5: optional; checked against the current review version when sent.
+    expectedReviewVersion: z.unknown().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.overlayId && typeof data.overlayVersion !== "number") {
@@ -140,6 +144,12 @@ const BulkApprovalBody = z.object({
       message: "Maximum 1000 applications can be processed at once",
     }),
   processingDate: z.union([z.string(), z.date()]).optional(), // Optional processingDate for all subscriptions in bulk approval
+  // P5: per-application duplicate-review version the approver saw. Every id in `items` must be in
+  // applicationIds; versions are validated by the controller (explicit codes).
+  items: z
+    .array(z.object({ applicationId: z.string().min(1), expectedReviewVersion: z.unknown().optional() }))
+    .max(1000)
+    .optional(),
 });
 
 const ExecutiveCouncilApprovalBody = z.object({
@@ -173,7 +183,8 @@ module.exports = {
       .record(z.enum(["APPLICATION", "PROFILE"]))
       .optional(),
     // P5: the duplicate-review version the reviewer saw (GET returns duplicateReview.reviewVersion).
-    expectedReviewVersion: z.number().int().min(0).optional(),
+    // Validated by the controller (services/decisionPreconditions.js) for explicit codes.
+    expectedReviewVersion: z.unknown().optional(),
   }).superRefine((data, ctx) => {
     if (
       (data.action === "LINK" || data.action === "MERGE") &&

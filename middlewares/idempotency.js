@@ -52,8 +52,15 @@ function defaultKeyGenerator(req) {
     .update(JSON.stringify(req.body || {}))
     .digest("hex")
     .substring(0, 16);
+  // P5: a client Idempotency-Key is part of the key, so two separate user actions (two keys) with
+  // the same body are never conflated, while a retry of one action (same key) still is.
+  const rawKey = req.headers?.["idempotency-key"];
+  const clientKey = rawKey == null ? "" : String(rawKey).trim();
+  const keyPart = clientKey
+    ? `:k:${crypto.createHash("sha256").update(clientKey).digest("hex").substring(0, 16)}`
+    : "";
 
-  return `${userId}:${req.method}:${req.path}:${bodyHash}`;
+  return `${userId}:${req.method}:${req.path}:${bodyHash}${keyPart}`;
 }
 
 module.exports = { idempotency };
