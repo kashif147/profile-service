@@ -5,7 +5,7 @@
  *
  * REAL app.js (mount order, global middleware) + REAL throwaway mongod (real PersonalDetails model,
  * real unique (caller, nonce) index). In-test random signing key and JWT secret. Skipped only when
- * no mongod is on PATH and REFUND_STATE_TEST_MONGO_URI is unset (the vector tests always run).
+ * no mongod is on PATH (the vector tests always run).
  *
  * contracts/p5-service-signing.application-refund-state.v1.json is byte-identical in
  * account-service (signer); its SHA-256 is pinned here and there.
@@ -135,7 +135,7 @@ function freePort() {
   });
 }
 
-const haveMongo = Boolean(process.env.REFUND_STATE_TEST_MONGO_URI) || spawnSync("mongod", ["--version"]).status === 0;
+const haveMongo = spawnSync("mongod", ["--version"]).status === 0;
 const d = haveMongo ? describe : describe.skip;
 
 d("GET /api/internal/applications/:applicationId/refund-state (real app, real mongod)", () => {
@@ -160,13 +160,10 @@ d("GET /api/internal/applications/:applicationId/refund-state (real app, real mo
   }
 
   beforeAll(async () => {
-    uri = process.env.REFUND_STATE_TEST_MONGO_URI;
-    if (!uri) {
-      mongodDir = fs.mkdtempSync(path.join(os.tmpdir(), "ps-refund-state-mongod-"));
-      const port = await freePort();
-      mongodProc = spawn("mongod", ["--dbpath", mongodDir, "--port", String(port), "--bind_ip", "127.0.0.1", "--quiet"], { stdio: "ignore" });
-      uri = `mongodb://127.0.0.1:${port}/profile_refund_state_test`;
-    }
+    mongodDir = fs.mkdtempSync(path.join(os.tmpdir(), "ps-refund-state-mongod-"));
+    const port = await freePort();
+    mongodProc = spawn("mongod", ["--dbpath", mongodDir, "--port", String(port), "--bind_ip", "127.0.0.1", "--quiet"], { stdio: "ignore" });
+    uri = `mongodb://127.0.0.1:${port}/profile_refund_state_test`;
     await connect();
     PersonalDetails = require("../models/personal.details.model.js");
     Nonce = require("../models/serviceAuthNonce.model.js");
