@@ -34,23 +34,44 @@ function reviewVersionMode() {
   return "compat";
 }
 
-function headerKey(req) {
-  const raw = req?.get?.("Idempotency-Key") ?? req?.headers?.["idempotency-key"];
-  if (raw == null) return null;
+function trimmed(raw) {
+  if (raw == null) return "";
   return String(raw).trim();
 }
 
 /**
- * The request's Idempotency-Key, validated. Returns null when absent (compat). Throws 400
- * IDEMPOTENCY_KEY_INVALID when malformed and, in enforce mode, 428 IDEMPOTENCY_KEY_REQUIRED
- * when absent.
+ * The request's operation key: the `Idempotency-Key` header, or the body field `idempotencyKey`
+ * (the CRM uses the body today: the DEV gateway's CORS allow-list for /profile-service/api/ does
+ * not include the header). Both present and different -> 400 IDEMPOTENCY_KEY_INVALID.
+ */
+function requestKey(req) {
+  const header = trimmed(req?.get?.("Idempotency-Key") ?? req?.headers?.["idempotency-key"]);
+  const bodyValue = req?.body?.idempotencyKey;
+  if (bodyValue != null && typeof bodyValue !== "string") {
+    throw new AppError("idempotencyKey must be a string.", 400, "IDEMPOTENCY_KEY_INVALID");
+  }
+  const body = trimmed(bodyValue);
+  if (header && body && header !== body) {
+    throw new AppError(
+      "Idempotency-Key header and body idempotencyKey differ.",
+      400,
+      "IDEMPOTENCY_KEY_INVALID",
+    );
+  }
+  return header || body;
+}
+
+/**
+ * The request's Idempotency-Key (header or body idempotencyKey), validated. Returns null when
+ * absent (compat). Throws 400 IDEMPOTENCY_KEY_INVALID when malformed and, in enforce mode, 428
+ * IDEMPOTENCY_KEY_REQUIRED when absent.
  */
 function readIdempotencyKey(req, { mode = reviewVersionMode() } = {}) {
-  const key = headerKey(req);
-  if (key === null || key === "") {
+  const key = requestKey(req);
+  if (key === "") {
     if (mode === "enforce") {
       throw new AppError(
-        "Idempotency-Key header is required for this decision.",
+        "An Idempotency-Key (header or body idempotencyKey) is required for this decision.",
         428,
         "IDEMPOTENCY_KEY_REQUIRED",
       );

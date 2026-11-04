@@ -171,6 +171,7 @@ module.exports.application_approve = Joi.object({
   comments: Joi.string().optional(),
   // P5: validated by the controller (services/decisionPreconditions.js) for explicit codes.
   expectedReviewVersion: Joi.any().optional(),
+  idempotencyKey: Joi.any().optional(),
 });
 //
 module.exports.professional_details_create = Joi.object({

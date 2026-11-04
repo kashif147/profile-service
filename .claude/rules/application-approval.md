@@ -53,7 +53,9 @@ Every decision path (single approve/reject, bulk approval, legacy `PUT /applicat
   `compat` (default; anything other than exactly `enforce`) | `enforce`. Enforce requires an
   `Idempotency-Key` header (428 `IDEMPOTENCY_KEY_REQUIRED`) and `expectedReviewVersion` (428
   `REVIEW_VERSION_REQUIRED`) on approve, bulk rows (`items[]`), legacy approve and the review
-  decision; reject needs only the key. Malformed values are 400 in both modes; a sent version is
+  decision; reject needs only the key. The key may be sent as the `Idempotency-Key` header or the
+  body field `idempotencyKey` (header wins; both and different -> 400) — the DEV gateway's CORS
+  allow-list for `/profile-service/api/` does not include the header, so the CRM uses the body. Malformed values are 400 in both modes; a sent version is
   always checked (409 `REVIEW_VERSION_CONFLICT`). Compat omissions log
   `[decision-preconditions] compatibility window`.
 - **Version lock**: duplicate gate before the claim; claim records `paymentDecision.reviewVersion`;

@@ -61,6 +61,31 @@ describe("Idempotency-Key", () => {
   });
 });
 
+describe("Idempotency-Key from the body (idempotencyKey)", () => {
+  const both = (header, body) => ({
+    headers: header === undefined ? {} : { "idempotency-key": header },
+    body: body === undefined ? {} : { idempotencyKey: body },
+  });
+  test("body only, header only, both equal", () => {
+    expect(pre.readIdempotencyKey(both(undefined, "k-body"))).toBe("k-body");
+    expect(pre.readIdempotencyKey(both("k-head", undefined))).toBe("k-head");
+    expect(pre.readIdempotencyKey(both("k-same", " k-same "))).toBe("k-same");
+  });
+  test("both present and different -> 400", () => {
+    expect(() => pre.readIdempotencyKey(both("k-1", "k-2"))).toThrow(
+      expect.objectContaining({ status: 400, code: "IDEMPOTENCY_KEY_INVALID" }),
+    );
+  });
+  test("non-string body value -> 400; malformed body value -> 400", () => {
+    expect(() => pre.readIdempotencyKey(both(undefined, 42))).toThrow(expect.objectContaining({ status: 400, code: "IDEMPOTENCY_KEY_INVALID" }));
+    expect(() => pre.readIdempotencyKey(both(undefined, "a b"))).toThrow(expect.objectContaining({ status: 400, code: "IDEMPOTENCY_KEY_INVALID" }));
+  });
+  test("enforce: a body key satisfies the requirement", () => {
+    process.env[MODE] = "enforce";
+    expect(pre.readIdempotencyKey(both(undefined, "k-body"))).toBe("k-body");
+  });
+});
+
 describe("expectedReviewVersion", () => {
   test("compat: absent -> null; integer -> value", () => {
     expect(pre.readExpectedReviewVersion(undefined)).toBeNull();

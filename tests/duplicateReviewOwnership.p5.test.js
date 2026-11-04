@@ -557,6 +557,10 @@ d("duplicate review ownership / bulk / version mode (real replica set)", () => {
       const other = await approve(applicationId, { key: "k-replay-2", body });
       expect(other.err).toMatchObject({ status: 409, code: "APPLICATION_ALREADY_DECIDED" });
       expect(stripeCaptures).toBe(1);
+      // the key may also travel in the body (idempotencyKey): same replay
+      const viaBody = await approve(applicationId, { body: { ...body, idempotencyKey: "k-replay-1" } });
+      expect(viaBody.err).toBeUndefined();
+      expect(viaBody.res.body).toMatchObject({ replayed: true });
       // a bulk retry carrying the same key replays that row too
       const b = await bulk({ applicationIds: [applicationId] }, { key: "k-replay-1" });
       expect(rowOf(b.res, applicationId)).toMatchObject({ success: true, replayed: true });
