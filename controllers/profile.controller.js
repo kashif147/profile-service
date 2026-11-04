@@ -1,3 +1,4 @@
+const { pendingIdentityLink, recordPendingIdentityLink } = require("../services/approvalIdentityLink.js");
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const Profile = require("../models/profile.model.js");
@@ -83,6 +84,11 @@ async function findPortalProfileForUserContext({
 
   if (!normalizedEmail && !memberNumber) return { profile: null, portalUser };
 
+  // P5 identity (owner policy): NO automatic binding on an email / membership-number match - a
+  // match never returns the profile to this caller and never sets Profile.userId (the portal access
+  // grant), bound or unbound. It records a PENDING identity-link request for a separately
+  // authorised identity-link operation. (Before: /my-profile re-bound any matching profile -
+  // including one bound to another member - to the caller.)
   query = Profile.findOne({
     tenantId,
     isActive: true,
@@ -90,33 +96,18 @@ async function findPortalProfileForUserContext({
       ...(normalizedEmail ? [{ normalizedEmail }] : []),
       ...(memberNumber ? [{ membershipNumber: memberNumber }] : []),
     ],
-  });
-  if (select) query = query.select(select);
+  }).select("_id userId normalizedEmail membershipNumber");
   const profileByIdentity = await query.lean();
   if (!profileByIdentity) return { profile: null, portalUser };
-
-  if (portalUser?._id) {
-    const beforeLean = await Profile.findById(profileByIdentity._id).lean();
-    await Profile.updateOne(
-      { _id: profileByIdentity._id, tenantId },
-      { $set: { userId: portalUser._id } },
-    );
-    await publishProfileAfterUpdateOne({
-      tenantId,
-      profileId: profileByIdentity._id,
-      beforeLean,
-      actorId,
-      source,
-    });
-    profile = {
-      ...profileByIdentity,
-      userId: portalUser._id,
-    };
-  } else {
-    profile = profileByIdentity;
+  const applicantIds = [portalUser?._id ? String(portalUser._id) : null, userId ? String(userId) : null];
+  const link = pendingIdentityLink({ profile: profileByIdentity, applicantIds });
+  if (link) {
+    const matchedBy = [];
+    if (normalizedEmail && profileByIdentity.normalizedEmail === normalizedEmail) matchedBy.push("email");
+    if (memberNumber && profileByIdentity.membershipNumber === memberNumber) matchedBy.push("membershipNumber");
+    await recordPendingIdentityLink(link, { tenantId, source, matchedBy });
   }
-
-  return { profile, portalUser };
+  return { profile: null, portalUser, identityLinkPending: !!link };
 }
 
 function requestHasUsableFilters(bodyFilters) {
@@ -952,7 +943,7 @@ async function getMyProfile(req, res, next) {
       select: "_id membershipNumber userId normalizedEmail",
       linkIfFound: true,
       actorId: userId,
-      source: "portal.getMyProfile.userIdLink",
+      source: "portal.my-profile",
     });
 
     if (!profile) {
@@ -1010,7 +1001,7 @@ async function updateMyProfile(req, res, next) {
       select: "_id",
       linkIfFound: true,
       actorId: userId,
-      source: "portal.updateMyProfile.userIdLink",
+      source: "portal.my-profile.update",
     });
 
     const profile = profileLean

@@ -17,6 +17,7 @@ const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/applic
 const {
   ensureDuplicateReviewAllowsApproval,
   resolveProfileForApproval,
+  assertReviewedProfileTarget,
 } = require("../services/duplicate.review.service.js");
 const {
   publishPostApprovalEvents,
@@ -47,7 +48,36 @@ const {
 const {
   claimPaymentDecision,
   releasePaymentDecision,
+  endPaymentDecisionLease,
+  findDecisionReplay,
+  lockReviewForDecision,
+  fencedDecisionUpdate,
 } = require("../services/applicationPaymentDecision.service.js");
+const {
+  readIdempotencyKey,
+  readExpectedReviewVersion,
+  assertExpectedReviewVersion,
+  observeDecision,
+  operationHash,
+} = require("../services/decisionPreconditions.js");
+const { assertApprovalPaymentBinding } = require("../services/approvalPaymentBinding.js");
+const { recordPendingIdentityLink } = require("../services/approvalIdentityLink.js");
+const {
+  currentReviewVersion,
+  reviewVersionFilter,
+} = require("../services/duplicate.review.version.js");
+
+// P5: the duplicate review changed between the reviewer's decision and this approval. Before any
+// capture nothing moved; after a capture the claim is kept and re-reviewing then approving again
+// completes the approval with the same (already captured) payment.
+function reviewChangedError(captured) {
+  return AppError.conflict(
+    captured
+      ? "The duplicate review changed after the payment was captured. Review duplicates again, then approve again to complete this application (the payment will not be taken twice)."
+      : "The duplicate review changed during approval. Review duplicates again, then approve.",
+    { code: captured ? "REVIEW_CHANGED_AFTER_CAPTURE" : "REVIEW_CHANGED", paymentCaptured: !!captured },
+  );
+}
 
 // Account Payment document id from the latest-payment lookup (shape differs by account version).
 function paymentIdOf(latestPayment) {
@@ -250,6 +280,64 @@ async function approveApplication(req, res, next) {
     console.log("[approveApplication] reviewerId (approver user ID):", reviewerId, "userType:", req.user?.userType);
   }
 
+  // P5 preconditions (services/decisionPreconditions.js): malformed -> 400; enforce mode requires
+  // Idempotency-Key and expectedReviewVersion (428).
+  let operationKey;
+  let expectedReviewVersion;
+  try {
+    operationKey = readIdempotencyKey(req);
+    expectedReviewVersion = readExpectedReviewVersion(req.body?.expectedReviewVersion);
+  } catch (preconditionError) {
+    return next(preconditionError);
+  }
+  observeDecision("approve", {
+    applicationId,
+    idempotencyKey: !!operationKey,
+    expectedReviewVersion: expectedReviewVersion !== null,
+  });
+  // The operation key is bound to the decision payload (same key + other payload -> 422).
+  const opHash = operationHash("approve", {
+    overlayId,
+    overlayVersion,
+    submission,
+    proposedPatch,
+    expectedReviewVersion,
+  });
+
+  // P5: the same approval retried with its Idempotency-Key after it completed is a replay of the
+  // recorded outcome (tenant-scoped), not a new decision.
+  try {
+    const replay = await findDecisionReplay({
+      applicationId,
+      tenantId,
+      action: "approve",
+      operationKey,
+      operationHash: opHash,
+    });
+    if (replay) {
+      return res.status(200).json({
+        applicationId,
+        profileId: replay.profileId,
+        status: "processed",
+        replayed: true,
+      });
+    }
+  } catch (replayError) {
+    return next(replayError);
+  }
+
+  // P5: the duplicate-review gate runs BEFORE the claim and any capture, and the approval is bound
+  // to the review version it passed: a failed gate takes no claim and makes no payment call. A
+  // sent expectedReviewVersion must be that version (409 REVIEW_VERSION_CONFLICT, no claim).
+  let gatedVersion;
+  try {
+    const gatedReview = await ensureDuplicateReviewAllowsApproval(applicationId, tenantId);
+    gatedVersion = currentReviewVersion(gatedReview);
+    assertExpectedReviewVersion(expectedReviewVersion, gatedVersion);
+  } catch (gateError) {
+    return next(gateError);
+  }
+
   // Committed approve decision BEFORE any capture (P5 bound payment commands): a concurrent reject
   // gets 409 and can never release the hold this approval is capturing.
   let decisionClaim;
@@ -259,6 +347,9 @@ async function approveApplication(req, res, next) {
       tenantId,
       action: "approve",
       actorUserId: reviewerId,
+      reviewVersion: gatedVersion,
+      operationKey,
+      operationHash: opHash,
     });
   } catch (claimError) {
     return next(claimError);
@@ -350,16 +441,42 @@ async function approveApplication(req, res, next) {
       subscriptionDetails: normalizedSubscriptionDetails,
     };
 
-    const personalForReview = await ensureDuplicateReviewAllowsApproval(
+    let personalForReview;
+    try {
+      personalForReview = await ensureDuplicateReviewAllowsApproval(applicationId, tenantId);
+    } catch (gateError) {
+      if (gateError?.code === "DUPLICATE_REVIEW_REQUIRED") throw reviewChangedError(!!captureResult);
+      throw gateError;
+    }
+    if (currentReviewVersion(personalForReview) !== gatedVersion) {
+      throw reviewChangedError(!!captureResult);
+    }
+    // P5: lock the reviewed state inside this transaction BEFORE any capture. This write makes any
+    // concurrent review/detection write wait for (or conflict with) this transaction, and it only
+    // matches while the review is still at the version this approval passed and the claim AND this
+    // run's lease are ours (a stale run gets DECISION_LEASE_LOST).
+    await lockReviewForDecision({
       applicationId,
       tenantId,
-    );
+      decisionClaim,
+      reviewVersion: gatedVersion,
+      session,
+      reviewChanged: () => reviewChangedError(!!captureResult),
+    });
 
     await assertSalaryDeductionAllowedForWorkLocation(
       effective.subscriptionDetails,
       effective.professionalDetails,
       { req, tenantId },
     );
+    // P5 ownership, before any capture: the reviewed profile target is valid in this tenant
+    // (LINK/MERGE: a current same-tenant match; Create New: no profile holds the email).
+    await assertReviewedProfileTarget({
+      duplicateReview: personalForReview.duplicateReview,
+      effective,
+      tenantId,
+      session,
+    });
 
     const existingSubscription = await SubscriptionDetails.findOne({
       applicationId,
@@ -370,7 +487,7 @@ async function approveApplication(req, res, next) {
       .lean();
     // LINK mode: the link's own authorised PaymentIntent; INLINE: unchanged resolution.
     // Kept in sync with bulkApproval.controller.js.
-    const { paymentIntentId, latestPayment } = await resolveApprovalPaymentIntent({
+    const { paymentIntentId, latestPayment, mode: paymentMode } = await resolveApprovalPaymentIntent({
       personal: personalForReview,
       applicationId,
       tenantId,
@@ -383,6 +500,8 @@ async function approveApplication(req, res, next) {
           fallbackSubscription: existingSubscription,
         }),
     });
+    // P5 ownership: the payment captured must be bound to THIS application (fail closed).
+    assertApprovalPaymentBinding({ applicationId, paymentIntentId, latestPayment, mode: paymentMode });
 
     if (paymentIntentId) {
       if (!captureResult || capturedPaymentIntentId !== paymentIntentId) {
@@ -416,6 +535,7 @@ async function approveApplication(req, res, next) {
       profile,
       linkedUserId,
       isExistingProfile,
+      identityLink,
       approvalEffective: resolvedApprovalEffective,
     } = await resolveProfileForApproval({
       applicationId,
@@ -473,11 +593,25 @@ async function approveApplication(req, res, next) {
           personalSet.userId = linkedUserObjectId;
         }
       }
-      await PersonalDetails.updateOne(
-        { applicationId: applicationId, tenantId },
-        { $set: personalSet },
-        { session }
-      );
+      if (identityLink) {
+        personalSet.identityLink = identityLink;
+        await recordPendingIdentityLink(identityLink, {
+          tenantId,
+          source: "approval",
+          matchedBy: [
+            ["LINKED", "MERGED"].includes(personalForReview.duplicateReview?.status) ? "duplicateReview" : "email",
+          ],
+          session,
+        });
+      }
+      // P5 fencing: only this run (claim + lease) may write the final state.
+      await fencedDecisionUpdate({
+        applicationId,
+        tenantId,
+        decisionClaim,
+        update: { $set: personalSet },
+        session,
+      });
     }
 
     if (approvalEffective.professionalDetails) {
@@ -571,6 +705,9 @@ async function approveApplication(req, res, next) {
       status: "processed",
       paymentStatus: captureResult ? "Captured" : undefined,
       proposedPatch: patchToApply,
+      // P5: the applicant's portal identity was NOT bound to an existing profile; a separate
+      // identity-link decision is pending (null when nothing is pending).
+      identityLink: identityLink || null,
     });
     } catch (e) {
       if (session.inTransaction()) {
@@ -602,15 +739,36 @@ async function approveApplication(req, res, next) {
         attempt,
       });
       // Nothing was captured: drop the claim so the application can be decided again. Once a
-      // capture succeeded the claim stays (re-running approve is the recovery; reject stays blocked).
+      // capture succeeded the claim stays (re-running approve is the recovery; reject stays blocked)
+      // and only this run's lease ends, so that re-run can start at once.
       if (!captureResult) {
-        await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
+        await releasePaymentDecision({
+          applicationId,
+          tenantId,
+          claimId: decisionClaim?.claimId,
+          leaseId: decisionClaim?.leaseId,
+        });
+      } else {
+        await endPaymentDecisionLease({
+          applicationId,
+          tenantId,
+          claimId: decisionClaim?.claimId,
+          leaseId: decisionClaim?.leaseId,
+        });
       }
       return next(e);
     } finally {
       session.endSession();
     }
   }
+}
+
+// Reject failed after its claim: release it if no hold was released, otherwise keep it (money moved)
+// and end only this run's lease so re-running reject can complete at once.
+async function settleRejectClaim({ applicationId, tenantId, decisionClaim, cancelResult }) {
+  const ids = { applicationId, tenantId, claimId: decisionClaim?.claimId, leaseId: decisionClaim?.leaseId };
+  if (!cancelResult) await releasePaymentDecision(ids);
+  else await endPaymentDecisionLease(ids);
 }
 
 async function rejectApplication(req, res, next) {
@@ -630,15 +788,48 @@ async function rejectApplication(req, res, next) {
   // This comes from the authenticated user's ID in the request (set by auth middleware)
   const reviewerId = req.user?.id || req.userId;
 
+  // P5 preconditions (owner policy): in enforce mode reject requires the operation key AND the
+  // review version the reviewer saw (428); a sent version is always checked (409).
+  let operationKey;
+  let expectedReviewVersion;
+  try {
+    operationKey = readIdempotencyKey(req);
+    expectedReviewVersion = readExpectedReviewVersion(req.body?.expectedReviewVersion);
+  } catch (preconditionError) {
+    return next(preconditionError);
+  }
+  observeDecision("reject", {
+    applicationId,
+    idempotencyKey: !!operationKey,
+    expectedReviewVersion: expectedReviewVersion !== null,
+  });
+  const opHash = operationHash("reject", { reason, notes, overlayId, overlayVersion, expectedReviewVersion });
+
   // Tenant-scoped existence check BEFORE cancelling any payment intent.
   const scopedApplication = await PersonalDetails.findOne({
     applicationId,
     tenantId,
   })
-    .select("_id")
+    .select("_id duplicateReview.reviewVersion")
     .lean();
   if (!scopedApplication) {
     return next(AppError.notFound("Application not found"));
+  }
+
+  try {
+    const replay = await findDecisionReplay({
+      applicationId,
+      tenantId,
+      action: "reject",
+      operationKey,
+      operationHash: opHash,
+    });
+    if (replay) {
+      return res.status(200).json({ applicationId, status: "rejected", replayed: true });
+    }
+    assertExpectedReviewVersion(expectedReviewVersion, currentReviewVersion(scopedApplication));
+  } catch (preError) {
+    return next(preError);
   }
 
   // Committed reject decision BEFORE any cancel (P5 bound payment commands).
@@ -649,6 +840,8 @@ async function rejectApplication(req, res, next) {
       tenantId,
       action: "reject",
       actorUserId: reviewerId,
+      operationKey,
+      operationHash: opHash,
     });
   } catch (claimError) {
     return next(claimError);
@@ -670,7 +863,17 @@ async function rejectApplication(req, res, next) {
       req,
       fallbackSubscription: existingSubscription,
     });
-    if (paymentIntentId) {
+    // P5 (owner policy): a payment MUTATION needs a verified binding to THIS application; an
+    // application with no account payment record is rejected without any payment mutation; a
+    // malformed / inconsistent account record fails closed.
+    const { mutate: cancelAllowed } = assertApprovalPaymentBinding({
+      applicationId,
+      paymentIntentId,
+      latestPayment,
+      mode: "INLINE",
+      action: "cancel",
+    });
+    if (paymentIntentId && cancelAllowed) {
       try {
         cancelResult = await cancelPaymentIntent(paymentIntentId, tenantId, req, {
           applicationId,
@@ -679,7 +882,7 @@ async function rejectApplication(req, res, next) {
         });
       } catch (cancelError) {
         await session.abortTransaction();
-        await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
+        await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId, leaseId: decisionClaim?.leaseId });
         if (cancelError instanceof AppError) return next(cancelError);
         return next(
           AppError.conflict(
@@ -699,12 +902,12 @@ async function rejectApplication(req, res, next) {
       }).session(session);
       if (!overlay) {
         await session.abortTransaction();
-        if (!cancelResult) await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
+        await settleRejectClaim({ applicationId, tenantId, decisionClaim, cancelResult });
         return next(AppError.notFound("Overlay not found"));
       }
       if (overlay.overlayVersion !== overlayVersion) {
         await session.abortTransaction();
-        if (!cancelResult) await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
+        await settleRejectClaim({ applicationId, tenantId, decisionClaim, cancelResult });
         return next(AppError.conflict("Overlay version conflict"));
       }
       overlay.status = "decided";
@@ -736,10 +939,14 @@ async function rejectApplication(req, res, next) {
       .session(session)
       .lean();
 
-    // Update PersonalDetails with rejection status and details
-    await PersonalDetails.updateOne(
-      { applicationId: applicationId, tenantId },
-      {
+    // Update PersonalDetails with rejection status and details. P5 fencing: only this run (claim +
+    // lease) may write the final state; a stale run gets DECISION_LEASE_LOST.
+    await fencedDecisionUpdate({
+      applicationId,
+      tenantId,
+      decisionClaim,
+      session,
+      update: {
         $set: {
           applicationStatus: APPLICATION_STATUS.REJECTED,
           "meta.isActive": false,
@@ -750,12 +957,11 @@ async function rejectApplication(req, res, next) {
           "paymentDecision.completedAt": new Date(),
         },
       },
-      { session }
-    );
+    });
 
     // Note: ProfessionalDetails and SubscriptionDetails are kept as-is (not deleted)
     // No Profile is created for rejected applications
-    if (paymentIntentId && cancelResult?.status) {
+    if (paymentIntentId && cancelAllowed && cancelResult?.status) {
       await SubscriptionDetails.updateOne(
         { applicationId, tenantId },
         {
@@ -809,7 +1015,7 @@ async function rejectApplication(req, res, next) {
   } catch (e) {
     await session.abortTransaction();
     // A released hold keeps the claim (approve must stay blocked); otherwise free it.
-    if (!cancelResult) await releasePaymentDecision({ applicationId, tenantId, claimId: decisionClaim?.claimId });
+    await settleRejectClaim({ applicationId, tenantId, decisionClaim, cancelResult });
     next(e);
   } finally {
     session.endSession();

@@ -117,6 +117,28 @@ const ProfileSchema = new mongoose.Schema(
       actorUserId: String,
       claimedAt: Date,
       completedAt: Date,
+      // P5: duplicate-review version the approve decision was made against.
+      reviewVersion: Number,
+      // P5: execution lease of the run currently acting on the claim.
+      leaseId: String,
+      leaseUntil: Date,
+      // P5: client operation keys of the runs of this decision with their payload hash (replay
+      // after completion; same key + different payload is refused).
+      operations: {
+        type: [{ _id: false, key: String, hash: String }],
+        default: undefined,
+      },
+    },
+    // P5: the applicant's portal identity when it was NOT bound to the existing profile the
+    // application was approved into (pending identity-link decision; services/approvalIdentityLink.js).
+    identityLink: {
+      status: String,
+      reason: String,
+      applicationId: String,
+      profileId: String,
+      applicantUserId: String,
+      profileBound: Boolean,
+      recordedAt: Date,
     },
     profileId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -167,6 +189,12 @@ const ProfileSchema = new mongoose.Schema(
         index: true,
       },
       detectedAt: Date,
+      // P5: bumped on every review-state change; decisions/approvals are bound to it
+      // (services/duplicate.review.version.js).
+      reviewVersion: { type: Number, default: 0 },
+      // P5: hash of the matching-relevant applicant input the current review was made against.
+      inputFingerprint: { type: String, default: null },
+      invalidatedAt: { type: Date, default: null },
       matchedProfileId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Profile",

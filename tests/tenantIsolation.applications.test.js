@@ -27,7 +27,8 @@ jest.mock("../services/account.service.client.js", () => ({
   getMemberIdLookupKeys: jest.fn(() => []),
   buildHeaders: jest.fn(() => ({})),
   reassignFinanceForProfileMerge: jest.fn(async () => null),
-  fetchLatestApplicationPayment: jest.fn(async () => ({ paymentIntentId: "pi_123", attemptNumber: 1 })),
+  // account's latest-payment record names the application it is bound to (P5 binding check).
+  fetchLatestApplicationPayment: jest.fn(async (applicationId) => ({ paymentIntentId: "pi_123", attemptNumber: 1, applicationId })),
   capturePaymentIntent: jest.fn(async () => ({ status: "succeeded" })),
   cancelPaymentIntent: jest.fn(async () => ({ status: "canceled", displayStatus: "Cancelled" })),
   normalizePaymentStatus: jest.fn((s) => s),

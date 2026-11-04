@@ -1,3 +1,4 @@
+const { pendingIdentityLink, recordPendingIdentityLink } = require("../../services/approvalIdentityLink.js");
 const User = require("../../models/user.model.js");
 const {
   syncedUserObjectId,
@@ -16,6 +17,27 @@ const {
  * Handle Portal user created event
  * Creates/updates user in profile-service and links to profile if exists
  */
+/**
+ * P5: an email / member-number match between a portal user and a profile NOT already bound to
+ * that user records a pending identity-link request; it never binds (services/approvalIdentityLink.js).
+ */
+async function recordMatchOnlyIdentityLink({ tenantId, profile, localUserId, userId, normalizedEmail, userMemberNumber, source }) {
+  const link = pendingIdentityLink({
+    profile,
+    applicantIds: [localUserId ? String(localUserId) : null, userId ? String(userId) : null],
+  });
+  if (!link) return null; // already bound to this same user
+  const matchedBy = [];
+  if (normalizedEmail && profile.normalizedEmail === normalizedEmail) matchedBy.push("email");
+  if (userMemberNumber && profile.membershipNumber === userMemberNumber) matchedBy.push("membershipNumber");
+  await recordPendingIdentityLink(link, { tenantId, source, matchedBy });
+  console.warn(`[${source}] matching profile not bound; identity-link request pending`, {
+    profileId: String(profile._id),
+    reason: link.reason,
+  });
+  return link;
+}
+
 async function handlePortalUserCreated(payload) {
   const { data } = payload;
   const {
@@ -95,28 +117,19 @@ async function handlePortalUserCreated(payload) {
           `📋 Found profile for Portal user ${userEmail || userMemberNumber}, linking userId...`
         );
 
-        // 3. Update profile with userId if not already set
-        if (!profile.userId || String(profile.userId) !== String(localUserId)) {
-          const beforeLean = profile.toObject({ depopulate: true });
-          await Profile.updateOne(
-            { _id: profile._id, tenantId },
-            { $set: { userId: localUserId } }
-          );
-          await publishProfileAfterUpdateOne({
-            tenantId,
-            profileId: profile._id,
-            beforeLean,
-            actorId: null,
-            source: "user.portal.created",
-          });
-          console.log(
-            `✅ Linked Portal user ${userId} to profile: ${profile._id}`
-          );
-        } else {
-          console.log(
-            `ℹ️ Profile already linked to Portal user ${userId}`
-          );
-        }
+        // 3. P5 identity (owner policy): NO automatic binding on an email / member-number match.
+        // Profile.userId is the portal access grant: a matching profile (unbound or bound to
+        // another portal user) is never bound here; a PENDING identity-link request is recorded
+        // for a separately authorised identity-link operation.
+        await recordMatchOnlyIdentityLink({
+          tenantId,
+          profile,
+          localUserId,
+          userId,
+          normalizedEmail,
+          userMemberNumber,
+          source: "user.portal.created",
+        });
       } else {
         console.log(
           `ℹ️ No profile found for Portal user ${userEmail || userMemberNumber}, userId will be set when profile is created`
@@ -135,7 +148,15 @@ async function handlePortalUserCreated(payload) {
           "meta.deleted": { $ne: true },
         });
 
-        if (personalDetails) {
+        // P5 identity: an application already bound to another portal user is not re-bound.
+        const pdBoundToOther =
+          personalDetails && personalDetails.userId && String(personalDetails.userId) !== String(localUserId);
+        if (pdBoundToOther) {
+          console.warn("[user.portal.created] application bound to another portal user; not re-bound", {
+            applicationId: personalDetails.applicationId,
+          });
+        }
+        if (personalDetails && !pdBoundToOther) {
           console.log(
             `📋 Found PersonalDetails for Portal user ${userEmail}, linking userId...`
           );
@@ -333,23 +354,16 @@ async function handlePortalUserUpdated(payload) {
         });
 
         if (profileByEmailOrMember) {
-          const beforeLean = profileByEmailOrMember.toObject({
-            depopulate: true,
-          });
-          await Profile.updateOne(
-            { _id: profileByEmailOrMember._id, tenantId },
-            { $set: { userId: localUserId } }
-          );
-          await publishProfileAfterUpdateOne({
+          // P5 identity (owner policy): no binding on an email / member-number match.
+          await recordMatchOnlyIdentityLink({
             tenantId,
-            profileId: profileByEmailOrMember._id,
-            beforeLean,
-            actorId: null,
+            profile: profileByEmailOrMember,
+            localUserId,
+            userId,
+            normalizedEmail,
+            userMemberNumber,
             source: "user.portal.updated",
           });
-          console.log(
-            `✅ Linked Portal user ${userId} to existing profile: ${profileByEmailOrMember._id}`
-          );
         }
       }
 
@@ -365,7 +379,15 @@ async function handlePortalUserUpdated(payload) {
           "meta.deleted": { $ne: true },
         });
 
-        if (personalDetails) {
+        // P5 identity: an application already bound to another portal user is not re-bound.
+        const pdBoundToOther =
+          personalDetails && personalDetails.userId && String(personalDetails.userId) !== String(localUserId);
+        if (pdBoundToOther) {
+          console.warn("[user.portal.created] application bound to another portal user; not re-bound", {
+            applicationId: personalDetails.applicationId,
+          });
+        }
+        if (personalDetails && !pdBoundToOther) {
           console.log(
             `📋 Found PersonalDetails for Portal user ${userEmail}, linking userId...`
           );

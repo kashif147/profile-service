@@ -109,7 +109,8 @@ router.post(
   "/:applicationId/duplicate-review",
   ensureAuthenticated,
   requireCrm("application", "write"),
-  idempotency(),
+  // P5: no body-hash idempotency() here - an identical "Create New Profile" click must not be
+  // replayed after the review changed. Explicit Idempotency-Key + review version in the controller.
   validate({ params: ApplicationParams, body: DuplicateReviewDecisionBody }),
   submitDuplicateReviewDecision
 );
