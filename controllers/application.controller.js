@@ -562,8 +562,9 @@ exports.approveApplication = async (req, res, next) => {
     // verified payment binding before any payment mutation, claim + lease, review locked at the
     // gated version before capture, and a fenced final write (claim + lease + version).
     const operationKey = readIdempotencyKey(req);
+    // No exemption: the Joi schema admits only processed / rejected, and both require the version.
     const expectedReviewVersion = readExpectedReviewVersion(validatedData.expectedReviewVersion, {
-      required: decision === APPLICATION_STATUS.PROCESSED || decision === APPLICATION_STATUS.REJECTED,
+      required: true,
     });
     observeDecision("legacy-status", {
       applicationId,

@@ -21,6 +21,12 @@ jest.mock("../models/professional.details.model.js", () => mm().createMemoryMode
 jest.mock("../models/subscription.model.js", () => mm().createMemoryModel("SubscriptionDetails"));
 jest.mock("../models/profile.model.js", () => mm().createMemoryModel("Profile"));
 jest.mock("../models/user.model.js", () => mm().createMemoryModel("User"));
+// P5 owner policy: an email / member-number match records a pending identity-link request
+// instead of binding the profile (the recorder is observed here).
+jest.mock("../services/approvalIdentityLink.js", () => {
+  const actual = jest.requireActual("../services/approvalIdentityLink.js");
+  return { ...actual, recordPendingIdentityLink: jest.fn(async (link) => link) };
+});
 jest.mock("../rabbitMQ/publishers/application.approval.publisher.js", () => ({
   publishSubscriptionUpsertRequested: jest.fn(async () => {}),
 }));
@@ -141,7 +147,12 @@ describe("user.portal listener (H-09)", () => {
     expect(String(byApp(PersonalDetails, "app-b").userId)).toBe(String(userB._id));
     expect(byApp(PersonalDetails, "app-a").userId).toBeUndefined();
     expect(Profile.all().find((p) => p._id === PA).userId).toBeNull();
-    expect(String(Profile.all().find((p) => p._id === PB).userId)).toBe(String(userB._id));
+    // P5 owner policy: B's matching profile is NOT bound by the email match; a pending
+    // identity-link request is recorded for tenant B's profile only.
+    expect(Profile.all().find((p) => p._id === PB).userId ?? null).toBeNull();
+    const { recordPendingIdentityLink } = require("../services/approvalIdentityLink.js");
+    const recorded = recordPendingIdentityLink.mock.calls.map(([link, opts]) => ({ profileId: link.profileId, tenantId: opts.tenantId }));
+    expect(recorded).toEqual([{ profileId: String(PB), tenantId: B }]);
   });
 
   test("updated event with a mismatching data tenant is refused", async () => {

@@ -54,7 +54,11 @@ const {
   operationHash,
 } = require("../services/decisionPreconditions.js");
 const { assertApprovalPaymentBinding } = require("../services/approvalPaymentBinding.js");
-const { pendingIdentityLink } = require("../services/approvalIdentityLink.js");
+const {
+  pendingIdentityLink,
+  preserveIdentityContact,
+  recordPendingIdentityLink,
+} = require("../services/approvalIdentityLink.js");
 const { DUPLICATE_REVIEW_STATUS } = require("../constants/enums.js");
 const {
   publishPostApprovalEvents,
@@ -450,17 +454,36 @@ async function approveSingleApplication({
       // Update existing profile - keep existing membership number
       const updateFields = { ...flattenedProfileFields };
 
-      // Match findOrCreateProfileByEmail: keep Profile.normalizedEmail in sync with preferred primary email
-      const existingContactInfo = existingProfile.contactInfo?.toObject
-        ? existingProfile.contactInfo.toObject()
-        : existingProfile.contactInfo || {};
-      const updatedContactInfo = {
-        ...existingContactInfo,
-        ...(flattenedProfileFields.contactInfo || {}),
-      };
-      const primaryEmail = pickPrimaryEmail(updatedContactInfo);
-      if (primaryEmail) {
-        updateFields.normalizedEmail = normalizeEmail(primaryEmail);
+      // P5 identity (owner policy, as findOrCreateProfileByEmail): an EXISTING profile is never
+      // bound to the applicant because its email matched. Only a profile already bound to this
+      // applicant is updated as that user's own (incl. normalizedEmail); otherwise its identity
+      // contact emails / normalizedEmail stay and a pending identity-link request is recorded.
+      const applicantIds = [
+        linkedUserDocumentId ? String(linkedUserDocumentId) : null,
+        linkedUserId ? String(linkedUserId) : null,
+      ].filter(Boolean);
+      const boundToApplicant =
+        !!existingProfile.userId && applicantIds.includes(String(existingProfile.userId));
+      if (boundToApplicant) {
+        const existingContactInfo = existingProfile.contactInfo?.toObject
+          ? existingProfile.contactInfo.toObject()
+          : existingProfile.contactInfo || {};
+        const updatedContactInfo = {
+          ...existingContactInfo,
+          ...(flattenedProfileFields.contactInfo || {}),
+        };
+        const primaryEmail = pickPrimaryEmail(updatedContactInfo);
+        if (primaryEmail) {
+          updateFields.normalizedEmail = normalizeEmail(primaryEmail);
+        }
+      } else {
+        delete updateFields.normalizedEmail;
+        delete updateFields.userId;
+        updateFields.contactInfo = preserveIdentityContact(
+          existingProfile.contactInfo,
+          updateFields.contactInfo || {},
+        );
+        identityLink = pendingIdentityLink({ profile: existingProfile, applicantIds, applicationId });
       }
 
       if (!existingProfile.membershipNumber) {
@@ -469,19 +492,6 @@ async function approveSingleApplication({
         console.log(
           `✅ Generated membership number ${membershipNumber} for existing profile ${existingProfile._id}`
         );
-      }
-
-      // P5 identity: never replace an existing profile's portal owner (Profile.userId is the
-      // portal access grant); an unbound profile with the applicant's own email is bound as
-      // before, a profile bound to someone else records a pending identity-link decision.
-      if (linkedUserDocumentId && !existingProfile.userId) {
-        updateFields.userId = linkedUserDocumentId;
-      } else if (linkedUserDocumentId) {
-        identityLink = pendingIdentityLink({
-          profile: existingProfile,
-          applicantIds: [String(linkedUserDocumentId), linkedUserId ? String(linkedUserId) : null],
-          applicationId,
-        });
       }
 
       // crmUserId (the user who approved this profile): set once, never overwritten (P5).
@@ -576,7 +586,15 @@ async function approveSingleApplication({
       if (linkedUserDocumentId) {
         personalSet.userId = linkedUserDocumentId;
       }
-      if (identityLink) personalSet.identityLink = identityLink;
+      if (identityLink) {
+        personalSet.identityLink = identityLink;
+        await recordPendingIdentityLink(identityLink, {
+          tenantId,
+          source: "approval.bulk",
+          matchedBy: [reviewStatus === "LINKED" || reviewStatus === "MERGED" ? "duplicateReview" : "email"],
+          session,
+        });
+      }
       // P5 fencing: only this run (claim + lease) may write the final state.
       await fencedDecisionUpdate({
         applicationId,

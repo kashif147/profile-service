@@ -165,17 +165,18 @@ async function findOrCreateProfileByEmail({
       recruitmentDetails: flattened.recruitmentDetails || {},
     };
 
-    // P5 identity: an existing profile's portal owner (Profile.userId = the portal access grant) is
-    // never replaced by an approval. An unbound profile with the applicant's own email is bound as
-    // before; a profile bound to someone else keeps its owner and the approval records a pending
-    // identity-link decision instead (services/approvalIdentityLink.js).
-    if (linkedUserDocumentId && !profile.userId) {
-      $set.userId = linkedUserDocumentId;
-    } else if (linkedUserDocumentId) {
-      identityLink = pendingIdentityLink({
-        profile,
-        applicantIds: [String(linkedUserDocumentId), linkedUserId ? String(linkedUserId) : null],
-      });
+    // P5 identity (owner policy): an EXISTING profile is never bound to a portal user because its
+    // email matched - bound to someone else or unbound. Only a profile already bound to this same
+    // applicant is updated as that user's own (incl. normalizedEmail); otherwise its identity
+    // contact emails and normalizedEmail stay, and a pending identity-link request is recorded.
+    const applicantIds = [
+      linkedUserDocumentId ? String(linkedUserDocumentId) : null,
+      linkedUserId ? String(linkedUserId) : null,
+    ].filter(Boolean);
+    const boundToApplicant = !!profile.userId && applicantIds.includes(String(profile.userId));
+    if (!boundToApplicant) {
+      identityLink = pendingIdentityLink({ profile, applicantIds });
+      $set.contactInfo = preserveIdentityContact(profile.contactInfo, $set.contactInfo);
     }
 
     // crmUserId (CRM user who approved this profile) is an identity binding: set once, never
@@ -184,17 +185,19 @@ async function findOrCreateProfileByEmail({
       $set.crmUserId = getReviewerIdForDb(reviewerId);
     }
 
-    // Update normalizedEmail based on preferred email
-    const existingContactInfo = profile.contactInfo?.toObject
-      ? profile.contactInfo.toObject()
-      : profile.contactInfo || {};
-    const updatedContactInfo = {
-      ...existingContactInfo,
-      ...flattened.contactInfo,
-    };
-    const primaryEmail = pickPrimaryEmail(updatedContactInfo);
-    if (primaryEmail) {
-      $set.normalizedEmail = normalizeEmail(primaryEmail);
+    // normalizedEmail follows the preferred email only for the profile's own (same) user.
+    if (boundToApplicant) {
+      const existingContactInfo = profile.contactInfo?.toObject
+        ? profile.contactInfo.toObject()
+        : profile.contactInfo || {};
+      const updatedContactInfo = {
+        ...existingContactInfo,
+        ...flattened.contactInfo,
+      };
+      const primaryEmail = pickPrimaryEmail(updatedContactInfo);
+      if (primaryEmail) {
+        $set.normalizedEmail = normalizeEmail(primaryEmail);
+      }
     }
 
     // This branch also runs for a pre-existing membershipNumber-less Profile
@@ -226,7 +229,7 @@ async function findOrCreateProfileByEmail({
   };
 }
 
-const { pendingIdentityLink } = require("./approvalIdentityLink.js");
+const { pendingIdentityLink, preserveIdentityContact } = require("./approvalIdentityLink.js");
 
 module.exports = {
   normalizeEmail,

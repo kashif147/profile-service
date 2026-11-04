@@ -7,7 +7,8 @@
  * and the applicant gained it. Profile.userId is what portal object authorization uses
  * (middlewares/memberAccess.js resolveOwnProfile), so it is an access grant, not a data field.
  *
- * Rules (fail-closed default; the unbound-profile case is pending owner policy):
+ * Rules (owner policy: pending until a separately authorised identity-link operation establishes
+ * ownership; NO automatic binding of an existing profile on an email / member-number match):
  *   - an approval never changes an existing Profile.userId, normalizedEmail or (once set)
  *     crmUserId, and LINK/MERGE never change the profile's login-relevant contact emails
  *     (personalEmail, workEmail, preferredEmail);
@@ -16,6 +17,11 @@
  *     rewritten either) and is recorded as a PENDING identity-link decision
  *     (PersonalDetails.identityLink) for an explicit, separate CRM decision.
  */
+
+let IdentityLinkRequest = null;
+function requestModel() {
+  return IdentityLinkRequest || (IdentityLinkRequest = require("../models/identityLinkRequest.model.js"));
+}
 
 const IDENTITY_CONTACT_FIELDS = Object.freeze(["personalEmail", "workEmail", "preferredEmail"]);
 
@@ -61,7 +67,34 @@ function pendingIdentityLink({ profile, applicantIds, applicationId, now = new D
   };
 }
 
+/**
+ * Persist a pending identity-link request (idempotent per tenant + profile + applicant while
+ * PENDING). `link` is a pendingIdentityLink() record. Returns the record (or null).
+ */
+async function recordPendingIdentityLink(link, { tenantId, source, matchedBy = [], session = null } = {}) {
+  if (!link || link.status !== "PENDING" || !tenantId || !link.profileId || !link.applicantUserId) return null;
+  const now = new Date();
+  await requestModel().updateOne(
+    { tenantId: String(tenantId), profileId: String(link.profileId), applicantUserId: String(link.applicantUserId), status: "PENDING" },
+    {
+      $setOnInsert: { recordedAt: link.recordedAt || now },
+      $set: {
+        reason: link.reason,
+        profileBound: !!link.profileBound,
+        lastSeenAt: now,
+        ...(link.applicationId ? { applicationId: String(link.applicationId) } : {}),
+      },
+      $addToSet: { sources: source || "unknown", matchedBy: { $each: matchedBy } },
+    },
+    { upsert: true, ...(session ? { session } : {}) },
+  ).catch((err) => {
+    if (err?.code !== 11000) throw err; // a concurrent first insert won: same pending record
+  });
+  return link;
+}
+
 module.exports = {
+  recordPendingIdentityLink,
   IDENTITY_CONTACT_FIELDS,
   IDENTITY_LINK_REASON,
   preserveIdentityContact,

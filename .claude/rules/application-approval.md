@@ -77,13 +77,16 @@ Every decision path (single approve/reject, bulk approval, legacy `PUT /applicat
   `fencedDecisionUpdate`); a stale run whose lease was taken over gets 409 `DECISION_LEASE_LOST`
   and can neither release nor overwrite the new holder's claim. Bulk retries transient
   transaction errors like single approval.
-- **Identity** (`services/approvalIdentityLink.js`): an approval never changes an existing
-  `Profile.userId` (the portal access grant), `normalizedEmail`, a set `crmUserId`, or (LINK/MERGE)
-  the profile's contact emails; LINK/MERGE never bind the applicant to the profile (bound or
-  unbound) and never rewrite the application's own `userId`; the applicant identity is recorded as
-  `PersonalDetails.identityLink` (`PENDING`, exposed in the duplicate-review state and approve
-  response). `/my-profile` self-linking and `user.portal.created` sync only adopt UNBOUND
-  profiles/applications.
+- **Identity** (`services/approvalIdentityLink.js`, owner policy): NO path binds a portal user to
+  an EXISTING profile on an email / member-number match or a LINK/MERGE decision - approval
+  (single, bulk, email-match path), `/my-profile` self-linking, `user.portal.created` and the
+  `user.portal.updated` fallback. Each records a PENDING identity-link request
+  (`models/identityLinkRequest.model.js`, collection `identityLinkRequests`; approvals also set
+  `PersonalDetails.identityLink`) for a separately authorised identity-link operation (not built).
+  An existing profile's `userId`, `normalizedEmail`, a set `crmUserId` and its contact emails stay,
+  unless the profile is already bound to that same user (then it is updated as the user's own).
+  A brand-new profile created at approval (Create New) is bound to the applicant. The
+  application's own `userId` is never rewritten by an approval.
 - **Enforce evidence**: every decision request logs `[decision-preconditions] observed {route, mode,
   idempotencyKey, expectedReviewVersion, versionRequired[, rows, rowsWithVersion]}`.
 - Tests: `tests/decisionSafeguards.p5.test.js`, `tests/duplicateReviewOwnership.p5.test.js`, `tests/duplicateReviewRace.p5.test.js`

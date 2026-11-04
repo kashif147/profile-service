@@ -61,6 +61,7 @@ const {
   operationHash,
 } = require("../services/decisionPreconditions.js");
 const { assertApprovalPaymentBinding } = require("../services/approvalPaymentBinding.js");
+const { recordPendingIdentityLink } = require("../services/approvalIdentityLink.js");
 const {
   currentReviewVersion,
   reviewVersionFilter,
@@ -592,7 +593,17 @@ async function approveApplication(req, res, next) {
           personalSet.userId = linkedUserObjectId;
         }
       }
-      if (identityLink) personalSet.identityLink = identityLink;
+      if (identityLink) {
+        personalSet.identityLink = identityLink;
+        await recordPendingIdentityLink(identityLink, {
+          tenantId,
+          source: "approval",
+          matchedBy: [
+            ["LINKED", "MERGED"].includes(personalForReview.duplicateReview?.status) ? "duplicateReview" : "email",
+          ],
+          session,
+        });
+      }
       // P5 fencing: only this run (claim + lease) may write the final state.
       await fencedDecisionUpdate({
         applicationId,

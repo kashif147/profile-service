@@ -558,6 +558,137 @@ d("decision safeguards (real replica set)", () => {
     });
   });
 
+  // ================================================================== adoption paths (owner policy)
+
+  describe("no automatic binding on an email / member-number match (every adoption path)", () => {
+    const requests = (profileId) =>
+      mongoose.connection.collection("identityLinkRequests").find({ tenantId: T, profileId: String(profileId) }).toArray();
+
+    test("/my-profile: unbound profile matching the caller's email or member number -> not bound, pending recorded", async () => {
+      const y = await seedPortalUser({ email: `${uid()}@claimant.test` });
+      const byEmail = await seedProfile({ email: y.email, mobile: `+35381${uid().slice(0, 7)}`, userId: null });
+      const before = identityOf(await prof(byEmail));
+      const r1 = await call("GET", "/api/profile/my-profile", y);
+      expect(r1.status).toBe(200);
+      expect(r1.body?.data ?? null).toBeNull(); // nothing disclosed, nothing linked
+      expect(identityOf(await prof(byEmail))).toEqual(before);
+      expect(await requests(byEmail)).toEqual([
+        expect.objectContaining({ applicantUserId: y.localId, status: "PENDING", reason: "PROFILE_UNBOUND", sources: ["portal.my-profile"], matchedBy: ["email"] }),
+      ]);
+      // member-number match
+      const z = await seedPortalUser({ email: `${uid()}@claimant-z.test` });
+      const byMember = await seedProfile({ email: `${uid()}@someone.test`, mobile: `+35381${uid().slice(0, 7)}`, userId: null });
+      await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(z.localId) }, { $set: { userMemberNumber: (await prof(byMember)).membershipNumber } });
+      const r2 = await call("GET", "/api/profile/my-profile", z);
+      expect(r2.body?.data ?? null).toBeNull();
+      expect((await prof(byMember)).userId ?? null).toBeNull();
+      expect((await requests(byMember))[0]).toMatchObject({ applicantUserId: z.localId, matchedBy: ["membershipNumber"] });
+      expect((await portalAccess(z, byMember)).byId).toBe(403);
+    });
+
+    test("/my-profile: a profile bound to the SAME user resolves normally (no request recorded)", async () => {
+      const x = await seedPortalUser({ email: `${uid()}@own.test` });
+      const pid = await seedProfile({ email: x.email, mobile: `+35381${uid().slice(0, 7)}`, userId: x.localId });
+      const r = await call("GET", "/api/profile/my-profile", x);
+      expect(String(r.body?.data?.profileId)).toBe(pid);
+      expect(await requests(pid)).toEqual([]);
+    });
+
+    test("user.portal.created: unbound match -> not bound, pending; same user -> unchanged; other user -> unchanged, pending", async () => {
+      // unbound profile carrying the new portal user's email
+      const email = `${uid()}@sync.test`;
+      const unbound = await seedProfile({ email, mobile: `+35380${uid().slice(0, 7)}`, userId: null });
+      const before = identityOf(await prof(unbound));
+      const y = { serviceId: String(oid()), email };
+      await portalListener.handlePortalUserCreated({ tenantId: T, data: { userId: y.serviceId, tenantId: T, userEmail: email } });
+      expect(identityOf(await prof(unbound))).toEqual(before);
+      const localY = await User.collection.findOne({ tenantId: T, userId: y.serviceId });
+      expect((await requests(unbound))[0]).toMatchObject({
+        applicantUserId: String(localY._id), reason: "PROFILE_UNBOUND", sources: ["user.portal.created"], matchedBy: ["email"],
+      });
+      // same user: a profile already bound to this portal user is left as is, nothing recorded
+      const x = await seedPortalUser({ email: `${uid()}@same.test` });
+      const own = await seedProfile({ email: x.email, mobile: `+35380${uid().slice(0, 7)}`, userId: x.localId });
+      await portalListener.handlePortalUserCreated({ tenantId: T, data: { userId: x.serviceId, tenantId: T, userEmail: x.email } });
+      expect(String((await prof(own)).userId)).toBe(x.localId);
+      expect(await requests(own)).toEqual([]);
+      // other user: a profile bound to X matched by member number from W -> unchanged, pending
+      const w = { serviceId: String(oid()), email: `${uid()}@w.test` };
+      await portalListener.handlePortalUserCreated({
+        tenantId: T,
+        data: { userId: w.serviceId, tenantId: T, userEmail: w.email, userMemberNumber: (await prof(own)).membershipNumber },
+      });
+      expect(String((await prof(own)).userId)).toBe(x.localId);
+      expect((await requests(own))[0]).toMatchObject({ reason: "PROFILE_BOUND_TO_OTHER_USER", matchedBy: ["membershipNumber"] });
+    });
+
+    test("user.portal.updated (no own profile yet): an email-matching profile is not bound; pending recorded", async () => {
+      const email = `${uid()}@upd.test`;
+      const pid = await seedProfile({ email, mobile: `+35380${uid().slice(0, 7)}`, userId: null });
+      const serviceId = String(oid());
+      await portalListener.handlePortalUserUpdated({ tenantId: T, data: { userId: serviceId, tenantId: T, userEmail: email } });
+      expect((await prof(pid)).userId ?? null).toBeNull();
+      expect((await requests(pid))[0]).toMatchObject({ sources: ["user.portal.updated"], reason: "PROFILE_UNBOUND" });
+    });
+
+    /** NO_MATCH application whose applicant email is now held by `profile` (created after detection). */
+    async function emailMatchCase(profileUser) {
+      const y = await seedPortalUser({ email: `${uid()}@applicant.test` });
+      // unique name: no fuzzy match against the other synthetic records
+      const applicationId = await seedApplication({ email: y.email, userId: y.localId, forename: `F${uid()}`, surname: `S${uid()}` });
+      await PersonalDetails.collection.updateOne({ applicationId }, { $set: { "personalInfo.dateOfBirth": new Date("1971-03-04T00:00:00Z") } });
+      await detection.detectDuplicates(applicationId, T);
+      expect((await app(applicationId)).duplicateReview.status).toBe("NO_MATCH");
+      const owner = profileUser === "same" ? y.localId : profileUser === "other" ? (await seedPortalUser({ email: `${uid()}@o.test` })).localId : null;
+      const profileId = await seedProfile({ email: y.email, mobile: `+35379${uid().slice(0, 7)}`, userId: owner });
+      return { y, applicationId, profileId, owner, before: identityOf(await prof(profileId)), reviewVersion: await version(applicationId) };
+    }
+
+    test.each([["single"], ["bulk"]])("approval email-match path (%s): unbound -> not bound, normalizedEmail unchanged, pending", async (route) => {
+      const c = await emailMatchCase("unbound");
+      const out = await decideVia(route, c.applicationId, { key: `k-${uid()}`, version: c.reviewVersion });
+      expect(out.status).toBe(200);
+      expect(identityOf(await prof(c.profileId))).toEqual(c.before);
+      const a = await app(c.applicationId);
+      expect(String(a.userId)).toBe(c.y.localId);
+      expect(a.identityLink).toMatchObject({ status: "PENDING", reason: "PROFILE_UNBOUND" });
+      expect((await requests(c.profileId))[0]).toMatchObject({ applicantUserId: c.y.localId, matchedBy: ["email"] });
+      expect((await portalAccess(c.y, c.profileId)).byId).toBe(403);
+    });
+
+    test.each([["single"], ["bulk"]])("approval email-match path (%s): bound to OTHER user -> unchanged, no access, pending", async (route) => {
+      const c = await emailMatchCase("other");
+      expect((await decideVia(route, c.applicationId, { key: `k-${uid()}`, version: c.reviewVersion })).status).toBe(200);
+      expect(identityOf(await prof(c.profileId))).toEqual(c.before);
+      expect((await requests(c.profileId))[0]).toMatchObject({ reason: "PROFILE_BOUND_TO_OTHER_USER" });
+      expect((await portalAccess(c.y, c.profileId)).byId).toBe(403);
+    });
+
+    test.each([["single"], ["bulk"]])("approval email-match path (%s): bound to the SAME applicant -> updated as own, no request", async (route) => {
+      const c = await emailMatchCase("same");
+      expect((await decideVia(route, c.applicationId, { key: `k-${uid()}`, version: c.reviewVersion })).status).toBe(200);
+      expect(String((await prof(c.profileId)).userId)).toBe(c.y.localId);
+      expect((await app(c.applicationId)).identityLink ?? null).toBeNull();
+      expect(await requests(c.profileId)).toEqual([]);
+      expect((await portalAccess(c.y, c.profileId)).byId).toBe(200);
+    });
+
+    test.each([["single"], ["bulk"]])("Create New (%s): the brand-new profile is bound to the applicant", async (route) => {
+      const y = await seedPortalUser({ email: `${uid()}@newmember.test` });
+      const mobile = `+35378${uid().slice(0, 7)}`;
+      await seedApplication({ mobile });
+      const applicationId = await seedApplication({ email: y.email, mobile, userId: y.localId });
+      await detection.detectDuplicates(applicationId, T);
+      const v = await version(applicationId);
+      expect((await decide(applicationId, { action: "MARKED_NEW", expectedReviewVersion: v })).err).toBeUndefined();
+      const out = await decideVia(route, applicationId, { key: `k-${uid()}`, version: v + 1 });
+      expect(out.status).toBe(200);
+      const created = await Profile.collection.findOne({ tenantId: T, normalizedEmail: y.email });
+      expect(String(created.userId)).toBe(y.localId);
+      expect((await portalAccess(y, String(created._id))).byId).toBe(200);
+    });
+  });
+
   // ================================================================== A8 table
 
   const ROUTES = [["single"], ["bulk"], ["legacy"]];
@@ -808,6 +939,19 @@ d("decision safeguards (real replica set)", () => {
       const doc = await app(applicationId);
       expect(doc.applicationStatus).toBe("submitted");
       expect(doc.paymentDecision).toBeUndefined();
+    });
+
+    test("enforce: the legacy route has no exemption - reject and approve both need key + version", async () => {
+      process.env[MODE] = "enforce";
+      const { applicationId, reviewVersion } = await reviewedApplication();
+      const rej = (body) => legacyStatus(applicationId, { body: { applicationStatus: "rejected", ...body } });
+      expect((await rej({ expectedReviewVersion: reviewVersion })).err).toMatchObject({ status: 428, code: "IDEMPOTENCY_KEY_REQUIRED" });
+      expect((await rej({ idempotencyKey: `r-${uid()}` })).err).toMatchObject({ status: 428, code: "REVIEW_VERSION_REQUIRED" });
+      expect((await legacyStatus(applicationId, { body: { idempotencyKey: `a-${uid()}` } })).err).toMatchObject({ status: 428, code: "REVIEW_VERSION_REQUIRED" });
+      expect(post).not.toHaveBeenCalled();
+      const ok = await rej({ idempotencyKey: `r-${uid()}`, expectedReviewVersion: reviewVersion });
+      expect(ok.err).toBeUndefined();
+      expect((await app(applicationId)).applicationStatus).toBe("rejected");
     });
 
     test("enforce: reject requires expectedReviewVersion (428) and checks it (409)", async () => {
