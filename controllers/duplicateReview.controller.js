@@ -14,7 +14,7 @@ const { currentReviewVersion } = require("../services/duplicate.review.version.j
 const {
   readIdempotencyKey,
   readExpectedReviewVersion,
-  logCompatibilityWindow,
+  observeDecision,
 } = require("../services/decisionPreconditions.js");
 
 async function detectDuplicatesForApplication(req, res, next) {
@@ -88,13 +88,11 @@ async function submitDuplicateReviewDecision(req, res, next) {
     // DUPLICATE_REVIEW_VERSION_MODE=enforce a missing key / version -> 428.
     const clientKey = readIdempotencyKey(req);
     const expectedVersion = readExpectedReviewVersion(expectedReviewVersion);
-    if (!clientKey || expectedVersion === null) {
-      logCompatibilityWindow("duplicate-review", {
-        applicationId,
-        idempotencyKey: !!clientKey,
-        expectedReviewVersion: expectedVersion !== null,
-      });
-    }
+    observeDecision("duplicate-review", {
+      applicationId,
+      idempotencyKey: !!clientKey,
+      expectedReviewVersion: expectedVersion !== null,
+    });
     // P5: explicit operation idempotency (services/reviewDecisionIdempotency.js).
     const hash = reviewIdempotency.payloadHash(req.body);
     if (clientKey) {

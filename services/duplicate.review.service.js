@@ -26,6 +26,10 @@ const {
 } = require("./profileLookup.service.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
+  preserveIdentityContact,
+  pendingIdentityLink,
+} = require("./approvalIdentityLink.js");
+const {
   generateMembershipNumber,
 } = require("../helpers/membership.number.generator.js");
 const { loadSubmission } = require("./submission.service.js");
@@ -99,6 +103,8 @@ function buildDuplicateReviewState(personal, extras = {}) {
     isReadOnly: isApplicationProcessed(personal),
     // P5: send back as expectedReviewVersion with the next decision.
     reviewVersion: currentReviewVersion(personal),
+    // P5: the applicant's portal identity not bound to the existing profile (pending decision).
+    identityLink: personal?.identityLink?.status ? personal.identityLink : null,
     ...extras,
   };
 }
@@ -550,11 +556,13 @@ async function ensureDuplicateReviewAllowsApproval(applicationId, tenantId) {
   return personal;
 }
 
-async function applyEffectiveToProfile({ profile, effective, reviewerId, session }) {
+async function applyEffectiveToProfile({ profile, effective, reviewerId, session, applicationId = null }) {
   const flattened = flattenProfilePayload(effective);
+  // P5 identity: the existing profile's login-relevant contact emails are kept (see
+  // services/approvalIdentityLink.js); everything else of the reviewed application is applied.
   const $set = {
     personalInfo: flattened.personalInfo || {},
-    contactInfo: flattened.contactInfo || {},
+    contactInfo: preserveIdentityContact(profile.contactInfo, flattened.contactInfo || {}),
     professionalDetails: flattened.professionalDetails || {},
     preferences: flattened.preferences || {},
     cornMarket: flattened.cornMarket || {},
@@ -562,6 +570,9 @@ async function applyEffectiveToProfile({ profile, effective, reviewerId, session
     recruitmentDetails: flattened.recruitmentDetails || {},
   };
 
+  // The applicant's portal identity (submission user, else the synced portal user of the
+  // applicant's email) is RECORDED, never bound: Profile.userId is the portal access grant and an
+  // approval must not move it (incident: an existing member's userId re-bound to the applicant).
   const userId = effective?.userId || null;
   const userType = effective?.userType || null;
   const email = pickPrimaryEmail(flattened.contactInfo || {});
@@ -573,31 +584,22 @@ async function applyEffectiveToProfile({ profile, effective, reviewerId, session
       )
     : null;
   const portalUserId = portalUser?.userId || null;
-  const portalUserDocumentId = portalUser?._id || null;
   const linkedUserId = resolveLinkedPortalUserIdForProfile(
     userType,
     userId,
     portalUserId,
   );
-  const linkedUserDocumentId =
-    portalUserDocumentId || toObjectIdOrNull(linkedUserId);
+  const applicantIds = [
+    portalUser?._id ? String(portalUser._id) : null,
+    toObjectIdOrNull(linkedUserId) ? String(toObjectIdOrNull(linkedUserId)) : null,
+    linkedUserId ? String(linkedUserId) : null,
+  ];
+  const identityLink = pendingIdentityLink({ profile, applicantIds, applicationId });
 
-  if (
-    linkedUserDocumentId &&
-    String(profile.userId || "") !== String(linkedUserDocumentId)
-  ) {
-    $set.userId = linkedUserDocumentId;
-  }
-  if (reviewerId) {
+  // crmUserId / normalizedEmail / userId are identity bindings: never changed here (crmUserId is
+  // only filled when the profile has none).
+  if (reviewerId && !profile.crmUserId) {
     $set.crmUserId = getReviewerIdForDb(reviewerId);
-  }
-
-  const primaryEmail = pickPrimaryEmail({
-    ...(profile.contactInfo?.toObject?.() || profile.contactInfo || {}),
-    ...(flattened.contactInfo || {}),
-  });
-  if (primaryEmail) {
-    $set.normalizedEmail = normalizeEmail(primaryEmail);
   }
 
   // A profile linked here can be a pre-existing membershipNumber-less record
@@ -622,9 +624,10 @@ async function applyEffectiveToProfile({ profile, effective, reviewerId, session
     { $set },
     { session },
   );
-  return Profile.findOne({ _id: profile._id, tenantId: profile.tenantId }).session(
+  const updated = await Profile.findOne({ _id: profile._id, tenantId: profile.tenantId }).session(
     session,
   );
+  return { profile: updated, identityLink };
 }
 
 async function resolveProfileForApproval({
@@ -675,13 +678,15 @@ async function resolveProfileForApproval({
       });
     }
 
+    let identityLink = null;
     if (status === DUPLICATE_REVIEW_STATUS.LINKED) {
-      profile = await applyEffectiveToProfile({
+      ({ profile, identityLink } = await applyEffectiveToProfile({
         profile,
         effective,
         reviewerId,
         session,
-      });
+        applicationId,
+      }));
     } else if (status === DUPLICATE_REVIEW_STATUS.MERGED) {
       const mergeFieldChoices = normalizeMergeFieldChoices(
         duplicateReview?.mergeFieldChoices,
@@ -706,18 +711,22 @@ async function resolveProfileForApproval({
       });
       approvalEffective = mergedEffective;
 
-      profile = await applyEffectiveToProfile({
+      ({ profile, identityLink } = await applyEffectiveToProfile({
         profile,
         effective: mergedEffective,
         reviewerId,
         session,
-      });
+        applicationId,
+      }));
     }
 
-    const linkedUserId = profile.userId || null;
+    // P5 identity: linkedUserId is null - the application's own user binding (the applicant) is
+    // not rewritten to the profile's owner, and the profile's owner is not rewritten to the
+    // applicant. The applicant identity is returned as a pending identity-link decision.
     return {
       profile,
-      linkedUserId,
+      linkedUserId: null,
+      identityLink,
       isExistingProfile: true,
       approvalEffective,
     };
@@ -736,7 +745,7 @@ async function resolveProfileForApproval({
     normalizedEmail &&
     (await Profile.findOne({ tenantId, normalizedEmail }).session(session));
 
-  const { profile, linkedUserId } = await findOrCreateProfileByEmail({
+  const { profile, linkedUserId, identityLink } = await findOrCreateProfileByEmail({
     tenantId,
     effective,
     reviewerId,
@@ -746,6 +755,7 @@ async function resolveProfileForApproval({
   return {
     profile,
     linkedUserId,
+    identityLink: identityLink ? { ...identityLink, applicationId } : null,
     isExistingProfile: !!existingProfile,
     approvalEffective,
   };

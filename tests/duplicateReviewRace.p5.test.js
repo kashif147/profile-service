@@ -58,6 +58,9 @@ jest.mock("@projectShell/rabbitmq-middleware", () => ({
 
 const URI = process.env.P5_DUPREVIEW_MONGO_URI;
 const d = URI ? describe : describe.skip;
+// Real-database suites share one disposable replica set with the other DB suites in a parallel
+// run: allow for contention (assertions unchanged).
+if (URI) jest.setTimeout(30000);
 
 d("duplicate review race (real replica set)", () => {
   let mongoose;

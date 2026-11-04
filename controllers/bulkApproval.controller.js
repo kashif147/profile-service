@@ -50,9 +50,11 @@ const {
   readIdempotencyKey,
   readExpectedReviewVersion,
   assertExpectedReviewVersion,
-  logCompatibilityWindow,
+  observeDecision,
+  operationHash,
 } = require("../services/decisionPreconditions.js");
 const { assertApprovalPaymentBinding } = require("../services/approvalPaymentBinding.js");
+const { pendingIdentityLink } = require("../services/approvalIdentityLink.js");
 const { DUPLICATE_REVIEW_STATUS } = require("../constants/enums.js");
 const {
   publishPostApprovalEvents,
@@ -81,6 +83,8 @@ const {
   releasePaymentDecision,
   endPaymentDecisionLease,
   findDecisionReplay,
+  lockReviewForDecision,
+  fencedDecisionUpdate,
 } = require("../services/applicationPaymentDecision.service.js");
 const {
   assertSalaryDeductionAllowedForWorkLocation,
@@ -248,23 +252,16 @@ async function approveSingleApplication({
     if (currentReviewVersion(personalForReview) !== gatedVersion) {
       throw reviewChangedError();
     }
-    // P5: lock the reviewed state in this transaction BEFORE any capture (same write as single
-    // approval): matches only while the review is at the gated version and the claim/lease is ours.
-    const reviewLock = await PersonalDetails.updateOne(
-      {
-        applicationId,
-        tenantId,
-        applicationStatus: { $nin: [APPLICATION_STATUS.PROCESSED, APPLICATION_STATUS.REJECTED] },
-        "paymentDecision.claimId": decisionClaim.claimId,
-        "paymentDecision.leaseId": decisionClaim.leaseId,
-        ...reviewVersionFilter(gatedVersion),
-      },
-      { $set: { "paymentDecision.reviewVersion": gatedVersion } },
-      { session },
-    );
-    if (!reviewLock.matchedCount) {
-      throw reviewChangedError();
-    }
+    // P5: lock the reviewed state in this transaction BEFORE any capture (same as single approval):
+    // matches only while the review is at the gated version and the claim AND lease are ours.
+    await lockReviewForDecision({
+      applicationId,
+      tenantId,
+      decisionClaim,
+      reviewVersion: gatedVersion,
+      session,
+      reviewChanged: reviewChangedError,
+    });
     const reviewStatus = personalForReview.duplicateReview?.status;
 
     const { submission: serverSubmission } = await loadSubmission(
@@ -362,14 +359,19 @@ async function approveSingleApplication({
     // P5 ownership: the payment captured must be bound to THIS application (fail closed).
     assertApprovalPaymentBinding({ applicationId, paymentIntentId, latestPayment, mode: paymentMode });
     let captureResult = null;
-    if (paymentIntentId) {
+    if (paymentIntentId && paymentState.captured && paymentState.intentId === paymentIntentId) {
+      captureResult = { status: "succeeded" }; // captured by an earlier attempt of this row
+    } else if (paymentIntentId) {
       const latestPaymentId = latestPayment?.paymentId || latestPayment?.id || latestPayment?._id || null;
       captureResult = await capturePaymentIntent(paymentIntentId, tenantId, req, {
         applicationId,
         actorUserId: reviewerId,
         paymentId: latestPaymentId ? String(latestPaymentId) : null,
       });
-      if (captureResult.status === "succeeded") paymentState.captured = true;
+      if (captureResult.status === "succeeded") {
+        paymentState.captured = true;
+        paymentState.intentId = paymentIntentId;
+      }
       if (captureResult.status !== "succeeded") {
         throw AppError.conflict("Payment capture did not succeed. Application was not processed.", {
           code: "PAYMENT_CAPTURE_FAILED",
@@ -382,6 +384,7 @@ async function approveSingleApplication({
 
     let existingProfile = null;
     let linkedUserDocumentId = null;
+    let identityLink = null;
     let profile;
     if (
       reviewStatus === DUPLICATE_REVIEW_STATUS.LINKED ||
@@ -399,7 +402,8 @@ async function approveSingleApplication({
       });
       profile = resolved.profile;
       existingProfile = profile;
-      linkedUserDocumentId = toObjectIdOrNull(resolved.linkedUserId);
+      linkedUserDocumentId = toObjectIdOrNull(resolved.linkedUserId); // null: no rebinding (P5)
+      identityLink = resolved.identityLink || null;
       effective = {
         ...resolved.approvalEffective,
         subscriptionDetails: normalizeSubscription(
@@ -467,15 +471,23 @@ async function approveSingleApplication({
         );
       }
 
-      if (
-        linkedUserDocumentId &&
-        String(existingProfile.userId || "") !== String(linkedUserDocumentId)
-      ) {
+      // P5 identity: never replace an existing profile's portal owner (Profile.userId is the
+      // portal access grant); an unbound profile with the applicant's own email is bound as
+      // before, a profile bound to someone else records a pending identity-link decision.
+      if (linkedUserDocumentId && !existingProfile.userId) {
         updateFields.userId = linkedUserDocumentId;
+      } else if (linkedUserDocumentId) {
+        identityLink = pendingIdentityLink({
+          profile: existingProfile,
+          applicantIds: [String(linkedUserDocumentId), linkedUserId ? String(linkedUserId) : null],
+          applicationId,
+        });
       }
 
-      // Set crmUserId (the user who approved this profile)
-      updateFields.crmUserId = getReviewerIdForDb(reviewerId);
+      // crmUserId (the user who approved this profile): set once, never overwritten (P5).
+      if (!existingProfile.crmUserId) {
+        updateFields.crmUserId = getReviewerIdForDb(reviewerId);
+      }
 
       const beforeLean = existingProfile.toObject({ depopulate: true });
       await Profile.updateOne(
@@ -564,11 +576,15 @@ async function approveSingleApplication({
       if (linkedUserDocumentId) {
         personalSet.userId = linkedUserDocumentId;
       }
-      await PersonalDetails.updateOne(
-        { applicationId: applicationId, tenantId },
-        { $set: personalSet },
-        { session }
-      );
+      if (identityLink) personalSet.identityLink = identityLink;
+      // P5 fencing: only this run (claim + lease) may write the final state.
+      await fencedDecisionUpdate({
+        applicationId,
+        tenantId,
+        decisionClaim,
+        update: { $set: personalSet },
+        session,
+      });
     }
 
     if (effective.professionalDetails) {
@@ -646,6 +662,7 @@ async function approveSingleApplication({
       profileId: String(profile._id),
       status: "processed",
       success: true,
+      identityLink: identityLink || null,
       postApprovalPayload: {
         applicationId,
         reviewerId,
@@ -666,6 +683,15 @@ async function approveSingleApplication({
     };
 }
 
+// Kept in sync with profileApproval.controller.js.
+const BULK_TRANSACTION_MAX_ATTEMPTS = 3;
+function isTransientTransactionError(error) {
+  if (!error) return false;
+  if (typeof error.hasErrorLabel === "function") return error.hasErrorLabel("TransientTransactionError");
+  if (Array.isArray(error.errorLabels)) return error.errorLabels.includes("TransientTransactionError");
+  return error.code === 112 || /write conflict/i.test(error.message || "");
+}
+
 function failureRow(applicationId, error) {
   return {
     applicationId,
@@ -684,9 +710,21 @@ function failureRow(applicationId, error) {
  */
 async function bulkApproveOne({ applicationId, tenantId, reviewerId, req, bulkDateJoined, operationKey, itemVersion }) {
   let gatedVersion;
+  let opHash = null;
   try {
     const expected = readExpectedReviewVersion(itemVersion);
-    const replay = await findDecisionReplay({ applicationId, tenantId, action: "approve", operationKey });
+    // The bulk operation key is bound to each row's decision payload (same key + other payload -> 422).
+    opHash = operationHash("bulk-approve", {
+      processingDate: req.body?.processingDate ?? null,
+      expectedReviewVersion: expected,
+    });
+    const replay = await findDecisionReplay({
+      applicationId,
+      tenantId,
+      action: "approve",
+      operationKey,
+      operationHash: opHash,
+    });
     if (replay) {
       return { applicationId, profileId: replay.profileId, status: "processed", success: true, replayed: true };
     }
@@ -708,6 +746,7 @@ async function bulkApproveOne({ applicationId, tenantId, reviewerId, req, bulkDa
       actorUserId: reviewerId,
       reviewVersion: gatedVersion,
       operationKey,
+      operationHash: opHash,
     });
   } catch (claimError) {
     return failureRow(applicationId, claimError);
@@ -721,28 +760,37 @@ async function bulkApproveOne({ applicationId, tenantId, reviewerId, req, bulkDa
   };
 
   let result;
-  const appSession = await mongoose.startSession();
-  try {
-    appSession.startTransaction();
-    result = await approveSingleApplication({
-      applicationId,
-      tenantId,
-      reviewerId,
-      req,
-      session: appSession,
-      bulkDateJoined,
-      paymentState,
-      gatedVersion,
-      decisionClaim,
-    });
-    await appSession.commitTransaction();
-  } catch (error) {
-    // Never commit a partly-applied application: abort, then keep or release the claim.
-    if (appSession.inTransaction()) await appSession.abortTransaction().catch(() => {});
-    await settleClaim();
-    return failureRow(applicationId, error);
-  } finally {
-    appSession.endSession();
+  // Same transient-transaction retry as single approval (a concurrent detection / review write
+  // conflicts with this row's lock write); a capture already made is not repeated.
+  for (let attempt = 1; attempt <= BULK_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
+    const appSession = await mongoose.startSession();
+    try {
+      appSession.startTransaction();
+      result = await approveSingleApplication({
+        applicationId,
+        tenantId,
+        reviewerId,
+        req,
+        session: appSession,
+        bulkDateJoined,
+        paymentState,
+        gatedVersion,
+        decisionClaim,
+      });
+      await appSession.commitTransaction();
+      break;
+    } catch (error) {
+      // Never commit a partly-applied application: abort, then retry or keep/release the claim.
+      if (appSession.inTransaction()) await appSession.abortTransaction().catch(() => {});
+      if (isTransientTransactionError(error) && attempt < BULK_TRANSACTION_MAX_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, 75 * attempt));
+        continue;
+      }
+      await settleClaim();
+      return failureRow(applicationId, error);
+    } finally {
+      appSession.endSession();
+    }
   }
 
   try {
@@ -754,7 +802,13 @@ async function bulkApproveOne({ applicationId, tenantId, reviewerId, req, bulkDa
       message: publishError?.message,
     });
   }
-  return { applicationId, profileId: result.profileId, status: "processed", success: true };
+  return {
+    applicationId,
+    profileId: result.profileId,
+    status: "processed",
+    success: true,
+    ...(result.identityLink ? { identityLink: result.identityLink } : {}),
+  };
 }
 
 async function bulkApproveApplications(req, res, next) {
@@ -801,13 +855,12 @@ async function bulkApproveApplications(req, res, next) {
     }
     itemVersions.set(id, item.expectedReviewVersion);
   }
-  if (!operationKey || itemVersions.size < idSet.size) {
-    logCompatibilityWindow("bulk-approval", {
-      count: applicationIds.length,
-      idempotencyKey: !!operationKey,
-      versioned: itemVersions.size,
-    });
-  }
+  observeDecision("bulk-approval", {
+    idempotencyKey: !!operationKey,
+    expectedReviewVersion: itemVersions.size >= idSet.size,
+    rows: idSet.size,
+    rowsWithVersion: [...itemVersions.values()].filter((v) => v !== undefined && v !== null).length,
+  });
 
   const results = [];
 

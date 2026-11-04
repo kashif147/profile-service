@@ -50,12 +50,15 @@ const {
   releasePaymentDecision,
   endPaymentDecisionLease,
   findDecisionReplay,
+  lockReviewForDecision,
+  fencedDecisionUpdate,
 } = require("../services/applicationPaymentDecision.service.js");
 const {
   readIdempotencyKey,
   readExpectedReviewVersion,
   assertExpectedReviewVersion,
-  logCompatibilityWindow,
+  observeDecision,
+  operationHash,
 } = require("../services/decisionPreconditions.js");
 const { assertApprovalPaymentBinding } = require("../services/approvalPaymentBinding.js");
 const {
@@ -286,18 +289,30 @@ async function approveApplication(req, res, next) {
   } catch (preconditionError) {
     return next(preconditionError);
   }
-  if (!operationKey || expectedReviewVersion === null) {
-    logCompatibilityWindow("approve", {
-      applicationId,
-      idempotencyKey: !!operationKey,
-      expectedReviewVersion: expectedReviewVersion !== null,
-    });
-  }
+  observeDecision("approve", {
+    applicationId,
+    idempotencyKey: !!operationKey,
+    expectedReviewVersion: expectedReviewVersion !== null,
+  });
+  // The operation key is bound to the decision payload (same key + other payload -> 422).
+  const opHash = operationHash("approve", {
+    overlayId,
+    overlayVersion,
+    submission,
+    proposedPatch,
+    expectedReviewVersion,
+  });
 
   // P5: the same approval retried with its Idempotency-Key after it completed is a replay of the
   // recorded outcome (tenant-scoped), not a new decision.
   try {
-    const replay = await findDecisionReplay({ applicationId, tenantId, action: "approve", operationKey });
+    const replay = await findDecisionReplay({
+      applicationId,
+      tenantId,
+      action: "approve",
+      operationKey,
+      operationHash: opHash,
+    });
     if (replay) {
       return res.status(200).json({
         applicationId,
@@ -333,6 +348,7 @@ async function approveApplication(req, res, next) {
       actorUserId: reviewerId,
       reviewVersion: gatedVersion,
       operationKey,
+      operationHash: opHash,
     });
   } catch (claimError) {
     return next(claimError);
@@ -436,22 +452,16 @@ async function approveApplication(req, res, next) {
     }
     // P5: lock the reviewed state inside this transaction BEFORE any capture. This write makes any
     // concurrent review/detection write wait for (or conflict with) this transaction, and it only
-    // matches while the review is still at the version this approval passed and the claim is ours.
-    const reviewLock = await PersonalDetails.updateOne(
-      {
-        applicationId,
-        tenantId,
-        applicationStatus: { $nin: [APPLICATION_STATUS.PROCESSED, APPLICATION_STATUS.REJECTED] },
-        "paymentDecision.claimId": decisionClaim.claimId,
-        "paymentDecision.leaseId": decisionClaim.leaseId,
-        ...reviewVersionFilter(gatedVersion),
-      },
-      { $set: { "paymentDecision.reviewVersion": gatedVersion } },
-      { session },
-    );
-    if (!reviewLock.matchedCount) {
-      throw reviewChangedError(!!captureResult);
-    }
+    // matches while the review is still at the version this approval passed and the claim AND this
+    // run's lease are ours (a stale run gets DECISION_LEASE_LOST).
+    await lockReviewForDecision({
+      applicationId,
+      tenantId,
+      decisionClaim,
+      reviewVersion: gatedVersion,
+      session,
+      reviewChanged: () => reviewChangedError(!!captureResult),
+    });
 
     await assertSalaryDeductionAllowedForWorkLocation(
       effective.subscriptionDetails,
@@ -524,6 +534,7 @@ async function approveApplication(req, res, next) {
       profile,
       linkedUserId,
       isExistingProfile,
+      identityLink,
       approvalEffective: resolvedApprovalEffective,
     } = await resolveProfileForApproval({
       applicationId,
@@ -581,11 +592,15 @@ async function approveApplication(req, res, next) {
           personalSet.userId = linkedUserObjectId;
         }
       }
-      await PersonalDetails.updateOne(
-        { applicationId: applicationId, tenantId },
-        { $set: personalSet },
-        { session }
-      );
+      if (identityLink) personalSet.identityLink = identityLink;
+      // P5 fencing: only this run (claim + lease) may write the final state.
+      await fencedDecisionUpdate({
+        applicationId,
+        tenantId,
+        decisionClaim,
+        update: { $set: personalSet },
+        session,
+      });
     }
 
     if (approvalEffective.professionalDetails) {
@@ -679,6 +694,9 @@ async function approveApplication(req, res, next) {
       status: "processed",
       paymentStatus: captureResult ? "Captured" : undefined,
       proposedPatch: patchToApply,
+      // P5: the applicant's portal identity was NOT bound to an existing profile; a separate
+      // identity-link decision is pending (null when nothing is pending).
+      identityLink: identityLink || null,
     });
     } catch (e) {
       if (session.inTransaction()) {
@@ -759,19 +777,22 @@ async function rejectApplication(req, res, next) {
   // This comes from the authenticated user's ID in the request (set by auth middleware)
   const reviewerId = req.user?.id || req.userId;
 
-  // P5 preconditions: Idempotency-Key (required in enforce mode); expectedReviewVersion is
-  // optional on reject (a reject does not depend on the duplicate review) but checked when sent.
+  // P5 preconditions (owner policy): in enforce mode reject requires the operation key AND the
+  // review version the reviewer saw (428); a sent version is always checked (409).
   let operationKey;
   let expectedReviewVersion;
   try {
     operationKey = readIdempotencyKey(req);
-    expectedReviewVersion = readExpectedReviewVersion(req.body?.expectedReviewVersion, { required: false });
+    expectedReviewVersion = readExpectedReviewVersion(req.body?.expectedReviewVersion);
   } catch (preconditionError) {
     return next(preconditionError);
   }
-  if (!operationKey) {
-    logCompatibilityWindow("reject", { applicationId, idempotencyKey: false });
-  }
+  observeDecision("reject", {
+    applicationId,
+    idempotencyKey: !!operationKey,
+    expectedReviewVersion: expectedReviewVersion !== null,
+  });
+  const opHash = operationHash("reject", { reason, notes, overlayId, overlayVersion, expectedReviewVersion });
 
   // Tenant-scoped existence check BEFORE cancelling any payment intent.
   const scopedApplication = await PersonalDetails.findOne({
@@ -785,7 +806,13 @@ async function rejectApplication(req, res, next) {
   }
 
   try {
-    const replay = await findDecisionReplay({ applicationId, tenantId, action: "reject", operationKey });
+    const replay = await findDecisionReplay({
+      applicationId,
+      tenantId,
+      action: "reject",
+      operationKey,
+      operationHash: opHash,
+    });
     if (replay) {
       return res.status(200).json({ applicationId, status: "rejected", replayed: true });
     }
@@ -803,6 +830,7 @@ async function rejectApplication(req, res, next) {
       action: "reject",
       actorUserId: reviewerId,
       operationKey,
+      operationHash: opHash,
     });
   } catch (claimError) {
     return next(claimError);
@@ -824,9 +852,17 @@ async function rejectApplication(req, res, next) {
       req,
       fallbackSubscription: existingSubscription,
     });
-    // P5 ownership: never release a hold that is not bound to THIS application (fail closed).
-    assertApprovalPaymentBinding({ applicationId, paymentIntentId, latestPayment, mode: "INLINE" });
-    if (paymentIntentId) {
+    // P5 (owner policy): a payment MUTATION needs a verified binding to THIS application; an
+    // application with no account payment record is rejected without any payment mutation; a
+    // malformed / inconsistent account record fails closed.
+    const { mutate: cancelAllowed } = assertApprovalPaymentBinding({
+      applicationId,
+      paymentIntentId,
+      latestPayment,
+      mode: "INLINE",
+      action: "cancel",
+    });
+    if (paymentIntentId && cancelAllowed) {
       try {
         cancelResult = await cancelPaymentIntent(paymentIntentId, tenantId, req, {
           applicationId,
@@ -892,10 +928,14 @@ async function rejectApplication(req, res, next) {
       .session(session)
       .lean();
 
-    // Update PersonalDetails with rejection status and details
-    await PersonalDetails.updateOne(
-      { applicationId: applicationId, tenantId },
-      {
+    // Update PersonalDetails with rejection status and details. P5 fencing: only this run (claim +
+    // lease) may write the final state; a stale run gets DECISION_LEASE_LOST.
+    await fencedDecisionUpdate({
+      applicationId,
+      tenantId,
+      decisionClaim,
+      session,
+      update: {
         $set: {
           applicationStatus: APPLICATION_STATUS.REJECTED,
           "meta.isActive": false,
@@ -906,12 +946,11 @@ async function rejectApplication(req, res, next) {
           "paymentDecision.completedAt": new Date(),
         },
       },
-      { session }
-    );
+    });
 
     // Note: ProfessionalDetails and SubscriptionDetails are kept as-is (not deleted)
     // No Profile is created for rejected applications
-    if (paymentIntentId && cancelResult?.status) {
+    if (paymentIntentId && cancelAllowed && cancelResult?.status) {
       await SubscriptionDetails.updateOne(
         { applicationId, tenantId },
         {

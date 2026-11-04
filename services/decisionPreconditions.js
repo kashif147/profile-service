@@ -14,6 +14,7 @@
  * A sent expectedReviewVersion is ALWAYS checked against the current version (409
  * REVIEW_VERSION_CONFLICT), whatever the mode.
  */
+const crypto = require("crypto");
 const { AppError } = require("../errors/AppError.js");
 
 const MODE_ENV = "DUPLICATE_REVIEW_VERSION_MODE";
@@ -118,6 +119,58 @@ function assertExpectedReviewVersion(expected, current) {
   }
 }
 
+function stable(value) {
+  if (Array.isArray(value)) return value.map(stable);
+  if (value && typeof value === "object" && !(value instanceof Date)) {
+    return Object.keys(value)
+      .sort()
+      .reduce((o, k) => {
+        if (value[k] !== undefined) o[k] = stable(value[k]);
+        return o;
+      }, {});
+  }
+  return value;
+}
+
+/**
+ * Hash of the decision-relevant payload an operation key is bound to: the same key with a
+ * different payload is refused (422 IDEMPOTENCY_KEY_REUSED). Key order does not matter.
+ */
+function operationHash(route, payload) {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify([route, stable(payload || {})]))
+    .digest("hex")
+    .slice(0, 32);
+}
+
+/**
+ * P5 enforce-switch evidence (log-based counter). Every decision request logs ONE line:
+ *   [decision-preconditions] observed {route, mode, idempotencyKey, expectedReviewVersion,
+ *                                      versionRequired, rows, rowsWithVersion}
+ * and, when a precondition is missing, the compatibility-window line as well. Counting the
+ * "observed" lines per route (and the ones with idempotencyKey:false / expectedReviewVersion:false
+ * where versionRequired:true) over a window is the switch criterion; see the PR description.
+ * route is one of duplicate-review | approve | reject | bulk-approval | legacy-status.
+ */
+function observeDecision(route, { idempotencyKey, expectedReviewVersion, versionRequired = true, rows, rowsWithVersion, applicationId } = {}) {
+  const entry = {
+    route,
+    mode: reviewVersionMode(),
+    idempotencyKey: !!idempotencyKey,
+    expectedReviewVersion: !!expectedReviewVersion,
+    versionRequired: !!versionRequired,
+  };
+  if (rows !== undefined) {
+    entry.rows = rows;
+    entry.rowsWithVersion = rowsWithVersion;
+  }
+  console.info("[decision-preconditions] observed", entry);
+  const missing = !entry.idempotencyKey || (entry.versionRequired && !entry.expectedReviewVersion) ||
+    (rows !== undefined && rowsWithVersion < rows);
+  if (missing) logCompatibilityWindow(route, { ...entry, applicationId });
+}
+
 function logCompatibilityWindow(route, details) {
   console.warn("[decision-preconditions] compatibility window: request without", {
     route,
@@ -136,5 +189,7 @@ module.exports = {
   readExpectedReviewVersion,
   assertExpectedReviewVersion,
   logCompatibilityWindow,
+  observeDecision,
+  operationHash,
   _resetWarnings,
 };

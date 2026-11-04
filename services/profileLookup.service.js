@@ -103,6 +103,7 @@ async function findOrCreateProfileByEmail({
     );
   }
 
+  let identityLink = null;
   let profile = await Profile.findOne({
     tenantId,
     normalizedEmail: nEmail,
@@ -164,15 +165,22 @@ async function findOrCreateProfileByEmail({
       recruitmentDetails: flattened.recruitmentDetails || {},
     };
 
-    if (
-      linkedUserDocumentId &&
-      String(profile.userId || "") !== String(linkedUserDocumentId)
-    ) {
+    // P5 identity: an existing profile's portal owner (Profile.userId = the portal access grant) is
+    // never replaced by an approval. An unbound profile with the applicant's own email is bound as
+    // before; a profile bound to someone else keeps its owner and the approval records a pending
+    // identity-link decision instead (services/approvalIdentityLink.js).
+    if (linkedUserDocumentId && !profile.userId) {
       $set.userId = linkedUserDocumentId;
+    } else if (linkedUserDocumentId) {
+      identityLink = pendingIdentityLink({
+        profile,
+        applicantIds: [String(linkedUserDocumentId), linkedUserId ? String(linkedUserId) : null],
+      });
     }
 
-    // Set crmUserId when reviewerId is provided (CRM user approving the profile)
-    if (reviewerId) {
+    // crmUserId (CRM user who approved this profile) is an identity binding: set once, never
+    // overwritten by a later approval (P5).
+    if (reviewerId && !profile.crmUserId) {
       $set.crmUserId = getReviewerIdForDb(reviewerId);
     }
 
@@ -214,8 +222,11 @@ async function findOrCreateProfileByEmail({
     portalUserId,
     linkedUserId: linkedUserDocumentId,
     sourceUserId: linkedUserId,
+    identityLink,
   };
 }
+
+const { pendingIdentityLink } = require("./approvalIdentityLink.js");
 
 module.exports = {
   normalizeEmail,

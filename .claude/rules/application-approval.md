@@ -53,7 +53,7 @@ Every decision path (single approve/reject, bulk approval, legacy `PUT /applicat
   `compat` (default; anything other than exactly `enforce`) | `enforce`. Enforce requires an
   `Idempotency-Key` header (428 `IDEMPOTENCY_KEY_REQUIRED`) and `expectedReviewVersion` (428
   `REVIEW_VERSION_REQUIRED`) on approve, bulk rows (`items[]`), legacy approve and the review
-  decision; reject needs only the key. The key may be sent as the `Idempotency-Key` header or the
+  decision and reject (owner policy). The key may be sent as the `Idempotency-Key` header or the
   body field `idempotencyKey` (header wins; both and different -> 400) — the DEV gateway's CORS
   allow-list for `/profile-service/api/` does not include the header, so the CRM uses the body. Malformed values are 400 in both modes; a sent version is
   always checked (409 `REVIEW_VERSION_CONFLICT`). Compat omissions log
@@ -67,7 +67,24 @@ Every decision path (single approve/reject, bulk approval, legacy `PUT /applicat
   409 `PROFILE_EMAIL_EXISTS`); `assertApprovalPaymentBinding` before capture/cancel (409
   `PAYMENT_BINDING_MISSING` / `PAYMENT_APPLICATION_MISMATCH`). Bulk now resolves LINKED/MERGED
   reviews through `resolveProfileForApproval` like single approval.
-- **Replay**: a run's `Idempotency-Key` is stored on the claim (`paymentDecision.operationKeys`);
-  the same key after completion replays the outcome (`replayed: true`) instead of 409.
-- Tests: `tests/duplicateReviewOwnership.p5.test.js`, `tests/duplicateReviewRace.p5.test.js`
+- **Replay**: a run's operation key is stored on the claim with a hash of its decision payload
+  (`paymentDecision.operations`); the same key + payload after completion replays the outcome
+  (`replayed: true`); the same key with another payload / action is 422 `IDEMPOTENCY_KEY_REUSED`.
+- **Payment policy** (`assertApprovalPaymentBinding`): any capture/cancel needs a verified binding;
+  approve with only a local intent fails closed; reject with NO account payment record proceeds
+  without any payment mutation; malformed/foreign records fail closed.
+- **Fencing**: every run's writes match claimId + leaseId (`lockReviewForDecision`,
+  `fencedDecisionUpdate`); a stale run whose lease was taken over gets 409 `DECISION_LEASE_LOST`
+  and can neither release nor overwrite the new holder's claim. Bulk retries transient
+  transaction errors like single approval.
+- **Identity** (`services/approvalIdentityLink.js`): an approval never changes an existing
+  `Profile.userId` (the portal access grant), `normalizedEmail`, a set `crmUserId`, or (LINK/MERGE)
+  the profile's contact emails; LINK/MERGE never bind the applicant to the profile (bound or
+  unbound) and never rewrite the application's own `userId`; the applicant identity is recorded as
+  `PersonalDetails.identityLink` (`PENDING`, exposed in the duplicate-review state and approve
+  response). `/my-profile` self-linking and `user.portal.created` sync only adopt UNBOUND
+  profiles/applications.
+- **Enforce evidence**: every decision request logs `[decision-preconditions] observed {route, mode,
+  idempotencyKey, expectedReviewVersion, versionRequired[, rows, rowsWithVersion]}`.
+- Tests: `tests/decisionSafeguards.p5.test.js`, `tests/duplicateReviewOwnership.p5.test.js`, `tests/duplicateReviewRace.p5.test.js`
   (real replica set, `P5_DUPREVIEW_MONGO_URI`), `tests/decisionPreconditions.p5.test.js`.

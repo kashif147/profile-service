@@ -49,6 +49,9 @@ jest.mock("@projectShell/rabbitmq-middleware", () => ({
 
 const URI = process.env.P5_DUPREVIEW_MONGO_URI;
 const d = URI ? describe : describe.skip;
+// Real-database suites share one disposable replica set with the other DB suites in a parallel
+// run: allow for contention (assertions unchanged).
+if (URI) jest.setTimeout(30000);
 
 d("duplicate review ownership / bulk / version mode (real replica set)", () => {
   let mongoose;
@@ -429,8 +432,6 @@ d("duplicate review ownership / bulk / version mode (real replica set)", () => {
       latestOverride = () => null; // account 404: only SubscriptionDetails.paymentDetails has an intent
       const first = await approve(a1);
       expect(first.err).toMatchObject({ status: 409, code: "PAYMENT_BINDING_MISSING" });
-      const firstReject = await reject(a1);
-      expect(firstReject.err).toMatchObject({ status: 409, code: "PAYMENT_BINDING_MISSING" });
       latestOverride = (id) => ({ paymentIntentId: `pi_${id}`, id: "d00000000000000000000005", attemptNumber: 1 });
       const second = await approve(a2);
       expect(second.err).toMatchObject({ status: 409, code: "PAYMENT_BINDING_MISSING" });
@@ -511,11 +512,14 @@ d("duplicate review ownership / bulk / version mode (real replica set)", () => {
       const d3 = await decide(pending, { action: "MARKED_NEW", expectedReviewVersion: v }, { key: "k-dec-1" });
       expect(d3.err).toBeUndefined();
 
-      // reject: key required, version optional
-      const { applicationId: toReject } = await reviewedApplication();
-      const r1 = await reject(toReject);
+      // reject: key AND version required (owner policy)
+      const { applicationId: toReject, reviewVersion: rv } = await reviewedApplication();
+      const r1 = await reject(toReject, { body: { expectedReviewVersion: rv } });
       expect(r1.err).toMatchObject({ status: 428, code: "IDEMPOTENCY_KEY_REQUIRED" });
-      const r2 = await reject(toReject, { key: "k-rej-1" });
+      const r1b = await reject(toReject, { key: "k-rej-1" });
+      expect(r1b.err).toMatchObject({ status: 428, code: "REVIEW_VERSION_REQUIRED" });
+      expect(stripeCancels).toBe(0);
+      const r2 = await reject(toReject, { key: "k-rej-1", body: { expectedReviewVersion: rv } });
       expect(r2.err).toBeUndefined();
       expect(stripeCancels).toBe(1);
 
@@ -561,10 +565,20 @@ d("duplicate review ownership / bulk / version mode (real replica set)", () => {
       const viaBody = await approve(applicationId, { body: { ...body, idempotencyKey: "k-replay-1" } });
       expect(viaBody.err).toBeUndefined();
       expect(viaBody.res.body).toMatchObject({ replayed: true });
-      // a bulk retry carrying the same key replays that row too
-      const b = await bulk({ applicationIds: [applicationId] }, { key: "k-replay-1" });
-      expect(rowOf(b.res, applicationId)).toMatchObject({ success: true, replayed: true });
+      // the same key with a different payload (or on another route) is refused: 422
+      const changed = await approve(applicationId, { key: "k-replay-1", body: { expectedReviewVersion: reviewVersion, proposedPatch: [] } });
+      expect(changed.err).toMatchObject({ status: 422, code: "IDEMPOTENCY_KEY_REUSED" });
+      const viaBulk = await bulk({ applicationIds: [applicationId] }, { key: "k-replay-1" });
+      expect(rowOf(viaBulk.res, applicationId)).toMatchObject({ success: false, code: "IDEMPOTENCY_KEY_REUSED", httpStatus: 422 });
       expect(stripeCaptures).toBe(1);
+      // a bulk retry with its own key and the same payload replays that row
+      const other2 = await reviewedApplication();
+      const bodyB = { applicationIds: [other2.applicationId], items: [{ applicationId: other2.applicationId, expectedReviewVersion: other2.reviewVersion }] };
+      const b1 = await bulk(bodyB, { key: "k-bulk-replay" });
+      expect(rowOf(b1.res, other2.applicationId)).toMatchObject({ success: true });
+      const b2 = await bulk(bodyB, { key: "k-bulk-replay" });
+      expect(rowOf(b2.res, other2.applicationId)).toMatchObject({ success: true, replayed: true });
+      expect(stripeCaptures).toBe(2);
     });
   });
 });

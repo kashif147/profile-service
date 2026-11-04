@@ -83,12 +83,22 @@ async function findPortalProfileForUserContext({
 
   if (!normalizedEmail && !memberNumber) return { profile: null, portalUser };
 
+  // P5 identity: email / membership-number self-linking only ever adopts an UNBOUND profile.
+  // A profile already bound to a portal user (Profile.userId = that user's access grant) is never
+  // returned to, or re-bound to, another caller - before this, a portal user whose email matched
+  // another member's profile took that profile over on /my-profile.
+  const unbound = { $or: [{ userId: null }, { userId: { $exists: false } }] };
   query = Profile.findOne({
     tenantId,
     isActive: true,
-    $or: [
-      ...(normalizedEmail ? [{ normalizedEmail }] : []),
-      ...(memberNumber ? [{ membershipNumber: memberNumber }] : []),
+    $and: [
+      {
+        $or: [
+          ...(normalizedEmail ? [{ normalizedEmail }] : []),
+          ...(memberNumber ? [{ membershipNumber: memberNumber }] : []),
+        ],
+      },
+      unbound,
     ],
   });
   if (select) query = query.select(select);
@@ -97,10 +107,12 @@ async function findPortalProfileForUserContext({
 
   if (portalUser?._id) {
     const beforeLean = await Profile.findById(profileByIdentity._id).lean();
-    await Profile.updateOne(
-      { _id: profileByIdentity._id, tenantId },
+    // Conditional: binds only while still unbound (a concurrent bind wins, this one is a no-op).
+    const bound = await Profile.updateOne(
+      { _id: profileByIdentity._id, tenantId, ...unbound },
       { $set: { userId: portalUser._id } },
     );
+    if (!bound.matchedCount) return { profile: null, portalUser };
     await publishProfileAfterUpdateOne({
       tenantId,
       profileId: profileByIdentity._id,

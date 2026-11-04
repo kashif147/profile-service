@@ -31,15 +31,22 @@ const {
   releasePaymentDecision,
   endPaymentDecisionLease,
   findDecisionReplay,
+  lockReviewForDecision,
+  fencedDecisionUpdate,
 } = require("../services/applicationPaymentDecision.service.js");
 const {
   readIdempotencyKey,
   readExpectedReviewVersion,
   assertExpectedReviewVersion,
-  logCompatibilityWindow,
+  observeDecision,
+  operationHash,
 } = require("../services/decisionPreconditions.js");
 const { assertApprovalPaymentBinding } = require("../services/approvalPaymentBinding.js");
-const { currentReviewVersion } = require("../services/duplicate.review.version.js");
+const { currentReviewVersion, reviewVersionFilter } = require("../services/duplicate.review.version.js");
+const {
+  ensureDuplicateReviewAllowsApproval,
+  assertReviewedProfileTarget,
+} = require("../services/duplicate.review.service.js");
 const {
   resolvePortalUserServiceId,
 } = require("../helpers/portalUserIdentity.js");
@@ -549,44 +556,67 @@ exports.approveApplication = async (req, res, next) => {
     if (!tenantId) {
       return next(AppError.forbidden("Tenant context is required"));
     }
-    // P5 preconditions (legacy route too): Idempotency-Key always in enforce mode;
-    // expectedReviewVersion required in enforce mode when approving, checked whenever sent.
+    // P5 (owner policy: the legacy route is kept, with the SAME guards as the current pipeline):
+    // preconditions (enforce: key + version on both decisions), tenant scope, payload-bound
+    // operation key + replay, duplicate gate before the claim (approve), reviewed profile target,
+    // verified payment binding before any payment mutation, claim + lease, review locked at the
+    // gated version before capture, and a fenced final write (claim + lease + version).
     const operationKey = readIdempotencyKey(req);
     const expectedReviewVersion = readExpectedReviewVersion(validatedData.expectedReviewVersion, {
-      required: decision === APPLICATION_STATUS.PROCESSED,
+      required: decision === APPLICATION_STATUS.PROCESSED || decision === APPLICATION_STATUS.REJECTED,
     });
-    if (!operationKey || expectedReviewVersion === null) {
-      logCompatibilityWindow("legacy-status", {
-        applicationId,
-        idempotencyKey: !!operationKey,
-        expectedReviewVersion: expectedReviewVersion !== null,
-      });
-    }
+    observeDecision("legacy-status", {
+      applicationId,
+      idempotencyKey: !!operationKey,
+      expectedReviewVersion: expectedReviewVersion !== null,
+    });
     // Tenant-scoped existence check BEFORE any payment capture/cancel: an
     // application from another tenant is indistinguishable from a missing one.
     const scopedApplication = await PersonalDetails.findOne({
       applicationId,
       tenantId: String(tenantId),
     })
-      .select("_id duplicateReview.reviewVersion")
+      .select("_id duplicateReview contactInfo")
       .lean();
     if (!scopedApplication) {
       return res.notFoundRecord("Application not found");
     }
-    const legacyAction =
+    const claimAction =
       decision === APPLICATION_STATUS.PROCESSED
         ? "approve"
         : decision === APPLICATION_STATUS.REJECTED
           ? "reject"
           : null;
-    if (legacyAction) {
-      const replay = await findDecisionReplay({ applicationId, tenantId, action: legacyAction, operationKey });
+    const opHash = claimAction
+      ? operationHash(`legacy-${claimAction}`, { applicationStatus: decision, comments, expectedReviewVersion })
+      : null;
+    if (claimAction) {
+      const replay = await findDecisionReplay({
+        applicationId,
+        tenantId,
+        action: claimAction,
+        operationKey,
+        operationHash: opHash,
+      });
       if (replay) {
         return res.success({ applicationId, applicationStatus: replay.applicationStatus, replayed: true });
       }
     }
-    const reviewVersionNow = currentReviewVersion(scopedApplication);
+    let reviewVersionNow = currentReviewVersion(scopedApplication);
+    let reviewedApplication = scopedApplication;
+    if (claimAction === "approve") {
+      // Duplicate gate BEFORE the claim and any capture (as POST /:applicationId/approve).
+      reviewedApplication = await ensureDuplicateReviewAllowsApproval(applicationId, String(tenantId));
+      reviewVersionNow = currentReviewVersion(reviewedApplication);
+    }
     assertExpectedReviewVersion(expectedReviewVersion, reviewVersionNow);
+    if (claimAction === "approve") {
+      await assertReviewedProfileTarget({
+        duplicateReview: reviewedApplication.duplicateReview,
+        effective: { contactInfo: reviewedApplication.contactInfo },
+        tenantId: String(tenantId),
+      });
+    }
     const subscriptionQuery = { applicationId, tenantId: String(tenantId) };
     const existingSubscription = await SubscriptionDetails.findOne(subscriptionQuery)
       .select("paymentDetails")
@@ -600,15 +630,17 @@ exports.approveApplication = async (req, res, next) => {
       latestPayment?.paymentIntentId || resolvePaymentIntentId(existingSubscription);
     let paymentActionResult = null;
 
-    const claimAction =
-      decision === APPLICATION_STATUS.PROCESSED
-        ? "approve"
-        : decision === APPLICATION_STATUS.REJECTED
-          ? "reject"
-          : null;
-    // P5 ownership: never capture/cancel a payment that is not bound to THIS application.
+    // P5 ownership: a payment mutation needs a verified binding to THIS application; a reject
+    // with no account payment record proceeds without any payment mutation.
+    let mutatePayment = false;
     if (claimAction) {
-      assertApprovalPaymentBinding({ applicationId, paymentIntentId, latestPayment, mode: "INLINE" });
+      ({ mutate: mutatePayment } = assertApprovalPaymentBinding({
+        applicationId,
+        paymentIntentId,
+        latestPayment,
+        mode: "INLINE",
+        action: claimAction === "approve" ? "capture" : "cancel",
+      }));
     }
     if (claimAction) {
       decisionClaim = await claimPaymentDecision({
@@ -617,10 +649,29 @@ exports.approveApplication = async (req, res, next) => {
         action: claimAction,
         actorUserId: creatorId,
         operationKey,
+        operationHash: opHash,
         ...(claimAction === "approve" ? { reviewVersion: reviewVersionNow } : {}),
       });
       claimedApplicationId = applicationId;
       claimedTenantId = String(tenantId);
+    }
+    const legacyReviewChanged = () =>
+      AppError.conflict(
+        paymentMoved
+          ? "The duplicate review changed after the payment was captured. Review duplicates again, then approve again (the payment will not be taken twice)."
+          : "The duplicate review changed during approval. Review duplicates again, then approve.",
+        { code: paymentMoved ? "REVIEW_CHANGED_AFTER_CAPTURE" : "REVIEW_CHANGED", paymentCaptured: paymentMoved },
+      );
+    if (claimAction === "approve") {
+      // Lock: claim + lease + gated review version, BEFORE any capture.
+      await lockReviewForDecision({
+        applicationId,
+        tenantId,
+        decisionClaim,
+        reviewVersion: reviewVersionNow,
+        session: null,
+        reviewChanged: legacyReviewChanged,
+      });
     }
     const latestPaymentId = latestPayment?.paymentId || latestPayment?.id || latestPayment?._id || null;
     const paymentCommand = {
@@ -629,7 +680,7 @@ exports.approveApplication = async (req, res, next) => {
       paymentId: latestPaymentId ? String(latestPaymentId) : null,
     };
 
-    if (paymentIntentId && decision === APPLICATION_STATUS.PROCESSED) {
+    if (mutatePayment && paymentIntentId && decision === APPLICATION_STATUS.PROCESSED) {
       paymentActionResult = await capturePaymentIntent(
         paymentIntentId,
         tenantId,
@@ -645,7 +696,7 @@ exports.approveApplication = async (req, res, next) => {
           ),
         );
       }
-    } else if (paymentIntentId && decision === APPLICATION_STATUS.REJECTED) {
+    } else if (mutatePayment && paymentIntentId && decision === APPLICATION_STATUS.REJECTED) {
       paymentActionResult = await cancelPaymentIntent(
         paymentIntentId,
         tenantId,
@@ -655,22 +706,40 @@ exports.approveApplication = async (req, res, next) => {
       paymentMoved = true;
     }
 
-    // Use the application service
-    const updatedApplication = await applicationService.updateApplicationStatus(
-      applicationId,
-      applicationStatus,
-      creatorId,
-      comments,
-      tenantId,
-    );
-    if (decisionClaim) {
-      await PersonalDetails.updateOne(
-        { applicationId, tenantId: String(tenantId), "paymentDecision.claimId": decisionClaim.claimId },
-        { $set: { "paymentDecision.completedAt": new Date() } },
+    let updatedApplication;
+    if (claimAction) {
+      // Fenced final write: this run's claim + lease (and, approving, the gated review version).
+      const active = decision === APPLICATION_STATUS.PROCESSED;
+      await fencedDecisionUpdate({
+        applicationId,
+        tenantId,
+        decisionClaim,
+        extraFilter: claimAction === "approve" ? reviewVersionFilter(reviewVersionNow) : {},
+        onOtherMiss: legacyReviewChanged,
+        update: {
+          $set: {
+            applicationStatus: decision,
+            approvalDetails: { approvedBy: creatorId, approvedAt: new Date(), comments: comments || "" },
+            "meta.isActive": active,
+            "paymentDecision.completedAt": new Date(),
+          },
+        },
+      });
+      await ProfessionalDetails.updateMany(subscriptionQuery, { $set: { "meta.isActive": active } });
+      await SubscriptionDetails.updateMany(subscriptionQuery, { $set: { "meta.isActive": active } });
+      updatedApplication = await PersonalDetails.findOne(subscriptionQuery).lean();
+    } else {
+      // Use the application service
+      updatedApplication = await applicationService.updateApplicationStatus(
+        applicationId,
+        applicationStatus,
+        creatorId,
+        comments,
+        tenantId,
       );
     }
 
-    if (paymentIntentId && paymentActionResult?.status) {
+    if (mutatePayment && paymentIntentId && paymentActionResult?.status) {
       await SubscriptionDetails.updateOne(
         { applicationId, tenantId: String(tenantId) },
         {

@@ -122,8 +122,23 @@ const ProfileSchema = new mongoose.Schema(
       // P5: execution lease of the run currently acting on the claim.
       leaseId: String,
       leaseUntil: Date,
-      // P5: client Idempotency-Keys of the runs of this decision (replay after completion).
-      operationKeys: { type: [String], default: undefined },
+      // P5: client operation keys of the runs of this decision with their payload hash (replay
+      // after completion; same key + different payload is refused).
+      operations: {
+        type: [{ _id: false, key: String, hash: String }],
+        default: undefined,
+      },
+    },
+    // P5: the applicant's portal identity when it was NOT bound to the existing profile the
+    // application was approved into (pending identity-link decision; services/approvalIdentityLink.js).
+    identityLink: {
+      status: String,
+      reason: String,
+      applicationId: String,
+      profileId: String,
+      applicantUserId: String,
+      profileBound: Boolean,
+      recordedAt: Date,
     },
     profileId: {
       type: mongoose.Schema.Types.ObjectId,

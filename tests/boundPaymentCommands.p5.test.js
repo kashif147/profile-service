@@ -345,7 +345,15 @@ describe("POST /applications/:id/approve", () => {
     // Whether the rest of approval committed or failed after the capture, the decision is not released.
     expect(app().paymentDecision.action).toBe("approve");
     post.mockClear();
-    const { err } = await invoke(profileApproval.rejectApplication, crmReq({ params: { applicationId: APP }, body: { reason: "x" } }));
+    // A separate user action (its own operation key; reusing the approve's key would be 422).
+    const { err } = await invoke(
+      profileApproval.rejectApplication,
+      crmReq({
+        params: { applicationId: APP },
+        body: { reason: "x" },
+        headers: { ...inboundHeaders, "idempotency-key": "reject-action-key" },
+      }),
+    );
     expect(err && err.status).toBe(409);
     expect(post).not.toHaveBeenCalled();
   });

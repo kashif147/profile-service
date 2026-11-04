@@ -95,11 +95,17 @@ async function handlePortalUserCreated(payload) {
           `📋 Found profile for Portal user ${userEmail || userMemberNumber}, linking userId...`
         );
 
-        // 3. Update profile with userId if not already set
-        if (!profile.userId || String(profile.userId) !== String(localUserId)) {
+        // 3. Bind the profile to this portal user ONLY while it is unbound. P5 identity:
+        // Profile.userId is the portal access grant; a profile bound to another portal user is
+        // never re-bound by an email / member-number match (account takeover otherwise).
+        if (profile.userId && String(profile.userId) !== String(localUserId)) {
+          console.warn("[user.portal.created] profile bound to another portal user; not re-bound", {
+            profileId: String(profile._id),
+          });
+        } else if (!profile.userId) {
           const beforeLean = profile.toObject({ depopulate: true });
           await Profile.updateOne(
-            { _id: profile._id, tenantId },
+            { _id: profile._id, tenantId, $or: [{ userId: null }, { userId: { $exists: false } }] },
             { $set: { userId: localUserId } }
           );
           await publishProfileAfterUpdateOne({
@@ -135,7 +141,15 @@ async function handlePortalUserCreated(payload) {
           "meta.deleted": { $ne: true },
         });
 
-        if (personalDetails) {
+        // P5 identity: an application already bound to another portal user is not re-bound.
+        const pdBoundToOther =
+          personalDetails && personalDetails.userId && String(personalDetails.userId) !== String(localUserId);
+        if (pdBoundToOther) {
+          console.warn("[user.portal.created] application bound to another portal user; not re-bound", {
+            applicationId: personalDetails.applicationId,
+          });
+        }
+        if (personalDetails && !pdBoundToOther) {
           console.log(
             `📋 Found PersonalDetails for Portal user ${userEmail}, linking userId...`
           );
@@ -365,7 +379,15 @@ async function handlePortalUserUpdated(payload) {
           "meta.deleted": { $ne: true },
         });
 
-        if (personalDetails) {
+        // P5 identity: an application already bound to another portal user is not re-bound.
+        const pdBoundToOther =
+          personalDetails && personalDetails.userId && String(personalDetails.userId) !== String(localUserId);
+        if (pdBoundToOther) {
+          console.warn("[user.portal.created] application bound to another portal user; not re-bound", {
+            applicationId: personalDetails.applicationId,
+          });
+        }
+        if (personalDetails && !pdBoundToOther) {
           console.log(
             `📋 Found PersonalDetails for Portal user ${userEmail}, linking userId...`
           );

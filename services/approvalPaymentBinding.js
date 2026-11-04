@@ -22,13 +22,36 @@ const { AppError } = require("../errors/AppError.js");
 
 const norm = (v) => (v == null ? "" : String(v).trim());
 
-function assertApprovalPaymentBinding({ applicationId, paymentIntentId, latestPayment, mode = "INLINE" }) {
+/**
+ * @param action "capture" (approve) | "cancel" (reject)
+ * @returns {{mutate: boolean}} whether the payment command may be sent. Throws 409 when a
+ *   mutation would act on a payment not provably bound to this application.
+ *
+ * Owner policy (P5):
+ *   - any payment MUTATION requires a verified binding;
+ *   - approve: an intent without a verified binding fails closed (approving would otherwise
+ *     process an application whose payment was never taken);
+ *   - reject: an application with NO account payment record (account /latest 404) is rejected
+ *     without any payment mutation - an unpaid application is never blocked from rejection. A
+ *     locally stored intent alone is not a payment record and is not cancelled;
+ *   - malformed / inconsistent account records (no applicationId, another application, another
+ *     intent) fail closed for both.
+ */
+function assertApprovalPaymentBinding({ applicationId, paymentIntentId, latestPayment, mode = "INLINE", action = "capture" }) {
   const intent = norm(paymentIntentId);
-  if (!intent) return; // nothing to capture / cancel
-  if (mode === "LINK") return;
-  if (!latestPayment || !norm(latestPayment.applicationId)) {
+  if (!intent) return { mutate: false }; // nothing to capture / cancel
+  if (mode === "LINK") return { mutate: true };
+  if (!latestPayment) {
+    if (action === "cancel") return { mutate: false };
     throw new AppError(
       "The payment for this application could not be verified as bound to it. Nothing was charged or released.",
+      409,
+      "PAYMENT_BINDING_MISSING",
+    );
+  }
+  if (!norm(latestPayment.applicationId)) {
+    throw new AppError(
+      "The payment record for this application is malformed (no application binding). Nothing was charged or released.",
       409,
       "PAYMENT_BINDING_MISSING",
     );
@@ -40,6 +63,7 @@ function assertApprovalPaymentBinding({ applicationId, paymentIntentId, latestPa
       "PAYMENT_APPLICATION_MISMATCH",
     );
   }
+  return { mutate: true };
 }
 
 module.exports = { assertApprovalPaymentBinding };

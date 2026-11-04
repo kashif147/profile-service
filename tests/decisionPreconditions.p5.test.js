@@ -139,3 +139,52 @@ describe("assertApprovalPaymentBinding", () => {
     }
   });
 });
+
+describe("payment binding policy by action (owner decision)", () => {
+  const latest = (over = {}) => ({ applicationId: "app-1", paymentIntentId: "pi_1", ...over });
+  test("capture: verified record -> mutate; no record -> 409 PAYMENT_BINDING_MISSING", () => {
+    expect(assertApprovalPaymentBinding({ applicationId: "app-1", paymentIntentId: "pi_1", latestPayment: latest(), action: "capture" })).toEqual({ mutate: true });
+    expect(() => assertApprovalPaymentBinding({ applicationId: "app-1", paymentIntentId: "pi_1", latestPayment: null, action: "capture" })).toThrow(
+      expect.objectContaining({ code: "PAYMENT_BINDING_MISSING" }),
+    );
+  });
+  test("cancel: no account record -> no mutation (unpaid application can be rejected)", () => {
+    expect(assertApprovalPaymentBinding({ applicationId: "app-1", paymentIntentId: "pi_local", latestPayment: null, action: "cancel" })).toEqual({ mutate: false });
+    expect(assertApprovalPaymentBinding({ applicationId: "app-1", paymentIntentId: null, latestPayment: null, action: "cancel" })).toEqual({ mutate: false });
+  });
+  test("cancel: malformed / foreign record -> fail closed", () => {
+    expect(() => assertApprovalPaymentBinding({ applicationId: "app-1", paymentIntentId: "pi_1", latestPayment: latest({ applicationId: null }), action: "cancel" })).toThrow(
+      expect.objectContaining({ code: "PAYMENT_BINDING_MISSING" }),
+    );
+    expect(() => assertApprovalPaymentBinding({ applicationId: "app-1", paymentIntentId: "pi_1", latestPayment: latest({ applicationId: "app-2" }), action: "cancel" })).toThrow(
+      expect.objectContaining({ code: "PAYMENT_APPLICATION_MISMATCH" }),
+    );
+  });
+});
+
+describe("operationHash", () => {
+  test("stable under key order, distinct across payloads and routes", () => {
+    expect(pre.operationHash("approve", { a: 1, b: { c: 2, d: 3 } })).toBe(pre.operationHash("approve", { b: { d: 3, c: 2 }, a: 1 }));
+    expect(pre.operationHash("approve", { a: 1 })).not.toBe(pre.operationHash("approve", { a: 2 }));
+    expect(pre.operationHash("approve", { a: 1 })).not.toBe(pre.operationHash("reject", { a: 1 }));
+    expect(pre.operationHash("approve", { a: 1, b: undefined })).toBe(pre.operationHash("approve", { a: 1 }));
+  });
+});
+
+describe("observeDecision (enforce-switch evidence)", () => {
+  beforeEach(() => jest.spyOn(console, "info").mockImplementation(() => {}));
+  test("logs one observed line per request; the compatibility line only when something is missing", () => {
+    pre.observeDecision("approve", { idempotencyKey: true, expectedReviewVersion: true });
+    pre.observeDecision("reject", { idempotencyKey: false, expectedReviewVersion: true });
+    pre.observeDecision("bulk-approval", { idempotencyKey: true, expectedReviewVersion: false, rows: 3, rowsWithVersion: 2 });
+    const observed = console.info.mock.calls.filter((c) => c[0] === "[decision-preconditions] observed").map((c) => c[1]);
+    expect(observed).toEqual([
+      { route: "approve", mode: "compat", idempotencyKey: true, expectedReviewVersion: true, versionRequired: true },
+      { route: "reject", mode: "compat", idempotencyKey: false, expectedReviewVersion: true, versionRequired: true },
+      { route: "bulk-approval", mode: "compat", idempotencyKey: true, expectedReviewVersion: false, versionRequired: true, rows: 3, rowsWithVersion: 2 },
+    ]);
+    const compat = console.warn.mock.calls.filter((c) => String(c[0]).includes("compatibility window"));
+    expect(compat.map((c) => c[1].route)).toEqual(["reject", "bulk-approval"]);
+  });
+});
+
