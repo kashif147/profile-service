@@ -692,6 +692,7 @@ async function approveSingleApplication({
         dateJoined: dateJoinedForSub,
         processingDate: processingDateSerialized,
         gapLetter,
+        identityLinkPending: !!identityLink,
       },
     };
 }

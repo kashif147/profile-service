@@ -7,6 +7,7 @@ const {
 } = require("../helpers/membership.number.generator.js");
 const { parseDateOnlyToUtcNoon } = require("../helpers/parseDateOnly.js");
 const { AppError } = require("../errors/AppError.js");
+const { isPortalSubmitted } = require("../helpers/portalUserIdentity.js");
 const {
   getReviewerIdForDb,
   toObjectIdOrNull,
@@ -49,7 +50,7 @@ async function findPortalUserByTenantEmail(tenantId, normalizedEmail, session) {
   const portalUserId = existingUser?.userId || null;
   if (portalUserId) {
     console.log(
-      `✅ [profileLookup] Found portal user for email ${normalizedEmail}: ${portalUserId}`
+      `✅ [profileLookup] Found portal user by email match: ${portalUserId}`
     );
   }
   return existingUser || null;
@@ -83,14 +84,14 @@ async function findPortalUserByTenantUserId(tenantId, userId, session) {
 
 /**
  * P5 identity: the portal identity a NEW profile is bound to. A portal-submitted application
- * (userType PORTAL with the authenticated submitter's userId) is bound to THAT applicant: their own
+ * (isPortalSubmitted: userType PORTAL or unset, with the authenticated submitter's userId) is bound to THAT applicant: their own
  * synced User row, else their verified user id. An email match never overrides it - a synced row
  * sharing the applicant's email can be stale (its user deleted and re-created) or another user's.
  * Only an application without a portal submitter (CRM-created) falls back to the email match.
  * Returns { portalUser, portalUserId, linkedUserId, linkedUserDocumentId }.
  */
 async function resolveApplicantPortalIdentity({ tenantId, normalizedEmail, userType, userId, session }) {
-  if (userType === "PORTAL" && userId) {
+  if (isPortalSubmitted(userType, userId)) {
     const own = await findPortalUserByTenantUserId(tenantId, userId, session);
     const linkedUserId = own?.userId ? String(own.userId) : String(userId);
     return {
@@ -137,7 +138,7 @@ async function findOrCreateProfileByEmail({
   });
   if (!portalUserId && !linkedUserId) {
     console.log(
-      `ℹ️ [profileLookup] No portal user in User collection for ${nEmail}; Profile.userId may stay null until user.portal.* sync`
+      `ℹ️ [profileLookup] No portal user resolved for this applicant; Profile.userId may stay null until user.portal.* sync`
     );
   }
 

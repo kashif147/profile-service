@@ -921,10 +921,6 @@ async function getMyProfile(req, res, next) {
   try {
     const { userId, userType, tenantId } = extractUserAndCreatorContext(req);
 
-    console.log("=== getMyProfile DEBUG ===");
-    console.log("Extracted context:", { userId, userType, tenantId });
-    console.log("req.user:", req.user);
-
     // Only allow PORTAL users
     if (userType !== "PORTAL") {
       return next(
@@ -947,11 +943,11 @@ async function getMyProfile(req, res, next) {
     });
 
     if (!profile) {
+      // ids only (P5: no applicant email or token claims in logs)
       console.log("No profile found by portal user context:", {
         userId,
         tenantId,
         portalUserId: portalUser?._id,
-        userEmail: portalUser?.userEmail || req.user?.email,
       });
 
       return res.status(200).json({
