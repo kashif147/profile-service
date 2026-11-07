@@ -31,8 +31,7 @@ const {
 const { loadSubmission } = require("../services/submission.service.js");
 const {
   findOrCreateProfileByEmail,
-  findPortalUserByTenantEmail,
-  resolveLinkedPortalUserIdForProfile,
+  resolveApplicantPortalIdentity,
   pickPrimaryEmail,
   normalizeEmail,
 } = require("../services/profileLookup.service.js");
@@ -435,20 +434,16 @@ async function approveSingleApplication({
     const userId = effective?.userId || null;
     const userType = effective?.userType || null;
 
-    const portalUser = await findPortalUserByTenantEmail(
+    // P5 identity: a portal applicant is bound as themselves; an email match never overrides it.
+    const applicantIdentity = await resolveApplicantPortalIdentity({
       tenantId,
       normalizedEmail,
-      session
-    );
-    const portalUserId = portalUser?.userId || null;
-    const portalUserDocumentId = portalUser?._id || null;
-    const linkedUserId = resolveLinkedPortalUserIdForProfile(
       userType,
       userId,
-      portalUserId
-    );
-    linkedUserDocumentId =
-      portalUserDocumentId || toObjectIdOrNull(linkedUserId);
+      session,
+    });
+    const linkedUserId = applicantIdentity.linkedUserId;
+    linkedUserDocumentId = applicantIdentity.linkedUserDocumentId;
 
     if (existingProfile) {
       // Update existing profile - keep existing membership number
