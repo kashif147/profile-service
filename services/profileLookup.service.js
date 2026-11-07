@@ -1,4 +1,5 @@
 const Profile = require("../models/profile.model.js");
+const mongoose = require("mongoose");
 const User = require("../models/user.model.js");
 const { flattenProfilePayload } = require("../helpers/profile.transform.js");
 const {
@@ -6,6 +7,7 @@ const {
 } = require("../helpers/membership.number.generator.js");
 const { parseDateOnlyToUtcNoon } = require("../helpers/parseDateOnly.js");
 const { AppError } = require("../errors/AppError.js");
+const { isPortalSubmitted } = require("../helpers/portalUserIdentity.js");
 const {
   getReviewerIdForDb,
   toObjectIdOrNull,
@@ -48,7 +50,7 @@ async function findPortalUserByTenantEmail(tenantId, normalizedEmail, session) {
   const portalUserId = existingUser?.userId || null;
   if (portalUserId) {
     console.log(
-      `✅ [profileLookup] Found portal user for email ${normalizedEmail}: ${portalUserId}`
+      `✅ [profileLookup] Found portal user by email match: ${portalUserId}`
     );
   }
   return existingUser || null;
@@ -63,6 +65,51 @@ function resolveLinkedPortalUserIdForProfile(
   if (userType === "PORTAL" && submissionUserId) return submissionUserId;
   if (portalUserIdFromDb) return portalUserIdFromDb;
   return null;
+}
+
+/** Synced portal User row of ONE user (by user-service id; the row's own _id is accepted too). */
+async function findPortalUserByTenantUserId(tenantId, userId, session) {
+  if (!tenantId || userId == null || userId === "") return null;
+  const id = String(userId);
+  const oid = mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : null;
+  let q = User.findOne({
+    tenantId,
+    userType: "PORTAL",
+    isActive: true,
+    $or: [{ userId: id }, ...(oid ? [{ _id: oid }] : [])],
+  });
+  if (session) q = q.session(session);
+  return (await q.lean()) || null;
+}
+
+/**
+ * P5 identity: the portal identity a NEW profile is bound to. A portal-submitted application
+ * (isPortalSubmitted: userType PORTAL or unset, with the authenticated submitter's userId) is bound to THAT applicant: their own
+ * synced User row, else their verified user id. An email match never overrides it - a synced row
+ * sharing the applicant's email can be stale (its user deleted and re-created) or another user's.
+ * Only an application without a portal submitter (CRM-created) falls back to the email match.
+ * Returns { portalUser, portalUserId, linkedUserId, linkedUserDocumentId }.
+ */
+async function resolveApplicantPortalIdentity({ tenantId, normalizedEmail, userType, userId, session }) {
+  if (isPortalSubmitted(userType, userId)) {
+    const own = await findPortalUserByTenantUserId(tenantId, userId, session);
+    const linkedUserId = own?.userId ? String(own.userId) : String(userId);
+    return {
+      portalUser: own,
+      portalUserId: own?.userId || null,
+      linkedUserId,
+      linkedUserDocumentId: own?._id || toObjectIdOrNull(linkedUserId),
+    };
+  }
+  const portalUser = await findPortalUserByTenantEmail(tenantId, normalizedEmail, session);
+  const portalUserId = portalUser?.userId || null;
+  const linkedUserId = resolveLinkedPortalUserIdForProfile(userType, userId, portalUserId);
+  return {
+    portalUser,
+    portalUserId,
+    linkedUserId,
+    linkedUserDocumentId: portalUser?._id || (linkedUserId ? toObjectIdOrNull(linkedUserId) : null),
+  };
 }
 
 async function findOrCreateProfileByEmail({
@@ -82,24 +129,16 @@ async function findOrCreateProfileByEmail({
   const userId = effective?.userId || null;
   const userType = effective?.userType || null;
 
-  const portalUser = await findPortalUserByTenantEmail(
+  const { portalUserId, linkedUserId, linkedUserDocumentId } = await resolveApplicantPortalIdentity({
     tenantId,
-    nEmail,
-    session
-  );
-  const portalUserId = portalUser?.userId || null;
-  const portalUserDocumentId = portalUser?._id || null;
-  const linkedUserId = resolveLinkedPortalUserIdForProfile(
+    normalizedEmail: nEmail,
     userType,
     userId,
-    portalUserId
-  );
-  const linkedUserDocumentId =
-    portalUserDocumentId ||
-    (linkedUserId ? toObjectIdOrNull(linkedUserId) : null);
+    session,
+  });
   if (!portalUserId && !linkedUserId) {
     console.log(
-      `ℹ️ [profileLookup] No portal user in User collection for ${nEmail}; Profile.userId may stay null until user.portal.* sync`
+      `ℹ️ [profileLookup] No portal user resolved for this applicant; Profile.userId may stay null until user.portal.* sync`
     );
   }
 
@@ -235,7 +274,9 @@ module.exports = {
   normalizeEmail,
   pickPrimaryEmail,
   findPortalUserByTenantEmail,
+  findPortalUserByTenantUserId,
   findPortalUserIdByTenantEmail,
+  resolveApplicantPortalIdentity,
   resolveLinkedPortalUserIdForProfile,
   findOrCreateProfileByEmail,
 };

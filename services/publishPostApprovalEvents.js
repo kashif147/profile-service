@@ -2,9 +2,7 @@ const crypto = require("crypto");
 const Profile = require("../models/profile.model.js");
 const ApplicationApprovalEventPublisher = require("../rabbitMQ/publishers/application.approval.publisher.js");
 const { publishProfileAudit } = require("./profile.audit.publisher.js");
-const {
-  resolvePortalUserServiceId,
-} = require("../helpers/portalUserIdentity.js");
+const { resolveApplicationRecipient } = require("../helpers/portalUserIdentity.js");
 
 /**
  * Publish approval side-effects after the Mongo transaction commits so
@@ -24,6 +22,7 @@ async function publishPostApprovalEvents({
   processingDate,
   deactivatePreviousSubscriptionStatus,
   gapLetter,
+  identityLinkPending = false,
   correlationId = crypto.randomUUID(),
 }) {
   const sub = effective.subscriptionDetails || {};
@@ -31,11 +30,17 @@ async function publishPostApprovalEvents({
     effective.contactInfo?.personalEmail ||
     effective.contactInfo?.workEmail ||
     null;
-  const userIdForPostApproval = await resolvePortalUserServiceId({
+  // P5 identity: a portal-submitted application addresses every side effect (role grant,
+  // notifications, subscription user) to its verified submitter, never an email match; none while
+  // the identity link is pending. CRM-created applications keep the existing resolution.
+  const { userId: userIdForPostApproval, applicantIdentity } = await resolveApplicationRecipient({
     tenantId,
+    submitterUserId: effective?.userId,
+    submitterUserType: effective?.userType,
     profileUserId: updatedProfile?.userId,
     linkedUserId,
     userEmail: userEmailForPostApproval,
+    identityLinkPending: !!identityLinkPending,
   });
 
   try {
@@ -50,6 +55,7 @@ async function publishPostApprovalEvents({
         : null,
       memberId,
       userId: userIdForPostApproval,
+      applicantIdentity,
       userEmail: userEmailForPostApproval,
       effective: {
         personalInfo: effective.personalInfo,
@@ -77,6 +83,7 @@ async function publishPostApprovalEvents({
         profileId: String(profileId),
         memberId,
         userId: userIdForPostApproval,
+        applicantIdentity,
         userEmail: userEmailForPostApproval,
         tenantId,
         effective,
@@ -130,6 +137,7 @@ async function publishPostApprovalEvents({
       payrollNo: sub.payrollNo ?? null,
       paymentFrequency: sub.paymentFrequency ?? null,
       userId: userIdForPostApproval,
+      applicantIdentity,
       userEmail: userEmailForPostApproval,
       reviewerId,
       deactivatePreviousSubscriptionStatus,

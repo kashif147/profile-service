@@ -20,6 +20,7 @@ class ApplicationApprovalEventPublisher {
     crmUserId,
     memberId,
     userId,
+    applicantIdentity, // P5: { source, verified, pending } - see helpers/portalUserIdentity.js
     userEmail,
     effective,
     subscriptionAttributes,
@@ -51,6 +52,7 @@ class ApplicationApprovalEventPublisher {
           memberId: memberId || null,
           tenantId: tenantId || null,
           userId: userId || null,
+          applicantIdentity: applicantIdentity || null,
           userEmail: userEmail || null,
           effective: {
             personalInfo: effective.personalInfo,
@@ -99,6 +101,7 @@ class ApplicationApprovalEventPublisher {
     profileId,
     memberId,
     userId,
+    applicantIdentity, // P5: { source, verified, pending } - see helpers/portalUserIdentity.js
     userEmail,
     tenantId,
     reviewerId,
@@ -116,6 +119,7 @@ class ApplicationApprovalEventPublisher {
           profileId,
           memberId: memberId || null,
           userId: userId || null,
+          applicantIdentity: applicantIdentity || null,
           userEmail: userEmail || null,
           reviewerId: reviewerId || null,
           tenantId: tenantId || null,
@@ -180,6 +184,7 @@ class ApplicationApprovalEventPublisher {
     tenantId,
     applicationStatus = "REJECTED",
     userId,
+    applicantIdentity, // P5: { source, verified, pending } - see helpers/portalUserIdentity.js
     correlationId,
   }) {
     try {
@@ -198,6 +203,7 @@ class ApplicationApprovalEventPublisher {
           tenantId: tenantId || null,
           applicationStatus,
           userId: userId || null,
+          applicantIdentity: applicantIdentity || null,
           // Consumers (e.g. portal-service) should set meta.isActive false on application records
           isActive: false,
         },
@@ -312,6 +318,7 @@ class ApplicationApprovalEventPublisher {
     payrollNo,
     paymentFrequency,
     userId,
+    applicantIdentity, // P5: { source, verified, pending } - see helpers/portalUserIdentity.js
     userEmail,
     reviewerId, // CRM user ID for meta.createdBy and meta.updatedBy
     correlationId,
@@ -383,6 +390,7 @@ class ApplicationApprovalEventPublisher {
         payrollNo,
         paymentFrequency,
         userId: userId || null,
+        applicantIdentity: applicantIdentity || null,
         userEmail: userEmail || null,
         reviewerId: reviewerId || null, // Pass reviewerId to subscription service
       };

@@ -47,9 +47,7 @@ const {
   ensureDuplicateReviewAllowsApproval,
   assertReviewedProfileTarget,
 } = require("../services/duplicate.review.service.js");
-const {
-  resolvePortalUserServiceId,
-} = require("../helpers/portalUserIdentity.js");
+const { resolveApplicationRecipient } = require("../helpers/portalUserIdentity.js");
 // const { emitApplicationApproved, emitApplicationRejected } = require("../events/applicationEvents");
 
 function normalizeApplicationTemplateColumns(columns = []) {
@@ -790,11 +788,15 @@ exports.approveApplication = async (req, res, next) => {
           personal?.contactInfo?.personalEmail ||
           personal?.contactInfo?.workEmail ||
           null;
-        const notificationUserId = await resolvePortalUserServiceId({
+        // P5 identity: portal applicant = verified submitter; none while an identity link is pending.
+        const { userId: notificationUserId, applicantIdentity } = await resolveApplicationRecipient({
           tenantId,
+          submitterUserId: personal?.userId,
+          submitterUserType: personal?.meta?.userType,
           profileUserId: profileDoc?.userId,
           linkedUserId: personal?.userId,
           userEmail,
+          identityLinkPending: personal?.identityLink?.status === "PENDING",
         });
         try {
           await ApplicationApprovalEventPublisher.publishApplicationApproved({
@@ -808,6 +810,7 @@ exports.approveApplication = async (req, res, next) => {
               : null,
             memberId: profileDoc?.membershipNumber || null,
             userId: notificationUserId,
+            applicantIdentity,
             userEmail,
             effective: {
               personalInfo: effective.personalInfo,
@@ -867,6 +870,7 @@ exports.approveApplication = async (req, res, next) => {
               payrollNo: sub?.payrollNo ?? null,
               paymentFrequency: sub?.paymentFrequency ?? null,
               userId: notificationUserId,
+              applicantIdentity,
               userEmail,
               reviewerId: creatorId,
               deactivatePreviousSubscriptionStatus: profileDoc
@@ -893,14 +897,17 @@ exports.approveApplication = async (req, res, next) => {
           applicationId,
           tenantId: String(tenantId),
         })
-          .select("userId contactInfo")
+          .select("userId contactInfo meta.userType")
           .lean();
         const userEmail =
           personal?.contactInfo?.personalEmail ||
           personal?.contactInfo?.workEmail ||
           null;
-        const notificationUserId = await resolvePortalUserServiceId({
+        // P5 identity: a portal applicant is notified as themselves, never via an email match.
+        const { userId: notificationUserId, applicantIdentity } = await resolveApplicationRecipient({
           tenantId,
+          submitterUserId: personal?.userId,
+          submitterUserType: personal?.meta?.userType,
           profileUserId: personal?.userId,
           linkedUserId: personal?.userId,
           userEmail,
@@ -912,6 +919,7 @@ exports.approveApplication = async (req, res, next) => {
           notes: null,
           tenantId: tenantId != null ? String(tenantId) : null,
           userId: notificationUserId,
+          applicantIdentity,
           correlationId: crypto.randomUUID(),
         });
       } catch (publishError) {

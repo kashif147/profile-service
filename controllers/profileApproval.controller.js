@@ -22,9 +22,7 @@ const {
 const {
   publishPostApprovalEvents,
 } = require("../services/publishPostApprovalEvents.js");
-const {
-  resolvePortalUserServiceId,
-} = require("../helpers/portalUserIdentity.js");
+const { resolveApplicationRecipient } = require("../helpers/portalUserIdentity.js");
 const {
   applyNoFeeMembershipPaymentDefaults,
   resolveSubscriptionPaymentFallbacks,
@@ -275,7 +273,7 @@ async function approveApplication(req, res, next) {
   
   // Log reviewerId for debugging
   if (!reviewerId) {
-    console.warn("[approveApplication] WARNING: reviewerId (approver user ID) is missing. req.user:", req.user, "req.userId:", req.userId);
+    console.warn("[approveApplication] WARNING: reviewerId (approver user ID) is missing", { hasUser: !!req.user, hasUserId: !!req.userId });
   } else {
     console.log("[approveApplication] reviewerId (approver user ID):", reviewerId, "userType:", req.user?.userType);
   }
@@ -694,6 +692,7 @@ async function approveApplication(req, res, next) {
       memberId,
       dateJoined,
       gapLetter,
+      identityLinkPending: !!identityLink,
     };
 
     await session.commitTransaction();
@@ -935,7 +934,7 @@ async function rejectApplication(req, res, next) {
       applicationId: applicationId,
       tenantId,
     })
-      .select("userId contactInfo")
+      .select("userId contactInfo meta.userType")
       .session(session)
       .lean();
 
@@ -984,8 +983,11 @@ async function rejectApplication(req, res, next) {
         personalForEvent?.contactInfo?.personalEmail ||
         personalForEvent?.contactInfo?.workEmail ||
         null;
-      const notificationUserId = await resolvePortalUserServiceId({
+      // P5 identity: a portal applicant is notified as themselves, never via an email match.
+      const { userId: notificationUserId, applicantIdentity } = await resolveApplicationRecipient({
         tenantId,
+        submitterUserId: personalForEvent?.userId,
+        submitterUserType: personalForEvent?.meta?.userType,
         profileUserId: personalForEvent?.userId,
         linkedUserId: personalForEvent?.userId,
         userEmail,
@@ -997,6 +999,7 @@ async function rejectApplication(req, res, next) {
         notes,
         tenantId,
         userId: notificationUserId,
+        applicantIdentity,
         correlationId: crypto.randomUUID(),
       });
     } catch (publishError) {
