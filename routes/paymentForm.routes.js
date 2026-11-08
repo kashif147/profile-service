@@ -17,7 +17,10 @@ const { requireBankDataRead } = require("../helpers/bankDataAccess.js");
 const portalRead = defaultPolicyMiddleware.requirePermission("portal", "read");
 const portalWrite = defaultPolicyMiddleware.requirePermission("portal", "write");
 const crmRead = requireCrm("payments", "read");
-const crmWrite = requireCrm("payments", "write");
+// P5 prerequisite (blocker 1): CRM payment-form writes also need a finance action role (or ASU "*"); the portal
+// router below is unchanged. See middlewares/p5ActionGuards.js.
+const { requireFinanceActionRole } = require("../middlewares/p5ActionGuards");
+const crmWrite = [...requireCrm("payments", "write"), requireFinanceActionRole];
 
 router.put("/filter", crmRead, controller.filterPaymentForms);
 // PDP P3 (Q2): the SEPA prepare feed is plaintext debtor bank data -> payments.bank:read on top of the

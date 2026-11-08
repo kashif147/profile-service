@@ -4,7 +4,8 @@
  *
  *   GET  /batches, GET /batches/:id, GET /corn-market   -> CRM + profile:read
  *   POST /batches, PUT /batches/:id, POST /:id/refresh  -> CRM + profile:write
- *   DELETE /batches/:id                                  -> CRM + profile:delete
+ *   DELETE /batches/:id                                  -> CRM + profile:delete + tenant administrator ("*", P5
+ *                                                           prerequisite, middlewares/p5ActionGuards.js)
  *
  * Two PDP models:
  *   "exact"    permit iff the exact resource:action is in the verified token - proves each route asks
@@ -80,7 +81,9 @@ const asPortalAll = {
     permissions: ["profile:read", "profile:write", "profile:delete", "profile:create"],
   }),
 };
-const asAsu = crm([], { roles: [{ code: "ASU" }] });
+// A real ASU token carries the computed own-tenant wildcard "*" (user-service role.handler) and the ASU role.
+const asAsu = crm(["*"], { roles: [{ code: "ASU" }] });
+const asDeleteAdmin = crm(["*", "profile:delete"], { roles: [{ code: "ASU" }] });
 
 let server;
 let baseUrl;
@@ -149,7 +152,7 @@ const ROUTES = [
   ["POST", `/api/batches/${BATCH}/refresh`, "write", "refreshBatch", {}],
   ["DELETE", `/api/batches/${BATCH}`, "delete", "deleteBatch", undefined],
 ];
-const AS = { read: asRead, write: asWrite, delete: asDelete };
+const AS = { read: asRead, write: asWrite, delete: asDeleteAdmin };
 
 describe("exact permission per action", () => {
   test.each(ROUTES)("%s %s -> CRM + profile:%s reaches the handler", async (method, url, action, handler, body) => {
@@ -179,6 +182,13 @@ describe("exact permission per action", () => {
       expect((await call(method, url, asDelete, body)).status).toBe(403);
     },
   );
+
+  test("DELETE: profile:delete without the tenant-administrator wildcard is 403 TENANT_ADMIN_REQUIRED", async () => {
+    const r = await call("DELETE", `/api/batches/${BATCH}`, asDelete);
+    expect(r.status).toBe(403);
+    expect(r.body.code).toBe("TENANT_ADMIN_REQUIRED");
+    expect(reached(r)).toBe(false);
+  });
 
   test("DELETE needs profile:delete: profile:write alone is 403", async () => {
     expect((await call("DELETE", `/api/batches/${BATCH}`, asWrite)).status).toBe(403);

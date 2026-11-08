@@ -101,6 +101,9 @@ const token = (claims) => `Bearer ${jwt.sign(claims, process.env.JWT_SECRET)}`;
 const asA = { authorization: token({ sub: SA, tenantId: TA, userType: "PORTAL", permissions: PORTAL_PERMS }) };
 const asC = { authorization: token({ sub: SC, tenantId: TB, userType: "PORTAL", permissions: PORTAL_PERMS }) };
 const asCrm = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", permissions: CRM_PERMS }) };
+// P5 prerequisite (middlewares/p5ActionGuards.js): tenant administrator = computed "*"; finance action role = AM/DAM/ASU.
+const asCrmAsu = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", roles: ["ASU"], permissions: [...CRM_PERMS, "*"] }) };
+const asCrmAm = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", roles: ["AM"], permissions: CRM_PERMS }) };
 const asCrmNoPerm = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", permissions: [] }) };
 const asUnknownType = { authorization: token({ sub: SA, tenantId: TA, userType: "MEMBERX", permissions: PORTAL_PERMS }) };
 const internal = (tenant) => ({ "x-internal-request": "true", "x-tenant-id": tenant });
@@ -228,7 +231,8 @@ describe("P5 profile: delete and merge are CRM-only", () => {
     expect(denied(await call("DELETE", `/api/profile/${PA}`, asA), "CRM_ONLY")).toBe(true); // no portal self-delete
     expect(denied(await call("DELETE", `/api/profile/${PB}`, asA), "CRM_ONLY")).toBe(true);
     expect(denied(await call("DELETE", `/api/profile/${PC}`, asA), "CRM_ONLY")).toBe(true);
-    expect(reached(await call("DELETE", `/api/profile/${PB}`, asCrm))).toBe(true);
+    expect(denied(await call("DELETE", `/api/profile/${PB}`, asCrm), "TENANT_ADMIN_REQUIRED")).toBe(true);
+    expect(reached(await call("DELETE", `/api/profile/${PB}`, asCrmAsu))).toBe(true);
     expect(denied(await call("DELETE", `/api/profile/${PB}`, asCrmNoPerm), "PDP_DENY")).toBe(true);
   });
 
@@ -333,11 +337,19 @@ describe("P5 payment forms", () => {
     ["POST", "/api/payment-forms"],
     ["GET", `/api/payment-forms/profile/${PB}`],
   ];
+  const isWrite = (method, url) => !(method === "GET" || url.endsWith("/filter"));
   test.each(crmOnly)("%s %s is CRM + payments permission", async (method, url) => {
     const body = ["GET", "DELETE"].includes(method) ? undefined : {};
     expect(denied(await call(method, url, asA, body), "CRM_ONLY")).toBe(true);
     expect(denied(await call(method, url, asC, body), "CRM_ONLY")).toBe(true);
-    expect(reached(await call(method, url, asCrm, body))).toBe(true);
+    if (isWrite(method, url)) {
+      // P5 prerequisite: a CRM write also needs a finance action role (or ASU "*").
+      expect(denied(await call(method, url, asCrm, body), "FINANCE_ACTION_ROLE_REQUIRED")).toBe(true);
+      expect(reached(await call(method, url, asCrmAm, body))).toBe(true);
+      expect(reached(await call(method, url, asCrmAsu, body))).toBe(true);
+    } else {
+      expect(reached(await call(method, url, asCrm, body))).toBe(true);
+    }
     expect(denied(await call(method, url, asCrmNoPerm, body), "PDP_DENY")).toBe(true);
   });
 
@@ -357,7 +369,8 @@ describe("P5 payment forms", () => {
   // and a payments:write caller without it still reaches the write routes (responses masked in the service).
   test("payments.bank:read never authorises a payment-form mutation; payments:write alone still does (masked)", async () => {
     const asBankReadOnly = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", permissions: ["payments:read", "payments.bank:read"] }) };
-    const asWriteOnly = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", permissions: ["payments:write"] }) };
+    // payments:write with a finance action role (AM) and no bank claim (P5 prerequisite: the role is required).
+    const asWriteOnly = { authorization: token({ sub: CRM_ID, tenantId: TA, userType: "CRM", roles: ["AM"], permissions: ["payments:write"] }) };
     const mutations = [
       ["PATCH", `/api/payment-forms/${FORM_B}`],
       ["POST", `/api/payment-forms/${FORM_B}/submit`],

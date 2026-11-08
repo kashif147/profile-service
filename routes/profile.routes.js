@@ -18,6 +18,8 @@ const {
   requestedProfileIds,
   verifiedCallerId,
 } = require("../middlewares/memberAccess");
+// P5 prerequisite (blocker 1): explicit local guards after the PDP check; see middlewares/p5ActionGuards.js.
+const { requireTenantAdmin, requireDuplicateMergeAuthority } = require("../middlewares/p5ActionGuards");
 
 // P5 portal object authorization: CRM staff need the profile permission; a portal caller may only
 // look up its own profile / user id / membership number (see middlewares/memberAccess.js).
@@ -130,9 +132,12 @@ router.get(
   requireCrm("profile", "read"),
   getProfileDuplicateMergeCompareHandler,
 );
+// Duplicate merge is a membership-office profile WRITE workflow (keeper updated, references re-pointed, the
+// absorbed profile deactivated - never hard-deleted), so it no longer rides on the general profile:delete grant.
 router.post(
   "/:profileId/duplicate-merge",
-  requireCrm("profile", "delete"),
+  requireCrm("profile", "write"),
+  requireDuplicateMergeAuthority,
   submitProfileDuplicateMerge,
 );
 
@@ -140,6 +145,6 @@ router.post(
 // deletion is not a product flow: DELETE is CRM-only.
 router.get("/:profileId", crmOrOwnProfileParam("profile", "read"), profileController.getProfileById);
 router.put("/:profileId", crmOrOwnProfileParam("profile", "write"), profileController.updateProfile);
-router.delete("/:profileId", requireCrm("profile", "delete"), profileController.softDeleteProfile);
+router.delete("/:profileId", requireCrm("profile", "delete"), requireTenantAdmin, profileController.softDeleteProfile);
 
 module.exports = router;
