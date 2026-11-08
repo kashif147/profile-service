@@ -1143,6 +1143,43 @@ function remapMergeFieldChoicesFromCompareColumns(
   return remapped;
 }
 
+/**
+ * P5 (duplicate-merge failure handling). The profile-service writes (keeper fields, re-pointed references, the
+ * absorbed profile deactivated with mergedIntoProfileId) commit in one transaction BEFORE the subscription-service
+ * and account-service reassignments, which cannot join it. So a merge is resumable by design:
+ *   - assertMergePairState: a profile already merged into ANOTHER keeper, or a keeper that was itself merged
+ *     away, is refused (409) before any write - a retry can only resume the SAME (keeper, absorbed) pair;
+ *     absorbed.mergedIntoProfileId === keeper means "resume", and every step is idempotent (updateMany on the
+ *     absorbed ids; downstream handlers match only rows still on the absorbed profile / member number).
+ *   - a downstream failure after the commit is reported as 502 PROFILE_MERGE_INCOMPLETE with the failed step
+ *     (subscription | finance) and retryable:true - never as a generic error or a success.
+ */
+function assertMergePairState(masterProfile, absorbedProfile) {
+  if (masterProfile?.mergedIntoProfileId) {
+    throw new AppError("The keeper profile was itself merged into another profile", 409, "MERGE_KEEPER_ALREADY_MERGED");
+  }
+  const into = absorbedProfile?.mergedIntoProfileId;
+  if (into && String(into) !== String(masterProfile?._id)) {
+    throw new AppError("This profile was already merged into a different profile", 409, "PROFILE_ALREADY_MERGED");
+  }
+}
+
+function mergeIncompleteError(cause, masterProfile, absorbedProfile) {
+  const step = cause && cause.mergeStep ? cause.mergeStep : "downstream";
+  return new AppError(
+    `Profile merge saved in profile-service but the ${step} reassignment did not complete (${cause && cause.message ? cause.message : "error"}); retry the same merge to finish it`,
+    502,
+    "PROFILE_MERGE_INCOMPLETE",
+    {
+      retryable: true,
+      localMergeCommitted: true,
+      failedStep: step,
+      masterProfileId: String(masterProfile._id),
+      absorbedProfileId: String(absorbedProfile._id),
+    },
+  );
+}
+
 async function executeProfileDuplicateMerge({
   masterProfileId,
   absorbedProfileId,
@@ -1164,6 +1201,7 @@ async function executeProfileDuplicateMerge({
       loadProfileForTenant(masterProfileId, tenantId),
       loadProfileForTenant(absorbedProfileId, tenantId),
     ]);
+    assertMergePairState(masterProfile, absorbedProfile);
 
     const [masterSubscription, absorbedSubscription] = await Promise.all([
       fetchLiveSubscriptionForProfile(masterProfile, tenantId, req),
@@ -1204,13 +1242,18 @@ async function executeProfileDuplicateMerge({
     await session.commitTransaction();
     transactionCommitted = true;
 
-    const remoteConsolidation = await consolidateProfileMergeHistory({
-      tenantId,
-      masterProfile,
-      absorbedProfile,
-      req,
-      skipLocal: true,
-    });
+    let remoteConsolidation;
+    try {
+      remoteConsolidation = await consolidateProfileMergeHistory({
+        tenantId,
+        masterProfile,
+        absorbedProfile,
+        req,
+        skipLocal: true,
+      });
+    } catch (downstreamError) {
+      throw mergeIncompleteError(downstreamError, masterProfile, absorbedProfile);
+    }
 
     await publishProfileDuplicateMergedAudit({
       tenantId,
@@ -1259,4 +1302,5 @@ module.exports = {
   remapMergeFieldChoicesFromCompareColumns,
   executeProfileDuplicateMerge,
   profileToSubmissionShape,
+  assertMergePairState,
 };

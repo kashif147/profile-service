@@ -3,6 +3,8 @@ const router = express.Router();
 const batchController = require("../controllers/batch.controller");
 const { authenticate } = require("../middlewares/auth");
 const { requireCrm } = require("../middlewares/memberAccess");
+// P5 prerequisite (blocker 1): batch delete is tenant-administrator only (middlewares/p5ActionGuards.js).
+const { requireTenantAdmin } = require("../middlewares/p5ActionGuards");
 
 // P5: batches hold member personal-data snapshots and creating/refreshing one rewrites profile
 // records, so every route needs CRM + the exact catalogue permission for its action (read never
@@ -23,7 +25,7 @@ router.get("/:batchId", authenticate, requireCrm("profile", "read"), batchContro
 router.put("/:batchId", authenticate, requireCrm("profile", "write"), batchController.updateBatch);
 
 // Delete a batch (soft delete; clears profile batchId)
-router.delete("/:batchId", authenticate, requireCrm("profile", "delete"), batchController.deleteBatch);
+router.delete("/:batchId", authenticate, requireCrm("profile", "delete"), requireTenantAdmin, batchController.deleteBatch);
 
 // Refresh batch (re-fetch matching profiles)
 router.post("/:batchId/refresh", authenticate, requireCrm("profile", "write"), batchController.refreshBatch);
