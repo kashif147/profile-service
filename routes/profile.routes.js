@@ -19,7 +19,7 @@ const {
   verifiedCallerId,
 } = require("../middlewares/memberAccess");
 // P5 prerequisite (blocker 1): explicit local guards after the PDP check; see middlewares/p5ActionGuards.js.
-const { requireTenantAdmin, requireDuplicateMergeAuthority } = require("../middlewares/p5ActionGuards");
+const { requireTenantAdmin } = require("../middlewares/p5ActionGuards");
 
 // P5 portal object authorization: CRM staff need the profile permission; a portal caller may only
 // look up its own profile / user id / membership number (see middlewares/memberAccess.js).
@@ -132,12 +132,16 @@ router.get(
   requireCrm("profile", "read"),
   getProfileDuplicateMergeCompareHandler,
 );
-// Duplicate merge is a membership-office profile WRITE workflow (keeper updated, references re-pointed, the
-// absorbed profile deactivated - never hard-deleted), so it no longer rides on the general profile:delete grant.
+// Duplicate merge (owner decision 2026-11-08): tenant administrator (ASU) ONLY, decided before any handler code -
+// so before any profile write and before the subscription-service / account-service reassignments. Order: the
+// PDP check (profile:write) first, then requireTenantAdmin, a local check of the verified "*" claim that does not
+// depend on the PDP or on PDP_AUDIENCE_MODE: a non-ASU caller is refused under today's category rule (PDP) AND
+// under P5 audience enforcement (the local guard). This is the ONLY route that performs a merge. MO merge access
+// returns only after the downstream merge steps become signed, tenant- and pair-bound service commands.
 router.post(
   "/:profileId/duplicate-merge",
   requireCrm("profile", "write"),
-  requireDuplicateMergeAuthority,
+  requireTenantAdmin,
   submitProfileDuplicateMerge,
 );
 

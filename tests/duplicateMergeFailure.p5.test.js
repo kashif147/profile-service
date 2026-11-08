@@ -10,7 +10,8 @@
  *   - a partially merged profile cannot be merged into a DIFFERENT keeper (409 PROFILE_ALREADY_MERGED, no writes);
  *     a keeper that was itself merged away is refused (409 MERGE_KEEPER_ALREADY_MERGED).
  *   - the downstream calls are bound to the merge's tenant and pair; the subscription call is a pure internal
- *     call (no user identity), so the caller needs NO subscriptions:* claim.
+ *     call (no user identity). The route is ASU-only (owner decision 2026-11-08), so these run for ASU callers;
+ *     MO is refused before any side effect (tests/duplicateMergeAsuOnly.p5.test.js).
  */
 const mongoose = require("mongoose");
 
@@ -79,8 +80,10 @@ const baseProfile = (n) => ({
 });
 
 let session;
+// The merge route is ASU-only (requireTenantAdmin); the service runs for an ASU caller.
+const ASU_REQ = { tenantId: TENANT, user: { id: "reviewer-1", userType: "CRM", tenantId: TENANT, roles: ["ASU"], permissions: ["*"] }, headers: {} };
 const run = (master = M, absorbed = A) =>
-  executeProfileDuplicateMerge({ masterProfileId: master, absorbedProfileId: absorbed, tenantId: TENANT, mergeFieldChoices: { "personalInfo.forename": "PROFILE" }, reviewerId: "reviewer-1" });
+  executeProfileDuplicateMerge({ masterProfileId: master, absorbedProfileId: absorbed, tenantId: TENANT, mergeFieldChoices: { "personalInfo.forename": "PROFILE" }, reviewerId: "reviewer-1", req: ASU_REQ });
 
 beforeEach(() => {
   jest.clearAllMocks();

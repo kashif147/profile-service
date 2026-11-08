@@ -4,13 +4,10 @@
  * P8 role targets). Local, literal checks mounted AFTER the existing requireCrm(...) PDP guard, so they only ever
  * narrow access; they never call the PDP and never consult role permissions from the database.
  *
- *   requireTenantAdmin            profile soft delete, batch delete: only the tenant administrator (ASU, whose
- *                                 verified token carries the computed own-tenant wildcard "*").
- *   requireDuplicateMergeAuthority duplicate merge (membership-office workflow): "*" OR the literal claims
- *                                 profile:read AND profile:write. Deliberately separate from general delete: the
- *                                 merge keeps one profile, re-points references and deactivates the absorbed
- *                                 profile (isActive:false, mergedIntoProfileId) - it never hard-deletes - so it is
- *                                 a profile write workflow, not a delete grant.
+ *   requireTenantAdmin            profile soft delete, batch delete and duplicate merge: only the tenant
+ *                                 administrator (ASU, whose verified token carries the computed own-tenant wildcard
+ *                                 "*"). Duplicate merge is ASU-only (owner decision 2026-11-08) until its downstream
+ *                                 subscription / finance steps are signed, tenant- and pair-bound service commands.
  *   requireFinanceActionRole      CRM payment-form writes: "*" OR (a finance action role AND the literal claim
  *                                 payments:write) - the same role set as account-service FINANCE_ACTION_ROLES.
  *
@@ -20,7 +17,6 @@
 const { AppError } = require("../errors/AppError");
 
 const TENANT_ADMIN_REQUIRED = "TENANT_ADMIN_REQUIRED";
-const DUPLICATE_MERGE_NOT_PERMITTED = "DUPLICATE_MERGE_NOT_PERMITTED";
 const FINANCE_ACTION_ROLE_REQUIRED = "FINANCE_ACTION_ROLE_REQUIRED";
 const TENANT_WILDCARD = "*";
 
@@ -70,13 +66,6 @@ function requireTenantAdmin(req, res, next) {
   return next(refuse("This action is restricted to the tenant administrator", TENANT_ADMIN_REQUIRED));
 }
 
-function requireDuplicateMergeAuthority(req, res, next) {
-  if (!isCrm(req)) return next(crmOnly());
-  const c = claims(req);
-  if (c.includes(TENANT_WILDCARD) || (c.includes("profile:read") && c.includes("profile:write"))) return next();
-  return next(refuse("Duplicate merge requires profile read and write authority", DUPLICATE_MERGE_NOT_PERMITTED));
-}
-
 function requireFinanceActionRole(req, res, next) {
   if (!isCrm(req)) return next(crmOnly());
   const c = claims(req);
@@ -87,10 +76,8 @@ function requireFinanceActionRole(req, res, next) {
 
 module.exports = {
   TENANT_ADMIN_REQUIRED,
-  DUPLICATE_MERGE_NOT_PERMITTED,
   FINANCE_ACTION_ROLE_REQUIRED,
   FINANCE_ACTION_ROLES,
   requireTenantAdmin,
-  requireDuplicateMergeAuthority,
   requireFinanceActionRole,
 };

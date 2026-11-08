@@ -239,6 +239,15 @@ describe("P5 profile: delete and merge are CRM-only", () => {
   test.each([
     ["POST", `/api/profile/${PB}/duplicate-merge`],
     ["POST", `/api/profile/${PA}/duplicate-merge`],
+  ])("%s %s: ASU only (owner decision 2026-11-08)", async (method, url) => {
+    const body = { targetProfileId: PA };
+    expect(denied(await call(method, url, asA, body), "CRM_ONLY")).toBe(true);
+    expect(denied(await call(method, url, asCrm, body), "TENANT_ADMIN_REQUIRED")).toBe(true);
+    expect(reached(await call(method, url, asCrmAsu, body))).toBe(true);
+    expect(denied(await call(method, url, asCrmNoPerm, body), "PDP_DENY")).toBe(true);
+  });
+
+  test.each([
     ["POST", `/api/profile/${PB}/detect-duplicates`],
     ["GET", `/api/profile/${PB}/duplicate-matches`],
     ["GET", `/api/profile/${PB}/duplicate-merge-compare/${PA}`],

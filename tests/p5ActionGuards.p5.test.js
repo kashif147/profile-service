@@ -1,8 +1,9 @@
 "use strict";
 /**
- * PDP rollout P5 prerequisite (blocker 1): local guards that keep profile soft delete, batch delete and CRM
- * payment-form writes unusable for MO / REO / IRO once audience enforcement lets their PDP checks pass, while the
- * duplicate merge stays available to the membership office (middlewares/p5ActionGuards.js).
+ * PDP rollout P5 prerequisite (blocker 1): local guards that keep profile soft delete, batch delete, duplicate
+ * merge and CRM payment-form writes unusable for MO / REO / IRO once audience enforcement lets their PDP checks
+ * pass (middlewares/p5ActionGuards.js). Duplicate merge is ASU-only (owner decision 2026-11-08); the refusal
+ * happens before any side effect - see tests/duplicateMergeAsuOnly.p5.test.js.
  *
  * REAL routers (profile, batches, payment forms) with sentinel controllers. The PDP is modelled as it will behave
  * under P5 audience ENFORCE for a CRM caller: PERMIT iff the exact resource:action is in the token, or "*" (ASU own
@@ -138,11 +139,11 @@ describe("profile soft delete and batch delete: tenant administrator only", () =
   });
 });
 
-describe("duplicate merge: membership-office write workflow, separate from delete", () => {
+describe("duplicate merge: tenant administrator (ASU) only, under the P5 enforce PDP model", () => {
   test.each([
     ["ASU", "ALLOW"],
-    ["MO", "ALLOW"],
-    ["IRO_MO", "ALLOW"],
+    ["MO", "403 TENANT_ADMIN_REQUIRED"],
+    ["IRO_MO", "403 TENANT_ADMIN_REQUIRED"],
     ["REO", "403 PDP_DENY"],
     ["AM", "403 PDP_DENY"],
     ["PORTAL_ALL", "403 CRM_ONLY"],
@@ -151,20 +152,16 @@ describe("duplicate merge: membership-office write workflow, separate from delet
     expect(outcome(await call(MERGE, CALLERS[who], { targetProfileId: PA }))).toBe(expected);
   });
 
-  test("profile:delete alone no longer authorises a merge; profile:write without profile:read is refused by the guard", async () => {
+  test("profile:read + profile:write (the membership-office claim set) no longer authorises a merge", async () => {
+    expect(outcome(await call(MERGE, tok("CRM", ["MO"], ["profile:read", "profile:write"]), { targetProfileId: PA }))).toBe("403 TENANT_ADMIN_REQUIRED");
     expect(outcome(await call(MERGE, tok("CRM", ["X"], ["profile:delete"]), { targetProfileId: PA }))).toBe("403 PDP_DENY");
-    expect(outcome(await call(MERGE, tok("CRM", ["X"], ["profile:write"]), { targetProfileId: PA }))).toBe("403 DUPLICATE_MERGE_NOT_PERMITTED");
   });
 
-  test("the MO merge needs NO subscriptions:* claim (the subscription reassignment is a bound internal call)", async () => {
-    expect(MO_PERMS.some((p) => p.startsWith("subscriptions:"))).toBe(false);
-    expect(outcome(await call(MERGE, tok("CRM", ["MO"], ["profile:read", "profile:write"]), { targetProfileId: PA }))).toBe("ALLOW");
-  });
-
-  test("subscriptions:write (even with every subscriptions code) does not authorise a merge without profile:write", async () => {
-    const subsOnly = ["subscriptions:read", "subscriptions:write", "subscriptions:create", "subscriptions:delete"];
-    expect(outcome(await call(MERGE, tok("CRM", ["REO"], subsOnly), { targetProfileId: PA }))).toBe("403 PDP_DENY");
-    expect(outcome(await call(MERGE, tok("CRM", ["REO"], ["profile:read", ...subsOnly]), { targetProfileId: PA }))).toBe("403 PDP_DENY");
+  test("subscriptions:* or payments:write never authorise a merge", async () => {
+    const subsAll = ["subscriptions:read", "subscriptions:write", "subscriptions:create", "subscriptions:delete"];
+    expect(outcome(await call(MERGE, tok("CRM", ["REO"], ["profile:read", ...subsAll]), { targetProfileId: PA }))).toBe("403 PDP_DENY");
+    expect(outcome(await call(MERGE, tok("CRM", ["MO"], ["profile:read", "profile:write", ...subsAll]), { targetProfileId: PA }))).toBe("403 TENANT_ADMIN_REQUIRED");
+    expect(outcome(await call(MERGE, tok("CRM", ["AM"], ["profile:read", "profile:write", "payments:write"]), { targetProfileId: PA }))).toBe("403 TENANT_ADMIN_REQUIRED");
   });
 });
 
@@ -205,8 +202,7 @@ describe("guard units (fail closed)", () => {
     [guards.requireTenantAdmin, { user: { permissions: ["*"] } }, "CRM_ONLY"],
     [guards.requireTenantAdmin, { user: { userType: "crm", permissions: ["*"] } }, "NEXT"],
     [guards.requireTenantAdmin, { user: { userType: "CRM", permissions: ["profile:delete"] } }, "TENANT_ADMIN_REQUIRED"],
-    [guards.requireDuplicateMergeAuthority, { user: { userType: "CRM", permissions: ["profile:read", "profile:write"] } }, "NEXT"],
-    [guards.requireDuplicateMergeAuthority, { user: { userType: "CRM", permissions: ["profile:read"] } }, "DUPLICATE_MERGE_NOT_PERMITTED"],
+    [guards.requireTenantAdmin, { user: { userType: "CRM", permissions: ["profile:read", "profile:write"] } }, "TENANT_ADMIN_REQUIRED"],
     [guards.requireFinanceActionRole, { user: { userType: "CRM", roles: ["DAM"], permissions: ["payments:write"] } }, "NEXT"],
     [guards.requireFinanceActionRole, { user: { userType: "CRM", roles: ["MO"], permissions: ["payments:write"] } }, "FINANCE_ACTION_ROLE_REQUIRED"],
     [guards.requireFinanceActionRole, { user: { userType: "CRM", roles: ["AM"], permissions: ["payments:read"] } }, "FINANCE_ACTION_ROLE_REQUIRED"],
