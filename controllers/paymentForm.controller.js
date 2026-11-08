@@ -1,6 +1,7 @@
 const paymentFormService = require("../services/paymentForm.service.js");
 const { AppError } = require("../errors/AppError.js");
 const { extractUserAndCreatorContext } = require("../helpers/get.user.info.js");
+const { canReadBankData, bankDataRequiredError } = require("../helpers/bankDataAccess.js");
 
 exports.prefillPaymentForm = async (req, res, next) => {
   try {
@@ -56,6 +57,9 @@ exports.filterPaymentForms = async (req, res, next) => {
     if (!tenantId) return next(AppError.badRequest("tenantId is required"));
 
     if (req.body?.purpose === "direct-debit-prepare") {
+      // PDP P3: the SEPA prepare feed returns plaintext debtor bank details (same gate as
+      // POST /direct-debit/mandates-for-prepare).
+      if (!canReadBankData(req)) return next(bankDataRequiredError());
       const profileIds = Array.isArray(req.body?.profileIds)
         ? req.body.profileIds
         : [];
@@ -106,7 +110,8 @@ exports.downloadPaymentFormPdf = async (req, res, next) => {
     if (!tenantId) return next(AppError.badRequest("tenantId is required"));
     const { buffer, filename, contentType } = await paymentFormService.exportFormPdf(
       req.params.id,
-      tenantId
+      tenantId,
+      { includeSensitive: canReadBankData(req) }
     );
     res.setHeader("Content-Type", contentType);
     res.setHeader(
@@ -123,7 +128,7 @@ exports.getPaymentFormById = async (req, res, next) => {
   try {
     const { tenantId } = extractUserAndCreatorContext(req);
     const data = await paymentFormService.getById(req.params.id, tenantId, {
-      includeSensitive: true,
+      includeSensitive: canReadBankData(req),
     });
     return res.success({ paymentForm: data });
   } catch (e) {

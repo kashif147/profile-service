@@ -8,6 +8,7 @@ const {
   requirePortalUser,
   crmOrOwnProfile,
 } = require("../middlewares/memberAccess");
+const { requireBankDataRead } = require("../helpers/bankDataAccess.js");
 
 // P5 portal object authorization. Member payment forms carry bank details: the CRM routes below are
 // CRM staff only (payments permission); a portal member uses the /portal router, which acts only
@@ -19,9 +20,13 @@ const crmRead = requireCrm("payments", "read");
 const crmWrite = requireCrm("payments", "write");
 
 router.put("/filter", crmRead, controller.filterPaymentForms);
+// PDP P3 (Q2): the SEPA prepare feed is plaintext debtor bank data -> payments.bank:read on top of the
+// CRM payments read, and a non-empty profileIds list (service). The direct-debit-prepare purpose of
+// PUT /filter is gated the same way in the controller.
 router.post(
   "/direct-debit/mandates-for-prepare",
   crmRead,
+  requireBankDataRead,
   controller.listDirectDebitMandatesForPrepare,
 );
 // The portal application / payment pages prefill for the caller's own profile only.
