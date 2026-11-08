@@ -155,6 +155,17 @@ describe("duplicate merge: membership-office write workflow, separate from delet
     expect(outcome(await call(MERGE, tok("CRM", ["X"], ["profile:delete"]), { targetProfileId: PA }))).toBe("403 PDP_DENY");
     expect(outcome(await call(MERGE, tok("CRM", ["X"], ["profile:write"]), { targetProfileId: PA }))).toBe("403 DUPLICATE_MERGE_NOT_PERMITTED");
   });
+
+  test("the MO merge needs NO subscriptions:* claim (the subscription reassignment is a bound internal call)", async () => {
+    expect(MO_PERMS.some((p) => p.startsWith("subscriptions:"))).toBe(false);
+    expect(outcome(await call(MERGE, tok("CRM", ["MO"], ["profile:read", "profile:write"]), { targetProfileId: PA }))).toBe("ALLOW");
+  });
+
+  test("subscriptions:write (even with every subscriptions code) does not authorise a merge without profile:write", async () => {
+    const subsOnly = ["subscriptions:read", "subscriptions:write", "subscriptions:create", "subscriptions:delete"];
+    expect(outcome(await call(MERGE, tok("CRM", ["REO"], subsOnly), { targetProfileId: PA }))).toBe("403 PDP_DENY");
+    expect(outcome(await call(MERGE, tok("CRM", ["REO"], ["profile:read", ...subsOnly]), { targetProfileId: PA }))).toBe("403 PDP_DENY");
+  });
 });
 
 describe("CRM payment-form writes: finance action role (AM/DAM/ASU) or ASU wildcard", () => {

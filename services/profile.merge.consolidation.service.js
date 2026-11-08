@@ -148,6 +148,15 @@ async function reassignProfileServiceReferences({
   };
 }
 
+async function tagMergeStep(step, fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err && typeof err === "object" && !err.mergeStep) err.mergeStep = step;
+    throw err;
+  }
+}
+
 async function consolidateProfileMergeHistory({
   tenantId,
   masterProfile,
@@ -170,23 +179,28 @@ async function consolidateProfileMergeHistory({
         session,
       });
 
-  const subscription = await reassignSubscriptionsForProfileMerge({
-    tenantId,
-    masterProfileId,
-    absorbedProfileId,
-    masterMembershipNumber,
-    absorbedMembershipNumber,
-    req,
-  });
+  // Each downstream step is tagged on failure so the caller can report which one did not complete.
+  const subscription = await tagMergeStep("subscription", () =>
+    reassignSubscriptionsForProfileMerge({
+      tenantId,
+      masterProfileId,
+      absorbedProfileId,
+      masterMembershipNumber,
+      absorbedMembershipNumber,
+      req,
+    }),
+  );
 
-  const finance = await reassignFinanceForProfileMerge({
-    tenantId,
-    masterProfileId,
-    absorbedProfileId,
-    masterMembershipNumber,
-    absorbedMembershipNumber,
-    req,
-  });
+  const finance = await tagMergeStep("finance", () =>
+    reassignFinanceForProfileMerge({
+      tenantId,
+      masterProfileId,
+      absorbedProfileId,
+      masterMembershipNumber,
+      absorbedMembershipNumber,
+      req,
+    }),
+  );
 
   if (subscription.currentSubscriptionId) {
     const writeOptions = session ? { session } : {};
