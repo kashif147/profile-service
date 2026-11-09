@@ -19,8 +19,8 @@ jest.mock("uuid", () => ({ v4: () => "00000000-0000-4000-8000-000000000000" }));
 jest.mock("../middlewares/policy.middleware", () => {
   const requirePermission = (resource, action) => (req, res, next) => {
     mockPdpCalls.push(`${resource}:${action}`);
-    const perms = (req.user && req.user.permissions) || [];
-    if (perms.includes("*") || perms.includes(`${resource}:${action}`)) return next();
+    const perms = ((req.user && req.user.permissions) || []).map((p) => String(p).toLowerCase());
+    if (perms.includes("*") || perms.includes(`${resource}:${action}`.toLowerCase())) return next(); // as the PDP: case-insensitive
     return res.status(403).json({ code: "PDP_DENY" });
   };
   const m = { requirePermission };
@@ -39,16 +39,19 @@ const REQ = "e00000000000000000000001";
 const tok = (userType, roles, permissions) =>
   ({ authorization: `Bearer ${jwt.sign({ sub: ID, tenantId: TA, userType, roles, permissions }, process.env.JWT_SECRET)}` });
 
-// Live DEV role shapes (2026-11-09) plus target-only shapes.
+// Live DEV role shapes (2026-11-09) plus target-only shapes. Real tokens carry lower-cased claims
+// (user-service generateToken), e.g. "transferrequests:write"; the camelCase form is also accepted.
 const ALLOWED = {
   "ASU + REO (*)": tok("CRM", ["ASU", "REO"], ["*"]),
   "ASU + BO/IRO/REO/RO (*)": tok("CRM", ["ASU", "BO", "IRO", "REO", "RO"], ["*"]),
-  "MO + IRO with transferRequests:write": tok("CRM", ["IRO", "MO"], ["transferRequests:read", "transferRequests:write"]),
+  "MO + IRO with transferrequests:write (real token form)": tok("CRM", ["IRO", "MO"], ["transferrequests:read", "transferrequests:write"]),
+  "MO with camelCase transferRequests:write": tok("CRM", ["MO"], ["transferRequests:write"]),
+  "MO as a role object { code }": tok("CRM", [{ id: "r1", code: "MO", name: "Membership Officer" }], ["transferrequests:write"]),
 };
 const REFUSED = {
-  "REO with transferRequests:write": [tok("CRM", ["REO"], ["transferRequests:read", "transferRequests:write", "subscriptions:write"]), "TRANSFER_REVIEWER_REQUIRED"],
-  "AM with transferRequests:write": [tok("CRM", ["AM"], ["transferRequests:write"]), "TRANSFER_REVIEWER_REQUIRED"],
-  "MO without the claim": [tok("CRM", ["MO"], ["transferRequests:read"]), "PDP_DENY"],
+  "REO with transferrequests:write": [tok("CRM", ["REO"], ["transferrequests:read", "transferrequests:write", "subscriptions:write"]), "TRANSFER_REVIEWER_REQUIRED"],
+  "AM with transferrequests:write": [tok("CRM", ["AM"], ["transferrequests:write"]), "TRANSFER_REVIEWER_REQUIRED"],
+  "MO without the claim": [tok("CRM", ["MO"], ["transferrequests:read"]), "PDP_DENY"],
   "PSG-CRM (no claims)": [tok("CRM", ["PSG-CRM"], []), "PDP_DENY"],
   "PORTAL MEMBER with transferRequests:write": [tok("PORTAL", ["MEMBER"], ["transferRequests:write", "*"]), "CRM_ONLY"],
   "no userType with *": [tok(undefined, ["ASU"], ["*"]), null],

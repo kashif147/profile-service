@@ -81,11 +81,13 @@ function requireFinanceActionRole(req, res, next) {
 const TRANSFER_REVIEWER_REQUIRED = "TRANSFER_REVIEWER_REQUIRED";
 const TRANSFER_REVIEWER_ROLES = Object.freeze(new Set(["MO", "MEMBERSHIP OFFICER"]));
 
+// user-service lower-cases every claim at token issue (helpers/jwt.js generateToken), so the CRM token carries
+// "transferrequests:write"; compare case-insensitively, as the PDP does.
 function requireTransferReviewer(req, res, next) {
   if (!isCrm(req)) return next(crmOnly());
-  const c = claims(req);
+  const c = claims(req).map((p) => p.toLowerCase());
   if (c.includes(TENANT_WILDCARD)) return next();
-  if (c.includes("transferRequests:write") && roleCodes(req).some((r) => TRANSFER_REVIEWER_ROLES.has(r))) return next();
+  if (c.includes("transferrequests:write") && roleCodes(req).some((r) => TRANSFER_REVIEWER_ROLES.has(r))) return next();
   return next(refuse("Reviewing a transfer request requires a Membership Officer with transferRequests:write", TRANSFER_REVIEWER_REQUIRED));
 }
 
