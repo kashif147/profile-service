@@ -47,11 +47,15 @@ const ALLOWED = {
   "MO + IRO with transferrequests:write (real token form)": tok("CRM", ["IRO", "MO"], ["transferrequests:read", "transferrequests:write"]),
   "MO with camelCase transferRequests:write": tok("CRM", ["MO"], ["transferRequests:write"]),
   "MO as a role object { code }": tok("CRM", [{ id: "r1", code: "MO", name: "Membership Officer" }], ["transferrequests:write"]),
+  "MO + REO (role objects) with transferrequests:write": tok("CRM", [{ id: "r1", code: "MO", name: "MO" }, { id: "r2", code: "REO", name: "REO" }], ["transferrequests:read", "transferrequests:write", "subscriptions:write"]),
+  "ASU + REO (role objects, token *)": tok("CRM", [{ id: "r0", code: "ASU", name: "ASU" }, { id: "r2", code: "REO", name: "REO" }], ["*"]),
 };
 const REFUSED = {
   "REO with transferrequests:write": [tok("CRM", ["REO"], ["transferrequests:read", "transferrequests:write", "subscriptions:write"]), "TRANSFER_REVIEWER_REQUIRED"],
   "AM with transferrequests:write": [tok("CRM", ["AM"], ["transferrequests:write"]), "TRANSFER_REVIEWER_REQUIRED"],
   "MO without the claim": [tok("CRM", ["MO"], ["transferrequests:read"]), "PDP_DENY"],
+  "MO + REO (role objects) without transferrequests:write": [tok("CRM", [{ id: "r1", code: "MO", name: "MO" }, { id: "r2", code: "REO", name: "REO" }], ["transferrequests:read"]), "PDP_DENY"],
+  "REO only (role object, live claims)": [tok("CRM", [{ id: "r2", code: "REO", name: "REO" }], ["transferrequests:read", "transferrequests:write", "subscriptions:write"]), "TRANSFER_REVIEWER_REQUIRED"],
   "PSG-CRM (no claims)": [tok("CRM", ["PSG-CRM"], []), "PDP_DENY"],
   "PORTAL MEMBER with transferRequests:write": [tok("PORTAL", ["MEMBER"], ["transferRequests:write", "*"]), "CRM_ONLY"],
   "no userType with *": [tok(undefined, ["ASU"], ["*"]), null],
@@ -111,4 +115,15 @@ test("portal self-service submit and own-list are unchanged (no PDP, no reviewer
   expect((await call("POST", "/api/transfer-request", portal, { workLocation: "x" })).body).toEqual({ reached: "submitTransferRequest" });
   expect((await call("GET", "/api/transfer-request/portal", portal)).body).toEqual({ reached: "getTransferRequestsForPortal" });
   expect(mockPdpCalls.length).toBe(before);
+});
+
+test("MO + REO without the claim is refused by the local step even when the PDP permits", () => {
+  const { requireTransferReviewer } = jest.requireActual("../middlewares/p5ActionGuards");
+  const errs = [];
+  requireTransferReviewer(
+    { user: { userType: "CRM", roles: [{ code: "MO" }, { code: "REO" }], permissions: ["transferrequests:read"] } },
+    {},
+    (e) => errs.push(e && e.code),
+  );
+  expect(errs).toEqual(["TRANSFER_REVIEWER_REQUIRED"]);
 });
