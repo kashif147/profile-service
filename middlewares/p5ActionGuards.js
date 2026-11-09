@@ -10,6 +10,10 @@
  *                                 subscription / finance steps are signed, tenant- and pair-bound service commands.
  *   requireFinanceActionRole      CRM payment-form writes: "*" OR (a finance action role AND the literal claim
  *                                 payments:write) - the same role set as account-service FINANCE_ACTION_ROLES.
+ *   requireTransferReviewer       P6: transfer-request approve / reject, after requireCrm("transferRequests","write"):
+ *                                 "*" (ASU) OR (MO AND the literal claim transferRequests:write). Existing REO roles
+ *                                 still carry transferRequests:write (role manifests never update existing roles),
+ *                                 but the role target makes REO read-only; this keeps it so without a live role edit.
  *
  * Caller facts come only from the verified identity (req.user set by middlewares/auth.js from gateway-verified
  * headers or a verified Bearer token). Any non-CRM caller is refused (CRM_ONLY), fail closed.
@@ -74,10 +78,24 @@ function requireFinanceActionRole(req, res, next) {
   return next(refuse("Payment-form changes require a finance action role with payments:write", FINANCE_ACTION_ROLE_REQUIRED));
 }
 
+const TRANSFER_REVIEWER_REQUIRED = "TRANSFER_REVIEWER_REQUIRED";
+const TRANSFER_REVIEWER_ROLES = Object.freeze(new Set(["MO", "MEMBERSHIP OFFICER"]));
+
+function requireTransferReviewer(req, res, next) {
+  if (!isCrm(req)) return next(crmOnly());
+  const c = claims(req);
+  if (c.includes(TENANT_WILDCARD)) return next();
+  if (c.includes("transferRequests:write") && roleCodes(req).some((r) => TRANSFER_REVIEWER_ROLES.has(r))) return next();
+  return next(refuse("Reviewing a transfer request requires a Membership Officer with transferRequests:write", TRANSFER_REVIEWER_REQUIRED));
+}
+
 module.exports = {
   TENANT_ADMIN_REQUIRED,
   FINANCE_ACTION_ROLE_REQUIRED,
   FINANCE_ACTION_ROLES,
+  TRANSFER_REVIEWER_REQUIRED,
+  TRANSFER_REVIEWER_ROLES,
   requireTenantAdmin,
   requireFinanceActionRole,
+  requireTransferReviewer,
 };
