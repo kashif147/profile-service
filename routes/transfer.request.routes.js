@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const transferRequestController = require("../controllers/transfer.request.controller");
 const { authenticate } = require("../middlewares/auth");
+const { requireCrm } = require("../middlewares/memberAccess");
+const { requireTransferReviewer } = require("../middlewares/p5ActionGuards");
 
 router.post("/", authenticate, transferRequestController.submitTransferRequest);
 
@@ -17,7 +19,14 @@ router.get("/crm", authenticate, transferRequestController.getTransferRequestsFo
 // Portal users can only see their own requests
 router.get("/portal", authenticate, transferRequestController.getTransferRequestsForPortal);
 
-// Approve or reject transfer request
-router.put("/:requestId", authenticate, transferRequestController.reviewTransferRequest);
+// Approve or reject transfer request (CRM). P6: PDP transferRequests:write, then ASU or MO + the claim (REO stays
+// read-only). Portal submit and own-list above are unchanged.
+router.put(
+  "/:requestId",
+  authenticate,
+  requireCrm("transferRequests", "write"),
+  requireTransferReviewer,
+  transferRequestController.reviewTransferRequest
+);
 
 module.exports = router;
